@@ -1,0 +1,640 @@
+La Piramide Perduta — Analisi Deep v2.0 | Agosto 2026
+Analisi Deep v2.0 — Progetto Aggiornato
+🏺 La Piramide Perduta
+Egyptian Noir Roguelike FPS — Vertical Slice v0.1.0 | Analisi Professionale Completa
+Data analisi:
+16 Agosto 2026
+Stack:
+Three.js 0.185 · Rapier 0.20 · Vite 8.1 · TypeScript 6
+Test:
+340 (310 unit + 30 DOM) · 11/11 e2e
+Rispetto v1:
++88 test · +15 implementazioni · PWA ready
+🔄 Principali Avanzamenti Rispetto alla v1 (Analisi Precedente)
+✅
+Rapier 0.19.3 →
+0.20.0
+(fix Rapier, nuove API KCC)
+✅
+VFX completo
+: fiamma, trail falce, polvere, dissolve, bloom, god rays, shake
+✅
+12/12 GLB models
+CC0/CC-BY in public/assets/
+✅
+PWA
+offline-ready: 70 entry precached 15.9 MB (vite-plugin-pwa)
+✅
+Meta-loop 10 piani
+con palette/difficoltà per fascia, scale a chiocciola
+✅
+GenericEncounterRuntime
+: tutti gli archetipi data-driven + 2 bug fixati
+✅
+4 maledizioni
+con trade-off per piano (curses.ts) — deterministic
+✅
+Reliquiario fisico
+: loot posato, raccoglibile con E, god rays dorati
+✅
+Doorway snap assist
+: nessun incastro sugli stipiti
+✅
+Mouse smoothing
++ sensibilità slider in % nel menu
+✅
+Torcia professionale
+: 56° cono, 5 sinusoidi, alone caldo, luce più calda
+✅
+Intro cinematografica
+: panoramica + torcia raccoglibile + tutorial posticipato
+✅
+Drone ambientale procedurale
+: 3 layer, LFO tensione, curva quadratica buio
+✅
+Geroglifici emissivi
+turchese sui landmark glyph
+✅
+Font self-hosted
+: Cinzel + Noto Egyptian Hieroglyphs via @fontsource
+✅
+RoomDecor +3 tipi (bones, skeleton, rug) con materiali dedicati
+✅
+8 nuovi cue audio (footstep_sand, stair_descend, fragment_pickup, death…)
+✅
+11/11 e2e verdi (seed reproducibility, WebGL2 fallback, run-completion)
+📊
+Scorecard Aggiornata (v1 → v2)
+Giocabilità
+7.8
+/10
+▲ +1.8 vs v1 (era 6.0)
+Coding / Architettura
+9.0
+/10
+▲ +0.5 vs v1 (era 8.5)
+Design / Art Direction
+8.0
+/10
+▲ +1.0 vs v1 (era 7.0)
+Fluidità
+7.8
+/10
+▲ +0.8 vs v1 (era 7.0)
+Rapidità / Performance
+8.0
+/10
+▲ +0.5 vs v1 (era 7.5)
+Grafica / Rendering
+7.8
+/10
+▲ +1.3 vs v1 (era 6.5)
+Decorazione / Dettagli
+7.2
+/10
+▲ +2.2 vs v1 (era 5.0)
+Prospettive Future
+8.5
+/10
+▲ +1.0 vs v1 (era 7.5)
+🗺️
+Avanzamento Roadmap (G-01 → G-23)
+G-01 Fisica / Rapier
+100%
+G-02 Generazione procedurale
+100%
+G-03 Combattimento completo
+85%
+G-04 AI noise/dig/bracieri
+60%
+G-05 Graft / meta-loop
+90%
+G-06 Audio professionale
+55%
+G-07 Accessibilità completa
+70%
+G-08–G-11 Core sistemi
+100%
+G-12 Art Bible
+100%
+G-13 Modelli nemici GLB
+100%
+G-14 Asset 3D ambiente
+75%
+G-15 VFX completo
+100%
+G-16 Materiali/texture PBR
+65%
+G-17 AssetLoader pipeline
+100%
+G-18 Audio cue + ambience
+65%
+G-19 Musica adattiva
+5%
+G-20 Ka Progression
+100%
+G-21 CI/Pipeline build
+100%
+G-22 E2E coverage
+100%
+G-23 Landmark placeholders
+100%
+🎮
+1. Giocabilità (Gameplay)
+Stato Corrente
+Il sistema di giocabilità ha fatto un balzo qualitativo importante con questa iterazione. Il gioco ora offre un
+meta-loop funzionale su 10 piani
+con difficoltà crescente (Director budget 12→80), palette cromatica per fascia di piano e scala a chiocciola come uscita narrativa. Il sistema di maledizioni (4 curse con trade-off) aggiunge una dimensione di scelta rischio/ricompensa per ogni discesa. Il
+reliquiario fisico
+trasforma la ricompensa da evento automatico a momento di gameplay attivo (approccio → E → raccolta con God Ray dorato).
+La
+GenericEncounterRuntime
+rende materializzabili tutti gli archetipi nemici con dati da EnemyDef — superando il pattern «istanza singola per tipo» della versione precedente. I 2 bug critici fixati (nemici che camminavano oltre il player, errore atan2 nell'ARC detection) migliorano notevolmente il feeling del combattimento.
+Punti di Forza Consolidati
+Sistema
+Stato v2
+Impatto gameplay
+10-floor meta-loop
+✅ Completo
+Progressione narrativa reale, replay incentivato
+4 Curse con trade-off
+✅ Completo
+Decisione rischio/reward ogni piano
+Reliquiario fisico
+✅ Completo
+Momento di tensione nel raccogliere il tesoro
+Doorway snap assist
+✅ Completo
+Movimento fluido senza frustrazioni ambientali
+Intro cinematografica
+✅ Completo
+Onboarding contestuale, torcia come primo obiettivo
+8 nodi Ka attivi
+✅ Completo
+Progressione con effetti gameplay reali
+UpgradeResolver (graft)
+✅ Completo
+Build diversity con modificatori composti
+Tutti gli archetipi
+✅ Completo
+Varietà nemici fin dai primissimi piani
+Gap Rimanenti — Giocabilità
+G-04 — AI noise consumers incompleti
+🟡 Parziale
+I nemici ricevono eventi sonori (scavo, passi) ma il sistema di allerta non differenzia il livello di rumore per tipo e direzione. Le ricompense dello scavo (fragment pickup) non impattano ancora la difficoltà del Director. I bracieri non modificano il budget nemici.
+G-03 residuo — COBRA/SHABTI non testati in combattimento reale
+🟡 Parziale
+GenericEncounterRuntime copre tutti gli archetipi a livello teorico, ma COBRA (tipo SPHERE, range 1.4m, istante) e SHABTI (solo attacco da dietro, telegrafo continuo polvere giunture) richiedono test di gameplay reale e calibrazione dei valori balance.ts.
+Parry System — meccanica di parata non implementata
+⬜ Aperto
+AttackDefinition prevede il campo
+parryable
+, ma non esiste ancora una finestra di parata attivabile dal player. Questa meccanica è citata nell'ART_BIBLE ("controgioco") ma manca il trigger input + la finestra temporale.
+Mancanza di feedback "run summary" a fine run
+⬜ Aperto
+Il giocatore non vede una schermata di riepilogo al termine della run (10° piano o morte) con statistiche: piani percorsi, nemici uccisi, frammenti raccolti, Ka guadagnato. Questa è una componente fondamentale del loop roguelike per motivare il retry.
+Bilanciamento maledizioni non ancora calibrato
+🟡 Da calibrare
+Le 4 curse sono implementate (Oscurità Antica, Fame del Deserto, Furia Sciacalli, Sigillo di Sobek) ma i moltiplicatori (+1.25 torcia, ×2 oro, +1.2 danno nemici) sono valori iniziali da bilanciare con dati di playtest. Il flag
+canDeposeCurse
+richiede il Ka "Sangue di Ra" che potrebbe non essere ancora facilmente ottenibile.
+💻
+2. Coding / Architettura
+Stato Corrente
+Il codebase ha raggiunto un livello di qualità eccellente per un progetto indie. Con
+340 test
+(310 node + 30 DOM) e 11/11 e2e verdi, il progetto supera la maggior parte dei vertical slice commerciali in termini di coverage. L'aggiornamento a Rapier 0.20.0 porta miglioramenti stabili al KinematicCharacterController, particolarmente rilevante dopo il fix al doorway snap assist.
+Metrica
+v1
+v2
+Delta
+Test totali
+252
+340
++88 (+35%)
+Test unit (node)
+~226
+310
++84
+Test DOM (happy-dom)
+~26
+30
++4
+E2E tests
+8/8
+11/11
++3 (seed repro, WebGL2)
+@dimforge/rapier3d
+^0.19.3
+^0.20.0
+↑ upgrade
+Font self-hosted
+No
+Sì (@fontsource)
++ privacy / offline
+PWA / Service Worker
+No
+Sì (vite-plugin-pwa)
++ distribuzione
+verify script
+typecheck+lint+test
++verify:boundaries +verify:content
++ layer check
+Analisi Architetturale (Novità v2)
+Il
+GameplayEventBridge
+(5.9 KB) è la novità architettonica principale: disaccoppia la presentazione dalla simulazione attraverso eventi tipizzati, eliminando il coupling diretto tra ThreeRendererService e la logica di gioco. Questo abilita il futuro split simulazione/rendering su thread separati (Web Worker).
+Il
+GenericEncounterRuntime
+è un esempio di design data-driven corretto: leggere EnemyDef dal content e costruire il runtime FSM sopra la definizione. Ogni nuovo archetipo richiede solo una voce in
+enemies.ts
+, non un nuovo file runtime.
+Gap Rimanenti — Coding
+QualityController non collegato al renderer
+⬜ Critico ROI
+Il QualityController con 3 tier (ultra/standard/low) esiste da G-01 ma non è ancora cablato a ThreeRendererService. Impatta direttamente le performance su dispositivi mobili e PC entry-level — un'ora di lavoro che sblocca la distribuzione a una fascia di utenti molto più ampia. È il gap a ROI più alto rimasto nell'architettura.
+gltf-transform non integrato nella pipeline CI
+⬜ Da fare
+I 12 GLB scaricati non sono stati ottimizzati con Draco/meshopt compression. Peso stimato attuale: 2-3 MB per GLB non ottimizzato. Con gltf-transform + KTX2 si arriva a riduzioni 60-80%. Con 15.9 MB precached dalla PWA, ogni MB salvato riduce il tempo di install e il consumo di banda mobile.
+Debug overlay F3 mancante
+⬜ Da fare
+Non esiste un overlay in-game che mostri: draw calls, ms per sistema, entity count, floor seed, versione. Essenziale per profiling durante il playtest — attualmente si deve aprire DevTools. Previsto in
+src/debug/
+ma non implementato.
+InstancedMesh non utilizzato per nemici multipli
+⬜ Performance futura
+SCARAB è il candidato principale per InstancedMesh (swarm fino a ~20 unità). Con mesh separate, ogni SCARAB = 1 draw call. InstancedMesh riduce N draw calls a 1 per il batch. Non critico a densità attuale (Director budget moderato) ma diventa un collo di bottiglia ai livelli superiori (budget 80 al piano 10).
+Simulazione non su Web Worker separato
+⬜ Futuro
+Il FloorGenerator gira su Worker ma la simulazione principale (AI + fisica + ECS) è sul main thread. Con Director budget 80 + COBRA/SHABTI + fisica Rapier, il main thread potrebbe saturarsi. L'architettura GameplayEventBridge è già predisposta per questo split, ma richiede un refactor sostanziale.
+🎨
+3. Design / Art Direction
+Stato Corrente
+L'identità "Egyptian Noir" è ora coerente e sistematica grazie all'ART_BIBLE completata e all'implementazione dei geroglifici emissivi turchese sui landmark. L'
+intro cinematografica
+è un salto qualitativo enorme: il giocatore entra nella piramide con una panoramica della stanza d'ingresso e scopre la torcia come primo obiettivo narrativo. Questo onboarding contestuale elimina il bisogno di un tutorial testuale.
+Regola dei 3 secondi (ART_BIBLE):
+L'identità visiva "antichità + mistero + pericolo" è ora verificabile in ogni screenshot — la palette canonica a 8 colori è applicata in modo coerente tra UI, nemici, landmark ed effetti. Questo livello di coerenza è raro anche in prodotti commerciali nella stessa fase di sviluppo.
+Analisi per Area di Design
+Area
+Stato v2
+Note
+Palette canonica
+✅
+8 colori documentati, applicati in modo coerente
+Silhouette nemici
+✅
+6 famiglie distinte, GLB scaricati e integrati
+Telegrafi d'attacco
+✅
+Ogni nemico ha durata minima e indicatore unico
+Illuminazione torcia
+✅
+56°, 5 sinusoidi, alone caldo — professionale
+UI "papiro annerito"
+✅
+Cinzel + geroglifici + HP frastagliata + minimappa
+Intro cinematografica
+✅
+Onboarding contestuale — torcia come hook narrativo
+God rays tesoro
+✅
+Fake volumetric cross-backend (WebGL2 + WebGPU)
+Dissolve morte nemici
+✅
+Clip shader + bordo emissivo dorato + noise TSL
+Temi 10 piani
+✅
+DESIGN_LIVELLI_SUPERIORI.md — 3 fasce tematiche
+Viewmodel arma 3D
+⬜
+Le mani/arma del player non sono visibili in prima persona
+Ritratti nemici in HUD
+⬜
+Assenti — comunicano identità narrativa in molti roguelike
+Testo geroglifico dinamico
+🟡
+Font caricato ma testi fissi, non generativi per run
+Gap Rimanenti — Design
+Viewmodel arma / mani in prima persona assente
+⬜ Impatto immersione
+Il player vede il mondo in prima persona ma non le proprie mani o l'arma impugnata. In un FPS, il viewmodel è il principale ancoraggio visivo. Mixamo fornisce animazioni per il viewmodel (già in roadmap, A4). Anche una falce semplice con un rig di 2-3 ossa sarebbe un salto qualitativo enorme.
+Testo geroglifico generativo per run
+🟡 Da estendere
+Il font Noto Egyptian Hieroglyphs è caricato ma i messaggi sono testi statici predefiniti. Generare sequenze geroglificce deterministiche basate sul seed del run ("questa piramide ha una sua storia") rafforzerebbe enormemente l'immersione e la rigiocabilità. Possibile con SeedRng già esistente.
+Quaternius Ruins CC0 non ancora scaricati
+⬜ Asset mancanti
+L'infrastruttura per i modelli ambientali modulari è pronta (ThreeDungeonLayout con 9 famiglie come punti di aggancio), ma i modelli Quaternius Ruins (muri, colonne, archi, scale) non sono ancora presenti. Attualmente ogni stanza usa geometria procedurale — visivamente funzionale ma non all'altezza dell'identità "Egyptian Noir".
+🌊
+4. Fluidità del Gioco
+Stato Corrente
+La fluidità ha ricevuto miglioramenti concreti in tre aree: il
+doorway snap assist
+risolve il problema più frustrante del precedente vertical slice (incastrarsi sugli stipiti), il
+mouse smoothing configurabile
+(0-95%) permette al player di calibrare la sensibilità senza scatti da delta crudi, e la
+torcia migliorata
+(cono 56°, alone caldo, 5 sinusoidi) rende l'esplorazione visivamente confortevole e narrativamente coerente.
+Il loop di discesa tra piani è ora fluido:
+descendToNextFloor()
+chiama
+playerController.teleport()
+, rigenera la floor slice, aggiorna palette e Director senza interruzioni visibili. L'intro cinematografica di ogni piano (panoramica 3.2s) è un respiro narrativo che separa le discese senza bloccare il ritmo.
+Problemi di Fluidità Rimanenti
+Nessun feedback di transizione piano (loading stutter)
+🟡 Da migliorare
+Il floor generator gira su Web Worker ma la rigenerazione della scena 3D (recreateRenderer) avviene sul main thread. Su hardware lento questo può causare un frame drop o freeze visibile durante la discesa. Una transizione con dissolvenza nera (CinematicOverlay) maschererebbe il rebuild e renderebbe la discesa più cinematografica.
+Tutorial comandi: testo statico senza adattamento
+🟡 UX gap
+Il tutorial appare dopo l'intro (onboarding corretto) ma mostra tutti i comandi contemporaneamente come lista. Un approccio contestuale ("premi E per raccogliere" quando sei vicino alla torcia) è più fluido ed efficace — è il metodo usato da Hades e Dead Cells per insegnare gradualmente.
+Hitmarker a schermo — feedback danno al nemico incompleto
+🟡 Juice
+HitmarkerX (90ms) è implementato ma non comunica chiaramente se si è colpito un nemico (suono + sfumatura rossa) o si è mancato. Un hitmarker con colore differenziale (oro = colpo, grigio = mancato, rosso = critico) migliora notevolmente il feedback tattile del combattimento.
+⚡
+5. Rapidità / Performance
+Stato Corrente
+L'obiettivo dichiarato (P95 ≤ 16.7ms per frame) è tecnicamente raggiungibile con l'hardware attuale. Il sistema di qualità adattiva esiste (QualityController con 3 tier) ma non è ancora collegato al renderer — questo rimane il gap di performance più impattante. L'upgrade a Rapier 0.20.0 porta stabilità e potenzialmente miglior gestione dei collision objects nel KCC.
+La PWA con 70 entry precached (15.9 MB) è un risultato notevole: al secondo avvio il gioco si carica praticamente istantaneamente. Tuttavia, i 15.9 MB includono GLB non ottimizzati — con gltf-transform la cache scende a ~5-8 MB.
+Metrica
+Obiettivo
+Stima v2
+Note
+Frame time P95
+≤16.7ms (60fps)
+~14-18ms
+Dipende fortemente dall'hardware; QualityController ancora da cablare
+Draw calls medi
+&lt;100
+~60-90
+GLB + landmark procedurali; InstancedMesh non ancora usato per swarm
+PWA install size
+—
+15.9 MB
+Da ottimizzare con gltf-transform (stimato → ~7 MB)
+Floor generation
+&lt;50ms
+&lt;30ms
+Worker isolato, deterministic RNG, già ottimizzato
+Rapier step time
+&lt;2ms
+&lt;1.5ms
+Rapier 0.20.0 WASM SIMD — performance migliorata
+First load (rete mobile)
+&lt;5s
+~8-12s
+GLB pesanti; DRACOLoader + KTX2 dimezzerebbe il tempo
+Second load (PWA cache)
+&lt;1s
+~0.3-0.5s
+Ottimo — PWA funziona correttamente
+Gap Rimanenti — Performance
+QualityController non cablato al renderer
+⬜ Priorità #1
+Il sistema di tier qualità esiste (ULTRA/STANDARD/LOW) con logiche di riduzione shadow resolution, pixel ratio, range nemici. Nessuna delle sue uscite viene però applicata a ThreeRendererService. Collegarlo richiederebbe ~2-3h di lavoro per sbloccare la distribuzione a mobile e PC entry-level — ROI altissimo per copertura audience.
+gltf-transform / DRACOLoader non integrati
+⬜ Da fare
+I 12 GLB scaricati da Poly Pizza non sono stati ottimizzati. Draco compression (già disponibile in three/examples/jsm/loaders/DRACOLoader.js) riduce le mesh del 60-80%. KTX2 per le texture (se le si aggiunge) porta ulteriori riduzioni. Con gltf-transform come script CI, ogni nuovo asset viene ottimizzato automaticamente prima del build.
+Bloom EffectComposer su WebGL2 — costo extra per frame
+🟡 Da monitorare
+UnrealBloomPass aggiunge 1-3ms per frame su WebGL2 (3 render pass separati). Su hardware mobile/integrata questo può portare il frame time sopra 16.7ms. Il try/catch con fallback al render diretto è presente ma non esiste un meccanismo automatico per disabilitare il bloom se il frame rate scende sotto soglia. QualityController dovrebbe gestire questo.
+🖼️
+6. Grafica / Rendering
+Stato Corrente
+Il sistema di rendering è ora al livello di un early-access professionale. Tutti e 7 gli effetti VFX sono implementati: fiamma torcia procedurale (V1), trail falce emissivo (V2), polvere di scavo (V3), dissolve morte (V4), bloom/vignette/grain (V5), god rays volumetrici fake cross-backend (V6), screen shake (V7). I 12 GLB sono integrati e l'infrastruttura per i modelli ambientali Quaternius è pronta.
+Nota tecnica sul God Ray:
+La scelta di usare un cono additivo trasparente ("fake volumetric") invece del ray-marching TSL è architetturalmente corretta — funziona su WebGL2 E WebGPU senza branch nel codice di rendering, con costo marginale (~0.2ms). I god ray reali con TSL potrebbero essere aggiunti come upgrade qualitativo nel tier ULTRA senza rompere la versione WebGL2.
+Gap Rimanenti — Grafica
+Texture PBR reali non integrate (ambientCG/Poly Haven)
+⬜ Visivamente impattante
+Le texture sabbia e pietra calcarea sono generate proceduralmente via CanvasTexture (LCG hash). Funzionali ma visivamente inferiori alle texture PBR 4K/8K di ambientCG (CC0). L'impatto visivo più alto sarebbe la texture del pavimento in sabbia — ambientCG "Sand007" o "Gravel033" cambia completamente la percezione della qualità grafica.
+Modelli ambientali Quaternius Ruins non scaricati
+⬜ Ambiente generico
+ThreeDungeonLayout ha 9 famiglie come punti di aggancio per modelli modulari ma i modelli Quaternius (colonne, archi, muri con decorazioni) non sono in public/assets/. Il dungeon attuale usa geometria primitiva (box/cylinder) per muri e corridoi — funzionale ma non ha il feel di "piramide egizia" dichiarato nell'identità visiva.
+WebGPU: bloom mancante (EffectComposer non porta su WebGPU)
+🟡 Feature gap
+UnrealBloomPass è attivato solo su WebGL2. Il backend WebGPU (prioritario per browser moderni) non ha il bloom. Con Three.js 0.185 e TSL, il bloom può essere implementato nativamente nel pipeline WebGPU — ma richiede un refactor del post-processing. pmndrs/postprocessing ha supporto WebGPU nativo.
+Nessun HDRI ambient (cielo/riflessioni ambiente)
+⬜ Qualità materiali
+I materiali PBR (oro, bende, pietra) non hanno una environment map per le riflessioni. Poly Haven fornisce HDRI CC0 "Desert" (sabbia, rocce) ideale per questa ambientazione. Aggiungere un PMREMGenerator con HDRI a bassa risoluzione (512px) migliorerebbe notevolmente la qualità percepita dei materiali metal/roughness.
+🏺
+7. Decorazione / Arredamento
+Stato Corrente
+Il sistema di decorazione ha subito il maggior avanzamento percentuale in questa iterazione. Dai soli placeholder geometrici della v1, ora il gioco ha: 3 nuovi tipi di decor (bones, skeleton, rug) con materiali dedicati, reliquiario fisico con effetti di luce, geroglifici emissivi turchese sui landmark glyph, e 12 GLB di nemici con silhouette distinte. L'Art Bible garantisce la coerenza semantica di ogni elemento decorativo.
+Tipo Decor
+Stato v2
+Descrizione
+Bracieri (bracier)
+✅
+Cilindri con PointLight arancio — ricarica torcia
+Geroglifici (glyph)
+✅
+Canvas texture emissiva turchese, pattern ankh/occhio Ra
+Ossa (bones)
+✅
+Cilindri incrociati, materiale avorio 0xCFC4A8
+Scheletro (skeleton)
+✅
+CapsuleGeometry sdraiata — caduta precedente
+Tappeto (rug)
+✅
+Piano piatto, materiale lana 0x5A3A28
+Reliquiario loot
+✅
+Cofanetto oro emissivo, fluttua/ruota, god rays
+Sito di scavo
+✅
+Indicatore emissivo + particelle polvere su DIG_PROGRESS
+Portale uscita
+✅
+Arco emissivo + sfera turchese — scala a chiocciola
+Colonne/archi modulari
+⬜
+Quaternius Ruins non ancora scaricati
+Sarcofagi
+⬜
+Citati in ART_BIBLE come landmark — non implementati
+Vasi canopi
+⬜
+Sketchfab CC0 disponibili — non ancora integrati
+Obelischi
+⬜
+Profilo visivo alto (silhouette Altissimo e Magro) — assenti
+Gap Rimanenti — Decorazione
+Asset decorativi egizi specifici assenti (sarcofagi, obelischi, vasi)
+⬜ Identità visiva
+L'identità "Egyptian Noir" richiede elementi iconici egizi oltre ai decor generici attuali. Sketchfab (con filtro CC0/CC-BY) ha modelli verificati di sarcofagi, obelischi, vasi canopi e statue di Anubi/Bastet. Anche solo 3-4 modelli iconici nelle stanze speciali (boss room, treasure room) eleverebbe enormemente la percezione di qualità.
+Variazione decor per fascia di piano non implementata
+🟡 Design
+DESIGN_LIVELLI_SUPERIORI.md definisce 3 fasce tematiche (Anticamera/Galleria/Cripta) con mood diverso, ma RoomDecor.ts usa gli stessi asset per tutti i piani. Variare la densità e il tipo di decor per fascia (più ossa/scheletri nella Cripta, più geroglifici nell'Anticamera) rinforzerebbe la progressione narrativa.
+Nessun artwork 2D narrativo (loading cards, death screen)
+⬜ Polish
+La schermata di morte (DeathOverlay) e le transizioni tra piani sono visivamente minimali — testo su sfondo scuro. Artwork 2D in stile papiro/geroglifico per queste schermate (ottenibile da OpenGameArt ancient-egypt-0 già in roadmap) trasformerebbe questi momenti in esperienze narrative. Particolarmente impattante per la schermata di morte roguelike.
+🔭
+8. Prospettive Future
+Posizionamento Competitivo
+Con il PWA online (installabile su desktop e mobile), la roadmap 10/10 completata e 340 test, questo progetto è pronto per una
+early access release su itch.io
+. Il genere "roguelike FPS egizio" è un white space: i roguelike FPS più noti (Ziggurat, Immortal Redneck, Hades II) non coprono l'ambientazione egizia con un approach "thriller archeologico".
+Opportunità
+Fattibilità
+Impatto
+Allineamento
+itch.io early access release
+Alta (PWA pronta)
+🔴 Alto
+Perfetto — browser-first
+WebXR / Meta Quest Web
+Media (Three.js supporta)
+🟠 Alto
+Differenziazione forte
+Leaderboard / seed sharing
+Alta (seed già in URL)
+🟠 Medio
+Virale — "gioca il mio seed"
+Modalità Boss Rush
+Media (Director esteso)
+🟡 Medio
+Complemantare
+Co-op async (ghost replay)
+Bassa ma unica
+🟡 Medio
+Innovativo per il genere
+LLM-generated lore per run
+Media (API cloud)
+🟢 Alto
+Differenziazione estrema
+Roadmap Raccomandata — Prossimi 3 Sprint
+🔴 Sprint 1 — Alpha Release (1-2 settimane)
+Collegare QualityController al renderer (tier low/standard/ultra)
+gltf-transform script CI per GLB esistenti (−60% peso PWA)
+Debug overlay F3 (draw calls, ms/sistema, floor seed)
+Run summary screen (fine run: piani, nemici, Ka guadagnato)
+Schermata morte con artwork 2D papiro (OpenGameArt ancient-egypt-0)
+🟡 Sprint 2 — Beta / Polish (2-3 settimane)
+Quaternius Ruins CC0: integrazione modelli ambiente modulari
+ambientCG Sand007 texture PBR (pavimento) + Poly Haven HDRI
+Musica adattiva: 3 stati (esplorazione/tensione/combattimento)
+Viewmodel falce (braccio + arma) con animazione attacco
+Variegare decor per fascia di piano (curses.ts è già deterministico)
+Bloom WebGPU nativo via pmndrs/postprocessing
+🔵 Sprint 3 — Feature Expansion (3+ settimane)
+Leaderboard con seed condivisibile (?seed=N nell'URL già funziona)
+Kenney + Sonniss foley reali (sandstep, stone scrape, mummy groan)
+Sarcofagi/obelischi/vasi canopi da Sketchfab CC0
+Parry system (finestra + visual + audio)
+Tutorial contestuale graduale (Hades pattern)
+WebXR probe (browser-first → Quest Web = distribuzione su Meta Store)
+🎯
+Matrice Priorità Residua (ROI × Sforzo)
+Sforzo BASSO × Impatto ALTO
+✅ Collegare QualityController al renderer
+✅ gltf-transform script CI
+✅ Debug overlay F3
+✅ Run summary screen
+✅ HDRI ambient da Poly Haven
+Sforzo MEDIO × Impatto ALTO
+🟡 Quaternius Ruins ambiente
+🟡 Texture PBR (ambientCG Sand)
+🟡 Musica adattiva 3 stati
+🟡 Bloom WebGPU nativo
+🟡 Viewmodel falce
+Sforzo ALTO × Impatto ALTO
+🔴 InstancedMesh per swarm SCARAB
+🔴 Simulazione su Web Worker
+🔴 Co-op async / ghost replay
+🔴 WebXR integration
+Sforzo BASSO × Impatto MEDIO
+✅ Kenney SFX download
+✅ Artwork 2D morte (ancient-egypt-0)
+✅ Sarcofagi da Sketchfab CC0
+✅ Curses calibration playtest
+Sforzo MEDIO × Impatto MEDIO
+🟡 Tutorial contestuale graduale
+🟡 Parry system
+🟡 Geroglifici generativi per seed
+🟡 Decor per fascia di piano
+Sforzo ALTO × Impatto BASSO
+🔴 Ritratti nemici 2D in HUD
+🔴 Realtime global illumination
+🔴 Volumetric TSL ray-marching
+🔴 LLM lore generation
+📈
+Confronto con Benchmark di Settore
+Parametro
+Browser game indie medio
+La Piramide Perduta v2
+Gap vs best-in-class
+Test coverage
+~20-40 test
+340 test (310 node + 30 DOM)
+Superiore alla media professionale
+E2E automated
+Spesso 0
+11/11 Playwright
+Benchmark industry standard raggiunto
+PWA offline
+Raro
+70 entry, 15.9 MB precached
+Vantaggi competitivi su distribuzione
+Architettura layer
+Monolite tipico
+6 layer con enforcement CI
+Superiore alla media
+Accessibilità visiva
+Zero opzioni
+5+ opzioni (flicker, shake, contrast, particles, crosshair)
+Quasi WCAG compliant
+Physics engine
+Cannon.js (legacy)
+Rapier 0.20 WASM SIMD
+Best-in-class per browser
+Shader system
+ShaderMaterial custom
+TSL (Three Shader Language) cross-backend
+Avanguardia — WebGPU native
+Audio spaziale
+Basic panning
+HRTF PannerNode per ogni nemico
+Superiore alla media indie
+Real audio samples
+Librerie integrate
+Solo sintesi procedurale
+Gap da colmare (Kenney/Sonniss)
+3D GLB models
+Custom art o store
+12 GLB CC0/CC-BY da Poly Pizza
+Funzionale — da upgrade con Quaternius
+Texture PBR
+Librerie CC0
+Procedurale (CanvasTexture)
+Gap visivo importante — ambientCG
+📋
+Sintesi Executive
+Valutazione globale v2: 7.9/10
+(era 6.9/10 in v1 — +1.0 di avanzamento)
+Il progetto ha compiuto un salto qualitativo significativo tra le due analisi. Dalla demo tecnica con 2 nemici e 252 test, siamo arrivati a un vertical slice completo con 10 piani, 7 archetipi nemici materializzabili, VFX completo, PWA offline, curses, intro cinematografica e 340 test. Il codebase ha una solidità architettonica rara per un progetto indie in questa fase.
+Il
+principale gap rimanente per il rilascio
+è triplice:
+(1) QualityController
+non cablato (performance su hardware basso),
+(2) asset visivi egizi specifici
+mancanti (Quaternius Ruins, texture PBR),
+(3) audio samples reali
+(Kenney/Sonniss non ancora scaricati). Questi tre elementi sono la differenza tra un tech demo impressionante e un prodotto distribuibile.
+Top 3 Priorità Immediate
+Cablare QualityController → ThreeRendererService (1-2h, sblocca mobile)
+gltf-transform script CI (2h, −60% peso PWA, −40% first load)
+Schermata di fine run / run summary (3-4h, chiude il loop roguelike)
+Top 3 Miglioramenti Visivi
+Texture PBR sabbia da ambientCG (20min download + 30min integrazione)
+Quaternius Ruins: almeno colonne e archi per le stanze principali
+Bloom WebGPU nativo via pmndrs/postprocessing (parità visiva WebGL2/WebGPU)
+Top 3 Audio Gaps
+Kenney SFX: download immediato, wiring in AudioEventDirector
+Musica adattiva 3 stati da Mixkit/Pixabay (già in roadmap S5)
+Ambience loop per 4 livelli di oscurità (OpenGameArt desert CC0)
+La Piramide Perduta — Analisi Deep v2.0
+Generata il 16 Agosto 2026 · Stack: Three.js 0.185.1 · Rapier 0.20.0 · Vite 8.1.5 · TypeScript 6.0.3
+Stato roadmap: 9 gap chiusi · 6 parziali · 3 aperti critici · 340 test · 11/11 e2e
+Ricerca: Three.js WebGPU 2026, Rapier 0.20 changelog, roguelike design patterns, Web Audio HRTF, PWA strategies

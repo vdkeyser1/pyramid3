@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": [
+    "src/core/**/*.ts",
+    "src/ecs/**/*.ts",
+    "src/simulation/**/*.ts",
+    "src/procedural/**/*.ts",
+    "src/ai/**/*.ts",
+    "src/gameplay/**/*.ts",
+    "src/content/**/*.ts",
+    "src/math/**/*.ts"
+  ]
+}

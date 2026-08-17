@@ -1,0 +1,51 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Full verify gate (typecheck + lint + boundaries + content + unit + dom + build)
+        run: npm run verify
+
+      - name: Property tests (10k runs — scala dichiarata per main, G-21)
+        env:
+          PROPERTY_RUNS: "10000"
+        run: npm run test:property
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install chromium
+
+      - name: E2E smoke (menu, tutorial, persistenza, palette)
+        run: npm run test:e2e

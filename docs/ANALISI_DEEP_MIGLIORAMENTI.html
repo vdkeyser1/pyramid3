@@ -1,0 +1,1333 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>La Piramide Perduta — Analisi Deep & Miglioramenti</title>
+<style>
+  :root {
+    --gold: #D4A05A;
+    --copper: #9A5A38;
+    --teal: #2E8B8B;
+    --purple: #6A334D;
+    --night: #18243A;
+    --black: #0B0908;
+    --dark: #1A1512;
+    --sand: #8A7350;
+    --bg: #100C0A;
+    --surface: #1E1812;
+    --surface2: #2A2018;
+    --text: #E8D5B0;
+    --text2: #B09060;
+    --border: #3A2A1A;
+    --green: #4CAF50;
+    --yellow: #FFC107;
+    --red: #E53935;
+    --blue: #2E8B8B;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.75;
+    min-height: 100vh;
+  }
+
+  /* HEADER */
+  header {
+    background: linear-gradient(135deg, #1A0E08 0%, #0D1620 50%, #1A0E08 100%);
+    border-bottom: 2px solid var(--gold);
+    padding: 3rem 2rem 2rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  header::before {
+    content: '𓂀 𓃭 𓆣 𓇯 𓆣 𓃭 𓂀';
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.1rem;
+    color: var(--gold);
+    opacity: 0.4;
+    letter-spacing: 8px;
+    white-space: nowrap;
+  }
+  header h1 {
+    font-size: 2.6rem;
+    color: var(--gold);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    text-shadow: 0 0 30px rgba(212,160,90,0.4);
+    margin-bottom: 0.4rem;
+  }
+  header .subtitle {
+    color: var(--teal);
+    font-size: 1.05rem;
+    letter-spacing: 2px;
+    margin-bottom: 1.2rem;
+  }
+  .badge-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.6rem;
+    margin-top: 1rem;
+  }
+  .badge {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 0.78rem;
+    font-family: monospace;
+    color: var(--text2);
+  }
+  .badge.ok { border-color: var(--green); color: #81C784; }
+  .badge.warn { border-color: var(--yellow); color: #FFD54F; }
+  .badge.gap { border-color: var(--red); color: #EF9A9A; }
+
+  /* NAV */
+  nav {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0.8rem 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: center;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  nav a {
+    color: var(--text2);
+    text-decoration: none;
+    font-size: 0.82rem;
+    padding: 5px 12px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+    font-family: monospace;
+    letter-spacing: 0.5px;
+  }
+  nav a:hover {
+    border-color: var(--gold);
+    color: var(--gold);
+    background: rgba(212,160,90,0.08);
+  }
+
+  /* MAIN */
+  main { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+  /* EXECUTIVE SUMMARY */
+  .exec-summary {
+    background: linear-gradient(135deg, var(--surface) 0%, var(--night) 100%);
+    border: 1px solid var(--teal);
+    border-radius: 8px;
+    padding: 1.8rem 2rem;
+    margin-bottom: 2.5rem;
+    position: relative;
+  }
+  .exec-summary::before {
+    content: '𓂀';
+    position: absolute;
+    right: 1.5rem;
+    top: 1rem;
+    font-size: 2.5rem;
+    opacity: 0.15;
+  }
+  .exec-summary h2 {
+    color: var(--teal);
+    font-size: 1.1rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+  }
+  .exec-summary p { font-size: 0.98rem; color: var(--text2); margin-bottom: 0.6rem; }
+  .exec-summary strong { color: var(--gold); }
+
+  /* SCORE GRID */
+  .score-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1rem;
+    margin: 2rem 0;
+  }
+  .score-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+    transition: border-color 0.2s;
+  }
+  .score-card:hover { border-color: var(--gold); }
+  .score-card .area { font-size: 0.72rem; color: var(--text2); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 0.4rem; }
+  .score-card .score { font-size: 2rem; font-weight: bold; margin-bottom: 0.2rem; }
+  .score-card .label { font-size: 0.75rem; color: var(--text2); }
+  .score-card.high .score { color: #81C784; }
+  .score-card.med .score { color: #FFD54F; }
+  .score-card.low .score { color: #EF9A9A; }
+
+  /* SECTION */
+  .section {
+    margin-bottom: 3rem;
+    scroll-margin-top: 60px;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    flex-shrink: 0;
+  }
+  .section-header h2 {
+    color: var(--gold);
+    font-size: 1.4rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .section-header .sub { color: var(--text2); font-size: 0.85rem; margin-top: 0.2rem; }
+
+  /* CARDS */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.2rem; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.3rem;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--sand); }
+  .card h3 {
+    font-size: 1rem;
+    color: var(--gold);
+    margin-bottom: 0.7rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .card p, .card li { font-size: 0.88rem; color: var(--text2); line-height: 1.65; }
+  .card ul { padding-left: 1.2rem; }
+  .card li { margin-bottom: 0.3rem; }
+
+  /* STATUS TAG */
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-family: monospace;
+    font-weight: bold;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+  .tag.done { background: rgba(76,175,80,0.2); color: #81C784; border: 1px solid #4CAF50; }
+  .tag.partial { background: rgba(255,193,7,0.15); color: #FFD54F; border: 1px solid #FFC107; }
+  .tag.todo { background: rgba(229,57,53,0.15); color: #EF9A9A; border: 1px solid #E53935; }
+  .tag.future { background: rgba(46,139,139,0.15); color: #80DEEA; border: 1px solid #2E8B8B; }
+
+  /* BIG TABLE */
+  .gap-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 1rem 0; }
+  .gap-table th {
+    background: var(--surface2);
+    color: var(--gold);
+    padding: 0.7rem 1rem;
+    text-align: left;
+    font-size: 0.78rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  .gap-table td {
+    padding: 0.65rem 1rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text2);
+    vertical-align: top;
+  }
+  .gap-table tr:hover td { background: rgba(212,160,90,0.04); }
+  .gap-table .gap-id { color: var(--copper); font-family: monospace; font-weight: bold; white-space: nowrap; }
+  .gap-table .priority-high { color: #EF9A9A; }
+  .gap-table .priority-med { color: #FFD54F; }
+  .gap-table .priority-low { color: #81C784; }
+
+  /* PRIORITY BLOCK */
+  .priority-block {
+    background: var(--surface);
+    border-left: 3px solid var(--gold);
+    padding: 1rem 1.3rem;
+    margin-bottom: 1rem;
+    border-radius: 0 6px 6px 0;
+  }
+  .priority-block.high { border-left-color: var(--red); }
+  .priority-block.med { border-left-color: var(--yellow); }
+  .priority-block.low { border-left-color: var(--green); }
+  .priority-block.future { border-left-color: var(--teal); }
+  .priority-block h4 { font-size: 0.95rem; color: var(--text); margin-bottom: 0.4rem; }
+  .priority-block p, .priority-block li { font-size: 0.85rem; color: var(--text2); }
+  .priority-block ul { padding-left: 1.2rem; margin-top: 0.3rem; }
+
+  /* TECH BLOCK */
+  .tech-block {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+    margin: 1rem 0;
+    font-family: monospace;
+    font-size: 0.83rem;
+    color: #B0D4B0;
+  }
+  .tech-block .comment { color: var(--sand); }
+
+  /* TIMELINE */
+  .timeline { position: relative; padding-left: 2rem; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, var(--gold), var(--teal));
+  }
+  .timeline-item {
+    position: relative;
+    margin-bottom: 1.5rem;
+  }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -1.62rem;
+    top: 0.4rem;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--gold);
+    border: 2px solid var(--bg);
+  }
+  .timeline-item.future::before { background: var(--teal); }
+  .timeline-item h4 { font-size: 0.95rem; color: var(--gold); margin-bottom: 0.3rem; }
+  .timeline-item p { font-size: 0.85rem; color: var(--text2); }
+
+  /* COMPARISON TABLE */
+  .comp-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 1rem 0; }
+  .comp-table th { background: var(--surface2); color: var(--gold); padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); font-size: 0.78rem; letter-spacing: 1px; }
+  .comp-table td { padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); color: var(--text2); }
+  .comp-table .ok { color: #81C784; }
+  .comp-table .warn { color: #FFD54F; }
+  .comp-table .bad { color: #EF9A9A; }
+
+  /* FOOTER */
+  footer {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 1.5rem 2rem;
+    text-align: center;
+    color: var(--text2);
+    font-size: 0.8rem;
+  }
+  footer .glyph { color: var(--gold); opacity: 0.6; letter-spacing: 6px; margin-top: 0.5rem; }
+
+  /* RESPONSIVE */
+  @media (max-width: 600px) {
+    header h1 { font-size: 1.6rem; }
+    .card-grid { grid-template-columns: 1fr; }
+    .score-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+  strong { color: var(--gold); }
+  em { color: var(--teal); font-style: normal; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>La Piramide Perduta</h1>
+  <div class="subtitle">Deep Analysis Report — Gap Detection & Improvement Plan</div>
+  <div style="color:var(--text2);font-size:0.82rem;">Egyptian Noir FPS Roguelike · Browser-First · Agosto 2026</div>
+  <div class="badge-row">
+    <span class="badge ok">✅ 330+ Tests</span>
+    <span class="badge ok">✅ Three.js 0.185 + WebGPU</span>
+    <span class="badge ok">✅ Rapier 0.19.3</span>
+    <span class="badge ok">✅ TypeScript Strict</span>
+    <span class="badge warn">🟡 6 Gap Parziali</span>
+    <span class="badge gap">⬜ 8 Gap Aperti</span>
+    <span class="badge">Vite 8 · Vitest 4 · Playwright</span>
+  </div>
+</header>
+
+<nav>
+  <a href="#executive">📊 Executive Summary</a>
+  <a href="#gameplay">🎮 Gameplay</a>
+  <a href="#coding">⚙️ Codice</a>
+  <a href="#design">🎨 Design</a>
+  <a href="#fluidita">⚡ Fluidità</a>
+  <a href="#rapidita">🚀 Rapidità</a>
+  <a href="#graphisme">🖥️ Grafica</a>
+  <a href="#decorazione">🏺 Decorazione</a>
+  <a href="#futuro">🔮 Futuro</a>
+</nav>
+
+<main>
+
+<!-- ═══════════════════════════════════ EXECUTIVE SUMMARY ═══════════════════════════════════ -->
+<div class="exec-summary" id="executive">
+  <h2>📊 Executive Summary</h2>
+  <p><strong>La Piramide Perduta</strong> è un FPS roguelike "Egyptian Noir" browser-first in TypeScript con Three.js (WebGPU/WebGL2), fisica Rapier, generazione procedurale, ECS ibrido e 330+ test automatizzati. Il progetto è tecnicamente solido — architettura a layer enforced, determinismo replay, accessibilità a 14 parametri — ma si trova a un punto di svolta: la struttura è pronta, ma molti sistemi (combattimento AI, audio reale, loot, meta-loop) esistono come moduli testati ma <em>non ancora connessi al loop di gioco reale</em>.</p>
+  <p>La ricerca internet effettuata rivela che il gioco si trova in una posizione ideale per il 2026: WebGPU è finalmente stabile su tutti i browser principali, la distribuzione browser-first è in forte crescita su itch.io e link diretti social, e Rapier ha appena ricevuto miglioramenti di velocità del 2-5× con SIMD WASM. Le opportunità di differenziazione sono significative.</p>
+  <p>Questo report analizza <strong>7 aree</strong> del progetto, identifica gap specifici e propone miglioramenti concreti basati sulle best practice del 2025-2026.</p>
+</div>
+
+<!-- SCORE GRID -->
+<div class="score-grid">
+  <div class="score-card med">
+    <div class="area">Gameplay</div>
+    <div class="score">6/10</div>
+    <div class="label">Basi solide, AI scollegata</div>
+  </div>
+  <div class="score-card high">
+    <div class="area">Codice</div>
+    <div class="score">8.5/10</div>
+    <div class="label">Architettura eccellente</div>
+  </div>
+  <div class="score-card high">
+    <div class="area">Design</div>
+    <div class="score">8/10</div>
+    <div class="label">Egyptian Noir coerente</div>
+  </div>
+  <div class="score-card med">
+    <div class="area">Fluidità</div>
+    <div class="score">7/10</div>
+    <div class="label">60Hz, QC non wired</div>
+  </div>
+  <div class="score-card med">
+    <div class="area">Rapidità</div>
+    <div class="score">6.5/10</div>
+    <div class="label">Vite rapido, asset pesanti</div>
+  </div>
+  <div class="score-card med">
+    <div class="area">Grafica</div>
+    <div class="score">7.5/10</div>
+    <div class="label">VFX buoni, asset stub</div>
+  </div>
+  <div class="score-card low">
+    <div class="area">Decorazione</div>
+    <div class="score">5/10</div>
+    <div class="label">Placeholder, no PBR reali</div>
+  </div>
+  <div class="score-card high">
+    <div class="area">Futuro</div>
+    <div class="score">9/10</div>
+    <div class="label">Stack perfetto per 2026</div>
+  </div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════ 1. GAMEPLAY ═══════════════════════════════════ -->
+<div class="section" id="gameplay">
+  <div class="section-header">
+    <div class="section-icon" style="background:rgba(212,160,90,0.15);color:var(--gold);">🎮</div>
+    <div>
+      <h2>1. Gameplay & Giocabilità</h2>
+      <div class="sub">Meccaniche, AI, combattimento, progressione, feedback loop</div>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <h3>✅ Punti di Forza Attuali</h3>
+      <ul>
+        <li><strong>Torcia come risorsa critica</strong> — meccanica unica che governa esplorazione, stealth e combattimento simultaneamente</li>
+        <li><strong>Fisica Rapier reale</strong> — movimento FPS con collisioni vere, autostep, coyote time, input buffer per il salto</li>
+        <li><strong>Sistema Ka</strong> — 8 nodi con effetti reali (HP, torcia, resurrezione, bastone)</li>
+        <li><strong>Formula danno robusta</strong> — armatura cappata a 0.75, danno minimo 1, nessun NaN propagato</li>
+        <li><strong>Gramática combattimento</strong> — 4 fasi READY→ANTICIPATION→ACTIVE→RECOVERY per giocatore e nemici</li>
+        <li><strong>Ka Echo</strong> — meccanica sonar originale che rivela l'ambiente</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>⚠️ Gap Critici di Gameplay</h3>
+      <ul>
+        <li><strong>AI scollegata</strong> — percezione, FSM, pathfinding esistono ma non pilotano nemici reali nella scena</li>
+        <li><strong>Solo 2 nemici materializzabili</strong> — SCARAB e MUMMY attivi, altri 6 archetipi solo su carta</li>
+        <li><strong>Nessun loot drop reale</strong> — monete conteggiate ma nessun oggetto fisico nel mondo</li>
+        <li><strong>Scavo senza ricompensa meccanica</strong> — event TREASURE_FOUND genera Frammenti ma nessun oggetto</li>
+        <li><strong>Meta-loop incompleto</strong> — discesa multi-floor funziona ma senza vera escalation di tensione</li>
+        <li><strong>Armi senza effetti</strong> — Khopesh/Bastone nominati nell'HUD ma senza meccaniche reali</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: Feedback Loop di Combattimento</h3>
+      <p>La ricerca mostra che i migliori FPS roguelike (Hades, DUSK, Boomerang X) usano <em>hitstop</em> e <em>screen freeze</em> micro (2-4 frame) per comunicare l'impatto. Il gioco ha già camera shake — manca il freeze frame.</p>
+      <ul>
+        <li>Aggiungere <strong>hitstop</strong> di 3-5 frame su hit confermato (pausa del loop fisico, non del rendering)</li>
+        <li><strong>Hitmarker direzionale</strong> già presente — estendere con varianti per colpo critico / kill</li>
+        <li><strong>Crosshair dinamico</strong> che si espande con lo sprint/salto e si stringe accovacciato</li>
+        <li><strong>Sound design unico per archetipo</strong> — il cobra deve suonare diversamente dalla mummia</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: Stealth e Torcia</h3>
+      <p>Il sistema torcia è il cuore del gioco ma manca di <em>decision points</em> interessanti basati sull'interazione luce-ombra.</p>
+      <ul>
+        <li><strong>Proiezione ombra del player</strong> — i nemici dovrebbero reagire all'ombra proiettata dalla torcia sul pavimento (già Rapier raycast)</li>
+        <li><strong>Zona penombra</strong> — aggiungere stato intermedio LOW_LIGHT dove il player è "parzialmente visibile" (torch affinity a ±0.3)</li>
+        <li><strong>Counter-play visivo torcia posata</strong> — quando posata, il cono di luce fisso diventa un "esca" per lo Scarabeo (torch affinity +0.7)</li>
+        <li><strong>Bracieri come checkpoint tattici</strong> — non solo healing, ma riduzione permanente dell'aggressività nemica nella stanza</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: Progressione e Ricompense</h3>
+      <p>Best practice roguelike 2025: le ricompense devono essere immediate, visibili e meccanicamente interessanti (non solo numeriche).</p>
+      <ul>
+        <li><strong>Loot fisico nel mondo</strong> — il tesoro deve generare oggetti visibili raccoglibili (InteractE) con effetto immediato</li>
+        <li><strong>Armi trovate nel dungeon</strong> — Khopesh/Bastone come drop di stanze speciali, non solo dalla fucina</li>
+        <li><strong>Maledizioni attive</strong> — "Sangue di Ra" è cablato ma le maledizioni non esistono ancora come meccanica antagonista</li>
+        <li><strong>Bestiario come feedback</strong> — aggiungere hint tattici visibili al bestiario dopo aver incontrato un nemico</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: Onboarding Progressivo</h3>
+      <p>Il tutorial attuale è un overlay statico. Le best practice 2025 per FPS roguelike raccomandano il <em>tutorial organico</em>.</p>
+      <ul>
+        <li><strong>Piano 1 garantito semplice</strong> — solo SCARAB (già parzialmente fatto con InitialEncounterPlanner)</li>
+        <li><strong>Primo braciere sempre visibile</strong> — insegnare la meccanica torcia senza spiegazione testuale</li>
+        <li><strong>Porte segnalate chiaramente</strong> — già il doorway snap assist c'è, manca feedback visivo del corridoio raggiungibile</li>
+        <li><strong>Death screen con hint contestuale</strong> — "Sei morto per un attacco pesante della Mummia → schiva lateralmente durante il telegrafo"</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3 style="color:var(--teal);margin:1.5rem 0 0.8rem;font-size:1rem;letter-spacing:1px;">TABELLA GAP GAMEPLAY</h3>
+  <table class="gap-table">
+    <thead>
+      <tr>
+        <th>Gap</th>
+        <th>Descrizione</th>
+        <th>Priorità</th>
+        <th>Impatto</th>
+        <th>Stato</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="gap-id">G-03</td>
+        <td>HurtboxSystem generale + tutti i 6 archetipi materializzabili</td>
+        <td class="priority-high">CRITICA</td>
+        <td>Il gioco non è giocabile senza nemici reali</td>
+        <td><span class="tag partial">🟡 Parziale</span></td>
+      </tr>
+      <tr>
+        <td class="gap-id">G-04</td>
+        <td>AI consumer del rumore, loot scavo, bracieri → Director</td>
+        <td class="priority-high">ALTA</td>
+        <td>Stealth e torcia senza conseguenze AI</td>
+        <td><span class="tag partial">🟡 Parziale</span></td>
+      </tr>
+      <tr>
+        <td class="gap-id">G-05</td>
+        <td>Graft equipaggiabili, armi come oggetti nel mondo</td>
+        <td class="priority-med">MEDIA</td>
+        <td>Progressione superficiale senza oggetti fisici</td>
+        <td><span class="tag partial">🟡 Parziale</span></td>
+      </tr>
+      <tr>
+        <td class="gap-id">NEW-1</td>
+        <td>Hitstop / freeze frame sul colpo (2-4 tick)</td>
+        <td class="priority-med">MEDIA</td>
+        <td>Game feel percepito molto più soddisfacente</td>
+        <td><span class="tag todo">⬜ Non pianificato</span></td>
+      </tr>
+      <tr>
+        <td class="gap-id">NEW-2</td>
+        <td>Crosshair dinamico (espansione sprint/salto)</td>
+        <td class="priority-low">BASSA</td>
+        <td>FPS readability standard</td>
+        <td><span class="tag todo">⬜ Non pianificato</span></td>
+      </tr>
+      <tr>
+        <td class="gap-id">NEW-3</td>
+        <td>Maledizioni attive come meccanica antagonista</td>
+        <td class="priority-low">BASSA</td>
+        <td>Aggiunge tension e decisioni "Sangue di Ra"</td>
+        <td><span class="tag future">🔮 V2</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════ 2. CODICE ═══════════════════════════════════ -->
+<div class="section" id="coding">
+  <div class="section-header">
+    <div class="section-icon" style="background:rgba(46,139,139,0.15);color:var(--teal);">⚙️</div>
+    <div>
+      <h2>2. Codice & Architettura</h2>
+      <div class="sub">TypeScript, ECS, architettura a layer, testing, build pipeline</div>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <h3>✅ Eccellenze Tecniche</h3>
+      <ul>
+        <li><strong>Architettura a layer enforced staticamente</strong> — verify-boundaries script vieta import illegali tra layer a build time</li>
+        <li><strong>TypeScript strict mode completo</strong> — noUncheckedIndexedAccess, exactOptionalPropertyTypes, verbatimModuleSyntax</li>
+        <li><strong>RNG deterministico a 6 canali</strong> — xorshift32 con salt per canale, replay-safe</li>
+        <li><strong>Property-based testing</strong> — fast-check con 100+ run su invarianti combattimento e RNG</li>
+        <li><strong>4 tsconfig separati</strong> — simulation senza DOM, worker con WebWorker lib, nessuna contaminazione accidentale</li>
+        <li><strong>Result&lt;T,E&gt; pattern</strong> — nessuna eccezione nei path critici di validazione</li>
+        <li><strong>330 test, 11/11 e2e</strong> — copertura eccellente per un vertical slice</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>⚠️ Debiti Tecnici Identificati</h3>
+      <ul>
+        <li><strong>EntityId ridichiarato</strong> — stesso branded type in 4+ file diversi (EntityAllocator, Director, combat, enemies) — rischio futuro di incompatibilità</li>
+        <li><strong>PlayerCharacterController è l'unica class</strong> — coerente ma segnalato come "andrebbe in src/adapters/" nel codice stesso</li>
+        <li><strong>HurtboxSystem manuale</strong> — GameApplication popola direttamente HurtboxStore invece di delegare a un sistema</li>
+        <li><strong>QualityController non letto</strong> — adatta il tier ma nessun sistema di rendering legge profile per applicare i limiti</li>
+        <li><strong>benchmark-generation.mjs</strong> — placeholder non collegato a FloorGenerator reale</li>
+        <li><strong>regression-seeds.json vuoto</strong> — array [] invece di semi reali per test di regressione</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: Completare ECS</h3>
+      <p>Attualmente solo TransformStore e HealthStore sono componenti ECS reali. Tutti gli altri sistemi usano stato locale nelle closure.</p>
+      <ul>
+        <li><strong>HurtboxStore come componente ECS</strong> — già esiste, da collegare al World</li>
+        <li><strong>VelocityStore in SoA</strong> — Float32Array 3D per tutti i nemici, cache-friendly</li>
+        <li><strong>AI StateStore</strong> — stato FSM per entità come TypedArray (enum → Uint8Array)</li>
+        <li>Ricerca 2025: ECS SoA TypedArray scala da 20 a 10.000 entità senza degradazione</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: Aggiornare Rapier SIMD</h3>
+      <p>Rapier 0.19.3 è in uso. Il report Dimforge 2025 indica che i nuovi package NPM WASM-SIMD sono <strong>2-5× più veloci</strong>.</p>
+      <ul>
+        <li>Upgrade a <code>@dimforge/rapier3d-compat@0.21+</code> (SIMD stabile su tutti i browser 2025)</li>
+        <li>Nuova BVH dinamica con ribilanciamento automatico — migliore per dungeon procedurali con collider creati/distrutti dinamicamente</li>
+        <li>Voxel collider support — utile per muri distruttibili futuri (scavo)</li>
+        <li>25% speedup solver già incluso nelle nuove versioni</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: Build Pipeline Asset</h3>
+      <p>gltf-transform è già in roadmap ma non integrato. Le best practice 2025 richiedono asset ottimizzati prima del deploy.</p>
+      <div class="tech-block">
+        <span class="comment"># Draco compression: -90% size</span><br>
+        gltf-transform optimize assets/*.glb --draco<br>
+        <span class="comment"># KTX2 texture: -10x VRAM</span><br>
+        gltf-transform etc1s assets/*.glb --slots<br>
+        <span class="comment"># Verify output</span><br>
+        gltf-transform inspect assets/*.glb
+      </div>
+      <ul>
+        <li>Draco geometry compression: riduzione 90-95% del peso GLB</li>
+        <li>KTX2 texture compression: riduzione ~10× del VRAM usato</li>
+        <li>Script CI già pronto in .github/workflows/verify.yml</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: PWA + Offline</h3>
+      <p>Il gioco usa IndexedDB per il salvataggio. Aggiungere Service Worker lo rende <em>installabile</em> e giocabile offline.</p>
+      <ul>
+        <li><strong>Vite PWA Plugin</strong> — genera service worker e manifest automaticamente</li>
+        <li><strong>Cache strategy</strong> — CacheFirst per asset statici, NetworkFirst per eventuali leaderboard future</li>
+        <li><strong>Installabile</strong> — icona su desktop/mobile, esperienza app nativa senza app store</li>
+        <li>Il save su IndexedDB già presente è compatibile offline natively</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="priority-block high">
+    <h4>🔴 PRIORITÀ ALTA — EntityId centralizzato</h4>
+    <p>Consolidare EntityId in un'unica fonte (<code>src/ecs/EntityAllocator.ts</code>) e importarlo ovunque. Il debito attuale è a basso rischio ma cresce con ogni nuovo sistema aggiunto.</p>
+  </div>
+  <div class="priority-block med">
+    <h4>🟡 PRIORITÀ MEDIA — QualityController wiring</h4>
+    <p>ThreeRendererService deve leggere <code>qualityController.profile</code> per applicare shadow map size, max luci e particle count. Oggi il tier degrada ma nessun sistema risponde.</p>
+  </div>
+  <div class="priority-block low">
+    <h4>🟢 PRIORITÀ BASSA — Benchmark reali</h4>
+    <p>benchmark-generation.mjs è un placeholder. Collegarlo a FloorGenerator reale permetterebbe di monitorare regressioni di performance della generazione procedurale in CI.</p>
+  </div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════ 3. DESIGN ═══════════════════════════════════ -->
+<div class="section" id="design">
+  <div class="section-header">
+    <div class="section-icon" style="background:rgba(106,51,77,0.15);color:#C080A0;">🎨</div>
+    <div>
+      <h2>3. Design & Direzione Artistica</h2>
+      <div class="sub">Art Bible, coerenza visiva, identità "Egyptian Noir", UX/UI</div>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <h3>✅ Identità Visiva "Egyptian Noir"</h3>
+      <ul>
+        <li><strong>Palette canonica a 8 colori</strong> — ben definita con ruoli semantici chiari (oro=ricompensa, rosso emissivo=pericolo, turchese=conoscenza)</li>
+        <li><strong>Regola dei 3 secondi</strong> — ogni screenshot deve comunicare "La Piramide Perduta"</li>
+        <li><strong>Silhouette come primo canale informativo</strong> — 6 famiglie distinte, nessun nemico condivide forma con landmark critico</li>
+        <li><strong>Luce come personaggio</strong> — la torcia come SpotLight calda + ambient PointLight, flicker a 5 sinusoidi</li>
+        <li><strong>Art Bible completa</strong> — contratto design↔rendering documentato</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>⚠️ Gap di Design Visivo</h3>
+      <ul>
+        <li><strong>Font titoli non integrato</strong> — Cinzel (OFL) non ancora self-hostato; interfaccia usa font di sistema</li>
+        <li><strong>Nessun geroglifico reale</strong> — Noto Sans Egyptian Hieroglyphs non integrato; testi decorativi usano placeholder</li>
+        <li><strong>HUD senza tema coerente</strong> — barre HP/torcia funzionali ma senza il look "papiro annerito" completo</li>
+        <li><strong>Main menu minimale</strong> — funzionale ma senza artwork di background che comunichi il tema</li>
+        <li><strong>Nessuna transizione narrativa</strong> — tra i piani manca un "momento cinematografico" (testo geroglifico + sfondo)</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: Font e Typography</h3>
+      <p>L'identità egiziana passa molto dai font. Cinzel ha un'estetica epigrafic romana-egiziana perfetta per il tone del gioco.</p>
+      <ul>
+        <li>Integrare <strong>@fontsource/cinzel</strong> — 1 riga in main.ts, nessuna CDN esterna</li>
+        <li>Integrare <strong>Noto Sans Egyptian Hieroglyphs</strong> per decorazioni autentiche nei corridoi</li>
+        <li>Font per body text: <strong>Josefin Slab</strong> o <strong>Playfair Display</strong> per i testi HUD</li>
+        <li>Geroglifici emissivi sui muri procedurali — già l'infrastruttura TSL è pronta (G-16)</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: UX / Lettura Informazioni</h3>
+      <p>La ricerca game design 2025 enfatizza che in un roguelike FPS le info critiche devono essere leggibili in &lt;200ms sotto pressione.</p>
+      <ul>
+        <li><strong>Barra torcia come bordo circolare bruciante</strong> — già descritto in Art Bible, da implementare in CSS/SVG dinamico</li>
+        <li><strong>Indicatore direzione danno</strong> — flash direzionale sul bordo schermo quando si riceve danno</li>
+        <li><strong>Minimappa: colori per ruolo stanza</strong> — ENTRY verde, TREASURE dorato, EXIT turchese, AMBUSH rosso</li>
+        <li><strong>Overlay Ka: layout ad albero visivo</strong> — oggi testuale, da evolvere in grafo radiale SVG</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: Transizioni e Atmosfera</h3>
+      <p>I momenti narrativi in un Egyptian Noir FPS sono preziosi per costruire tensione senza cutscene costose.</p>
+      <ul>
+        <li><strong>Testo geroglifico a comparsa</strong> — tra i piani, animazione testo da destra (come iscrizione sul muro)</li>
+        <li><strong>Death screen tematico</strong> — ora funzionale, da arricchire con citazione egiziana e immagine del Libro dei Morti</li>
+        <li><strong>Intro piano con camera pan</strong> — già implementata per piano 1; estendere con varianti per piani 2-10</li>
+        <li><strong>Musica adattiva a 3 stati</strong> — esplorazione (ambience), tensione (nemico vicino), combattimento (battito)</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: Coerenza del Materiale</h3>
+      <p>Le best practice PBR 2025 richiedono coerenza fisica dei materiali. Il progetto usa textures CC0 su pavimento, mancano quelle sui muri.</p>
+      <ul>
+        <li><strong>ambientCG "Plaster 001"</strong> — texture intonaco per muri interni, roughness 0.88</li>
+        <li><strong>ambientCG "Sandstone 011"</strong> — texture muri corridoi esterni</li>
+        <li><strong>Normal maps su tutti i materiali</strong> — già struttura pronta (wall_sandstone_n.jpg presente)</li>
+        <li><strong>Gold material per landmark</strong> — roughness 0.4, metalness 0.9, emissive basso (#2A1800)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════ 4. FLUIDITÀ ═══════════════════════════════════ -->
+<div class="section" id="fluidita">
+  <div class="section-header">
+    <div class="section-icon" style="background:rgba(255,193,7,0.1);color:#FFD54F;">⚡</div>
+    <div>
+      <h2>4. Fluidità & Stabilità</h2>
+      <div class="sub">Frame rate, stuttering, game loop, recupero lag, input responsiveness</div>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <h3>✅ Fondamenta Solide</h3>
+      <ul>
+        <li><strong>Fixed step clock a 60Hz</strong> — simulazione a passo fisso, max 5 step di recupero (no spiral of death)</li>
+        <li><strong>Mouse smoothing esponenziale</strong> — filtro configurable 0-95% sullo yaw/pitch, no scatti da delta grezzi</li>
+        <li><strong>AI bucketing per EntityId</strong> — decisioni AI distribuite nel tempo, nessun spike CPU sincrono</li>
+        <li><strong>Adaptive quality controller</strong> — degrada il tier se frame time supera soglia</li>
+        <li><strong>Worker thread per generazione</strong> — FloorGenerator su web worker, non blocca il main thread</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>⚠️ Gap di Fluidità</h3>
+      <ul>
+        <li><strong>QualityController non wired</strong> — il tier degrada ma renderer non legge i limiti → nessun effetto reale</li>
+        <li><strong>Shadow map non scalabile</strong> — size fissa indipendentemente dal tier di qualità</li>
+        <li><strong>Nessun object pool per VFX</strong> — particelle create/distrutte ogni frame invece di essere riusate (già parzialmente in Vfx.ts pool da 128)</li>
+        <li><strong>GLB loader senza streaming</strong> — tutti i 12 modelli caricati in parallelo al bootstrap (potenziale spike)</li>
+        <li><strong>Nessuna frustum culling esplicita</strong> — Three.js la fa automaticamente ma non per landmark fuori dalla vista in dungeon procedurali</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Completare QualityController Wiring</h3>
+      <p>Il sistema esiste, basta connettere i profili al renderer. Investimento basso, impatto alto su dispositivi medi.</p>
+      <div class="tech-block">
+        <span class="comment">// In ThreeRendererService, leggere il profilo:</span><br>
+        const p = quality.profile;<br>
+        dirLight.shadow.mapSize.set(<br>
+        &nbsp;&nbsp;p.shadowMapSize, p.shadowMapSize<br>
+        );<br>
+        torchFlame.setMaxParticles(p.maxParticles);<br>
+        bloom.strength = p.bloomStrength;
+      </div>
+      <ul>
+        <li>Tier LOW: shadow 512, max 3 luci, bloom off</li>
+        <li>Tier MED: shadow 1024, max 5 luci, bloom ridotto</li>
+        <li>Tier HIGH: shadow 2048, max 8 luci, bloom pieno</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 InstancedMesh per Nemici Multipli</h3>
+      <p>Con 6+ archetipi nemici attivi simultaneamente, InstancedMesh riduce le draw call da N a 1 per archetipo.</p>
+      <ul>
+        <li><strong>SCARAB</strong> — possono comparire in sciami (5-8 unità), InstancedMesh ideale</li>
+        <li><strong>Corridoi modulari</strong> — stessi muri ripetuti N volte → BatchedMesh</li>
+        <li>Ricerca Three.js 2025: target &lt;100 draw call per frame stabile a 60fps</li>
+        <li><code>@three.ez/instanced-mesh</code> — library con frustum culling + BVH già integrati</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Occlusion Culling per Dungeon</h3>
+      <p>Nei dungeon procedurali, stanze non visibili dal player consumano GPU inutilmente. Three.js non ha occlusion culling nativo.</p>
+      <ul>
+        <li><strong>Portal-based culling</strong> — nelle porte del dungeon, disabilitare la stanza oltre se non visibile (pattern classico BSP)</li>
+        <li><strong>Distanza massima di visibilità</strong> — FogExp2 già presente; abbassare far plane a 40-50m</li>
+        <li><strong>Visibilità per stanza</strong> — ogni stanza come gruppo Three.js, toggle visible=false per stanze non adiacenti</li>
+        <li>Implementazione: O(N stanze adiacenti) invece di O(tutte le stanze)</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Input Latency Optimization</h3>
+      <p>La ricerca FPS 2025 mostra che la latenza di input percepita è il parametro di "feel" più critico nei giochi d'azione.</p>
+      <ul>
+        <li><strong>Pointer Lock API check</strong> — già presente; assicurarsi che il mouse-look non passi per nessun setTimeout</li>
+        <li><strong>Input pre-processing separato</strong> — processare input prima dell'inizio del fixed step, non dopo</li>
+        <li><strong>requestAnimationFrame priority</strong> — usare <code>scheduler.postTask</code> su Chrome per garantire priorità massima al frame render</li>
+        <li><strong>Input buffer salto/schivata</strong> — già presente (coyote time) — estendere anche alla schivata</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════ 5. RAPIDITÀ ═══════════════════════════════════ -->
+<div class="section" id="rapidita">
+  <div class="section-header">
+    <div class="section-icon" style="background:rgba(229,57,53,0.1);color:#EF9A9A;">🚀</div>
+    <div>
+      <h2>5. Rapidità & Caricamento</h2>
+      <div class="sub">Time-to-play, asset loading, bundle size, cold start</div>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <h3>✅ Stack di Build Moderno</h3>
+      <ul>
+        <li><strong>Vite 8 + Rolldown</strong> — bundler più veloce disponibile nel 2026, HMR istantaneo</li>
+        <li><strong>ES2022 target</strong> — no transpilazione inutile per browser moderni</li>
+        <li><strong>Code splitting</strong> — generation.worker.ts è già un entry point separato</li>
+        <li><strong>Fire-and-forget preload</strong> — 12 GLB caricati in background senza bloccare il bootstrap</li>
+        <li><strong>Primitive fallback</strong> — se GLB manca, usa geometria di test (mai crash)</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>⚠️ Gap di Performance al Caricamento</h3>
+      <ul>
+        <li><strong>Texture non compresse</strong> — floor_stone.jpg = 1.1MB, sand_desert_n.jpg = 1.2MB — dovrebbero essere KTX2/WebP</li>
+        <li><strong>Rapier WASM</strong> — ~2MB aggiuntivi al caricamento, non comprimibile facilmente</li>
+        <li><strong>12 GLB senza compressione Draco</strong> — ~3MB totali non ottimizzati</li>
+        <li><strong>Nessun loading screen con progress</strong> — loading generico senza feedback granulare</li>
+        <li><strong>Nessuna PWA / installazione offline</strong> — ogni sessione riscarica tutto</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Ottimizzazione Texture KTX2</h3>
+      <p>Le 5 texture JPEG da ~700KB-1.2MB in public/textures possono ridursi del 60-80% in formato GPU-native.</p>
+      <ul>
+        <li>Convertire in <strong>KTX2 + Basis Universal</strong> via gltf-transform</li>
+        <li>Three.js KTX2Loader già disponibile in three/examples/jsm/loaders</li>
+        <li>Compressione adattiva: ETC1S per albedo (qualità bassa), UASTC per normal map</li>
+        <li>Risparmio stimato: ~4MB → ~800KB per le texture attuali</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Progressive Loading con Progress Bar</h3>
+      <p>La schermata di caricamento attuale è generica. Un loading con progress aumenta la percezione di velocità.</p>
+      <ul>
+        <li><strong>Staged loading</strong>: (1) Rapier WASM → (2) generazione floor → (3) GLB nemici → (4) texture</li>
+        <li><strong>Progress bar animata</strong> con geroglifici che si rivelano progressivamente</li>
+        <li><strong>Quote dal "Libro dei Morti"</strong> — durante il caricamento, testi tematici brevi</li>
+        <li>Loading screen già in main.ts — basta aggiungere progress callback agli asset loader</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 PWA per Installazione e Offline</h3>
+      <p>Con 100-200MB di asset budget realistico, una PWA rende il gioco installabile su desktop e mobile.</p>
+      <ul>
+        <li><code>vite-plugin-pwa</code> — genera manifest.webmanifest e service worker automaticamente</li>
+        <li><strong>Icona PNG 512×512</strong> — logo piramide con stile Egyptian Noir</li>
+        <li><strong>Background color</strong> per splash: #0B0908 (già definito in Art Bible)</li>
+        <li>Service worker con <strong>Workbox cache-first</strong> su asset statici</li>
+        <li>Installazione aumenta session duration del 30-50% (dati itch.io 2025)</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Code Splitting Aggressivo</h3>
+      <p>Il bundle attuale include tutto in un unico chunk. Split per sistemi consente caricamento progressivo.</p>
+      <ul>
+        <li><strong>Lazy import AI</strong> — EnemyAI caricato solo alla prima scena con nemici</li>
+        <li><strong>Lazy import audio</strong> — WebAudioEngine solo dopo il primo gesto utente</li>
+        <li><strong>Dynamic import per piani avanzati</strong> — texture/asset dei piani 6-10 caricati al piano 4</li>
+        <li>Vite config: <code>manualChunks</code> per separare three/rapier/game dal codice iniziale</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════ 6. GRAFICA ═══════════════════════════════════ -->
+<div class="section" id="graphisme">
+  <div class="section-header">
+    <div class="section-icon" style="background:rgba(138,115,80,0.15);color:var(--sand);">🖥️</div>
+    <div>
+      <h2>6. Grafica & Rendering</h2>
+      <div class="sub">Three.js, WebGPU/WebGL2, post-processing, shader TSL, materiali PBR</div>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <h3>✅ Pipeline di Rendering Solida</h3>
+      <ul>
+        <li><strong>WebGPU primary + WebGL2 fallback</strong> — rilevamento automatico con detectCapabilities()</li>
+        <li><strong>UnrealBloomPass</strong> — bloom selettivo su WebGL2 con accessibilità (contrasto alto → riduzione)</li>
+        <li><strong>Vignette + film grain DOM</strong> — effetti noir a zero costo GPU (CSS overlay)</li>
+        <li><strong>TSL materiali procedurali</strong> — geroglifici emissivi, sabbia granulare, dissolve nemici</li>
+        <li><strong>Fiamma torcia procedurale</strong> — cono emissivo + PointLight calda + 5 sinusoidi flicker</li>
+        <li><strong>Dissolve morte nemici</strong> — threshold clip + bordo emissivo dorato</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>⚠️ Gap Grafici</h3>
+      <ul>
+        <li><strong>Nessun modello 3D reale per player</strong> — viewmodel mani/arma non esiste ancora</li>
+        <li><strong>God rays volumetrici</strong> — pianificati (V6) ma non implementati; momenti boss/tesoro senza impatto visivo</li>
+        <li><strong>Shadow mapping su nemici</strong> — ombre dei nemici non realistiche (capsule low-poly)</li>
+        <li><strong>Nessun motion blur</strong> — già pianificato in accessibilità come flag, non implementato</li>
+        <li><strong>Reflection / ambient occlusion</strong> — mancano per ambienti di pietra credibili</li>
+        <li><strong>HDRI environment</strong> — Poly Haven "Sand Dunes" pianificato (T2) ma non integrato</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 WebGPU TSL: Shader Avanzati</h3>
+      <p>Three.js 0.185 ha TSL maturo. Il progetto lo usa già per materiali — si può espandere.</p>
+      <ul>
+        <li><strong>Sand erosion shader</strong> — particelle sabbia che si accumulano agli angoli proceduralmentevia noise TSL</li>
+        <li><strong>Emissive geroglifico pulsante</strong> — oscillazione seno su intensità emissive (già implementato, da raffinare)</li>
+        <li><strong>Torch volumetric cone</strong> — raggio luce visibile come cono di particelle semi-trasparenti TSL</li>
+        <li><strong>God rays via ray-marching TSL</strong> — solo WebGPU, fallback senza su WebGL2</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 HDRI + Ambient Occlusion</h3>
+      <p>L'ambient occlusion di screen-space (SSAO) cambia drasticamente la credibilità degli ambienti di pietra.</p>
+      <ul>
+        <li><strong>SSAOPass</strong> da three/examples/jsm/postprocessing — zero dipendenze extra</li>
+        <li><strong>HDRI da Poly Haven</strong> — "Brown Photostudio 07" per interni di cripta, 4K EXR</li>
+        <li><strong>pmndrs/postprocessing</strong> — alternativa più performante con <code>N8AOPass</code> (N8 AO)</li>
+        <li>SSAO aumenta la percezione di profondità senza costo di geometry reale</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Viewmodel Mani/Arma</h3>
+      <p>In un FPS, il viewmodel è il secondo elemento più visto (dopo il crosshair). La sua assenza è subito percepibile.</p>
+      <ul>
+        <li><strong>Camera separata per viewmodel</strong> — layer separato, nessun clipping con la geometria</li>
+        <li><strong>Animazione procedurale</strong> — oscillazione passo-passo dal PlayerController già disponibile</li>
+        <li><strong>Bob dello sprint</strong> — kick FOV + oscillazione verticale già pianificati come gap cosmetico</li>
+        <li>Risorsa: Mixamo per rig mano + arma, Kenney Assets per la geometria base</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Post-Processing Stack Completo</h3>
+      <p>Con pmndrs/postprocessing il progetto può costruire un look visivo completamente definito in 1-2 pass aggiuntivi.</p>
+      <ul>
+        <li><strong>Chromatic Aberration</strong> — leggera distorsione agli angoli, look "antica lente"</li>
+        <li><strong>Depth of Field</strong> — sfocatura lontano dalla torcia, profondità percepita</li>
+        <li><strong>Color Grading LUT</strong> — tone map warm-shadow/cool-highlight per look "noir antico"</li>
+        <li>Tutti condizionati su accessibilità: reduceMotionBlur, highContrast disabilita grading</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3 style="color:var(--teal);margin:1.5rem 0 0.8rem;font-size:1rem;letter-spacing:1px;">CONFRONTO: STATO ATTUALE VS OBIETTIVO PROFESSIONALE</h3>
+  <table class="comp-table">
+    <thead>
+      <tr>
+        <th>Elemento</th>
+        <th>Stato Attuale</th>
+        <th>Obiettivo</th>
+        <th>Difficoltà</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Bloom</td>
+        <td class="ok">✅ UnrealBloomPass WebGL2</td>
+        <td>Bloom WebGPU nativo (TSL)</td>
+        <td class="warn">Media</td>
+      </tr>
+      <tr>
+        <td>Torcia</td>
+        <td class="ok">✅ SpotLight + fiamma VFX + ambient</td>
+        <td>+ cono volumetrico TSL</td>
+        <td class="warn">Media</td>
+      </tr>
+      <tr>
+        <td>Ombre</td>
+        <td class="warn">🟡 Shadow map fissa, qualità unica</td>
+        <td>Tiered shadow (512/1024/2048)</td>
+        <td class="ok">Bassa</td>
+      </tr>
+      <tr>
+        <td>Materiali</td>
+        <td class="warn">🟡 TSL procedurali + JPEG texture</td>
+        <td>KTX2 + PBR completo + HDRI</td>
+        <td class="warn">Media</td>
+      </tr>
+      <tr>
+        <td>Viewmodel</td>
+        <td class="bad">❌ Nessuno</td>
+        <td>Mano+arma Mixamo riggata</td>
+        <td class="bad">Alta</td>
+      </tr>
+      <tr>
+        <td>Ambient Occlusion</td>
+        <td class="bad">❌ Nessuno</td>
+        <td>SSAO o N8AO pass</td>
+        <td class="ok">Bassa</td>
+      </tr>
+      <tr>
+        <td>God Rays</td>
+        <td class="bad">❌ Pianificato V6</td>
+        <td>Ray-marching TSL WebGPU</td>
+        <td class="bad">Alta</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════ 7. DECORAZIONE ═══════════════════════════════════ -->
+<div class="section" id="decorazione">
+  <div class="section-header">
+    <div class="section-icon" style="background:rgba(24,36,58,0.4);color:#80DEEA;">🏺</div>
+    <div>
+      <h2>7. Decorazione & Ambiente</h2>
+      <div class="sub">Asset 3D, landmark, props, texture PBR, audio spaziale, atmosfera</div>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <h3>✅ Infrastruttura Pronta</h3>
+      <ul>
+        <li><strong>12 GLB caricati</strong> — tutti gli archetipi nemici + landmark hanno un modello 3D reale</li>
+        <li><strong>AssetLoader con cache</strong> — GLTFLoader + cache Map, fallback a primitive</li>
+        <li><strong>9 famiglie landmark semantiche</strong> — altar, brazier, glyph, obelisk, portal, sarcophagus, statue, well, relic</li>
+        <li><strong>Texture PBR parziali</strong> — floor_stone, sand_desert, wall_sandstone + normal maps presenti</li>
+        <li><strong>Drone ambientale procedurale</strong> — 3 layer (55Hz + quinta + shimmer), LFO tensione modulato dal buio</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>⚠️ Gap Decorativi Critici</h3>
+      <ul>
+        <li><strong>Muri senza texture PBR reale</strong> — materiale piatto sui muri (wall_sandstone.jpg usato solo su alcuni)</li>
+        <li><strong>Nessun prop di riempimento</strong> — stanze vuote eccetto landmark; urne, casse, scheletri mancano</li>
+        <li><strong>Nessun audio spaziale per ambiente</strong> — eco della cripta, passi sabbia, distanza-attenuati mancano</li>
+        <li><strong>Soffitto non texturizzato</strong> — vuoto scuro; anche solo una texture ripetuta di pietra aumenterebbe la credibilità</li>
+        <li><strong>Corridoi identici</strong> — stessa larghezza/altezza senza variazione visiva; nessun prop di corridoio</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: Props di Riempimento</h3>
+      <p>Un dungeon credibile ha "clutter" — oggetti di sfondo che raccontano la storia senza essere interattivi.</p>
+      <ul>
+        <li><strong>Kenney — Asset Pack "Dungeon"</strong> (CC0) — urne, ossi, torce a parete, catene</li>
+        <li><strong>ToxSam GLB registry</strong> — già in progetto, contiene "Egyptian temples" con 991+ GLB</li>
+        <li><strong>Generazione procedurale dei props</strong> — per stanza, usare canale RNG "decor" (già esiste!) per posizionare 2-4 props casuali</li>
+        <li>Props come InstancedMesh — urne identiche in più stanze = 1 draw call</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: Audio Spaziale Completo</h3>
+      <p>La ricerca Web Audio 2025 indica che l'audio spaziale HRTF è il singolo miglioramento di immersione più economico.</p>
+      <ul>
+        <li><strong>HRTF selettivo</strong> — applicare a nemici vicini (&lt;10m), semplice stereo pan per lontani</li>
+        <li><strong>Footstep audio contestuale</strong> — sabbia, pietra, acqua a seconda del materiale del pavimento</li>
+        <li><strong>Echo procedurale</strong> — riverbero più lungo in stanze grandi, corto nei corridoi (Web Audio ConvolverNode)</li>
+        <li><strong>Sample reali Kenney/Freesound</strong> — fiamma torcia, passi sabbia, sibilo cobra, strisciare fasciature</li>
+        <li>Budget: 3-5% CPU mobile (target dalla ricerca 2025)</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: Variazione dei Corridoi</h3>
+      <p>Nei dungeon procedurali, la ripetizione visiva è il principale motivo di "dungeon sameness feeling".</p>
+      <ul>
+        <li><strong>Larghezza corridoi variabile</strong> — FloorGenerator già distingue stanze/corridoi; variare larghezza 2-4m</li>
+        <li><strong>Archi procedurali</strong> — aggiungere archi agli ingressi delle stanze con Quaternius Ruins</li>
+        <li><strong>Dettagli di parete</strong> — nicchie con urne o torce ogni 6-8 unità di corridoio</li>
+        <li><strong>Tema visivo per fascia di piano</strong> — già floorProgression.ts ha palette; applicare texture differenti per piani 1-3, 4-6, 7-10</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>💡 Miglioramento: Integrazione Kenney + Sonniss</h3>
+      <p>Le risorse audio CC0/gratuite identificate nella roadmap possono essere integrate in 1-2 sessioni di lavoro.</p>
+      <ul>
+        <li><strong>Kenney Interface Sounds</strong> — UI click/hover (8 sample, 2MB totali)</li>
+        <li><strong>Sonniss GDC Bundle 2024</strong> — footstep, cripta, pietra, fiamma (gigabyte di sample)</li>
+        <li><strong>freesound "torch crackle"</strong> — sample CC0 per fiamma torcia realistica</li>
+        <li><strong>AudioAssetLoader</strong> — già in roadmap, da implementare con preload a bootstrap</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════ 8. FUTURO ═══════════════════════════════════ -->
+<div class="section" id="futuro">
+  <div class="section-header">
+    <div class="section-icon" style="background:rgba(46,139,139,0.2);color:var(--teal);">🔮</div>
+    <div>
+      <h2>8. Prospettive Future</h2>
+      <div class="sub">Roadmap di evoluzione, pubblicazione, monetizzazione, espansione</div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem;">
+    <div>
+      <h3 style="color:var(--gold);font-size:1rem;margin-bottom:1rem;">🗓️ Timeline Consigliata</h3>
+      <div class="timeline">
+        <div class="timeline-item">
+          <h4>Fase 1 — Demo Giocabile (4-6 settimane)</h4>
+          <p>Completare G-03 (tutti gli archetipi), G-04 (AI consumer rumore), G-06 (sample reali). Risultato: 10 minuti di gameplay autentico con 3+ nemici diversi.</p>
+        </div>
+        <div class="timeline-item">
+          <h4>Fase 2 — Polish e Assets (4-6 settimane)</h4>
+          <p>Font (Cinzel), props decorativi, KTX2 texture compression, viewmodel base, SSAO. Risultato: atmosfera Egyptian Noir completa visualmente.</p>
+        </div>
+        <div class="timeline-item">
+          <h4>Fase 3 — Meta-Loop Completo (4-6 settimane)</h4>
+          <p>G-05 graft equipaggiabili, 10 piani completi, maledizioni attive, musica adattiva. Risultato: roguelike completo con replayability reale.</p>
+        </div>
+        <div class="timeline-item future">
+          <h4>Fase 4 — Pubblicazione (2 settimane)</h4>
+          <p>PWA, itch.io page con screenshot/trailer, steam wishlist. Deploy WebGPU-first con fallback WebGL2.</p>
+        </div>
+        <div class="timeline-item future">
+          <h4>Fase 5 — Espansione (futuro)</h4>
+          <p>Modalità daily seed (stesso seed per tutti i giocatori ogni giorno), leaderboard, mod support via JSON config.</p>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h3 style="color:var(--gold);font-size:1rem;margin-bottom:1rem;">📈 Opportunità di Mercato 2026</h3>
+      <div class="priority-block future">
+        <h4>WebGPU è mainstream dal 2025</h4>
+        <p>Chrome, Firefox, Safari e Edge supportano tutti WebGPU stabile. Il gioco ha già il renderer WebGPU — è nella posizione perfetta per essere tra i primi titoli browser-native con grafica AAA-adjacent.</p>
+      </div>
+      <div class="priority-block future">
+        <h4>Browser-first è una strategia vincente nel 2026</h4>
+        <p>I link diretti social convertono meglio degli store: la ricerca StraySpark mostra un aumento del 30-40% di conversione "vedo il link → provo il gioco" rispetto ai link Steam. Il tag "giocabile in browser" su itch.io ha trazione crescente.</p>
+      </div>
+      <div class="priority-block future">
+        <h4>FPS Roguelike browser è una nicchia non satura</h4>
+        <p>La ricerca su itch.io mostra pochi competitor FPS roguelike browser-first di qualità. "Egyptian Noir" è un differenziatore di tono: i competitor usano fantasy o sci-fi.</p>
+      </div>
+      <div class="priority-block future">
+        <h4>Daily Seed come retention loop</h4>
+        <p>Modalità "Tomba del Giorno" — stesso seed per tutti i giocatori ogni 24h. Zero server richiesti (seed derivato dalla data). Aumenta drasticamente le sessioni di ritorno.</p>
+      </div>
+    </div>
+  </div>
+
+  <h3 style="color:var(--teal);font-size:1rem;margin-bottom:1rem;letter-spacing:1px;">MIGLIORAMENTI TECNICI FUTURI CHIAVE</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h3>🔮 Comportamenti AI Avanzati</h3>
+      <p>Il sistema AI (percezione, FSM, steering, utility AI) è già presente nel codice ma non wired. L'evoluzione naturale:</p>
+      <ul>
+        <li><strong>Behavior Tree</strong> — sostituire FSM con BT per comportamenti più complessi e componibili</li>
+        <li><strong>SCARAB in sciame</strong> — Swarm AI già in src/ai, mai testata su nemici reali</li>
+        <li><strong>MUMMY sente il respiro</strong> — react a input joystick/tasto anche senza rumore esplicito</li>
+        <li><strong>COBRA posizionale</strong> — naviga verso punti di imboscata anziché inseguire direttamente</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>🔮 Compute Shader per Fisica</h3>
+      <p>Con WebGPU maturo, migrating alcune computazioni a GPU compute offre guadagni 2-10×.</p>
+      <ul>
+        <li><strong>Particle systems GPU-driven</strong> — fiamma/polvere su compute shader, decine di migliaia di particelle</li>
+        <li><strong>Crowd simulation</strong> — SCARAB in sciame da 20+ unità su GPU</li>
+        <li><strong>Ambient occlusion real-time</strong> — SSAO su compute invece di post-process pass</li>
+        <li>Richiede WebGPU (già supportato dal renderer primario del gioco)</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>🔮 Multiplayer Locale / Co-op</h3>
+      <p>Il determinismo del RNG e il design single-player non escludono una futura modalità co-op.</p>
+      <ul>
+        <li><strong>WebRTC P2P</strong> — due giocatori, stesso seed, sincronizzazione eventi tramite CRDTs</li>
+        <li><strong>Modalità "Tomba Condivisa"</strong> — player 1 esplora, player 2 controlla i nemici (asimmetrico)</li>
+        <li>Il determinismo RNG già garantisce risultati identici dati gli stessi input — base ideale per replay e futuro multiplayer</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>🔮 Generazione AI di Contenuto</h3>
+      <p>Il 2026 offre strumenti per generare contenuto narrativo contestuale senza aumentare il bundle size.</p>
+      <ul>
+        <li><strong>Messaggi geroglifici procedurali</strong> — testo narrativo contestuale generato dalla storia della run (morti, nemici sconfitti)</li>
+        <li><strong>Boss unici per run</strong> — parametri nemico generati da seed con nome procedurale egizio</li>
+        <li><strong>Iscrizioni sulle pareti</strong> — hint tattici in "antico egiziano" che cambiano a ogni run</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>🔮 Mobile & Touch</h3>
+      <p>WebGPU è stabile su Android Chrome e iOS Safari 18.2. Il gioco potrebbe girare su mobile con adattamenti.</p>
+      <ul>
+        <li><strong>Virtual joystick</strong> — movimento WASD come doppio joystick touch</li>
+        <li><strong>Gyroscope look</strong> — mouse look tramite giroscopio su mobile (API disponibile)</li>
+        <li><strong>Tile size UI scalabile</strong> — textScale già presente nell'accessibilità</li>
+        <li><strong>Reduced quality tier automatico</strong> — QualityController già pronto; mobile = tier LOW</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>🔮 Steam + Electron Wrapper</h3>
+      <p>La strategia "web demo first → Steam full" è efficace per wishlisting e buzz secondo la ricerca 2026.</p>
+      <ul>
+        <li><strong>Electron wrapper</strong> — il bundle Vite viene servito localmente, nessuna modifica al codice</li>
+        <li><strong>Steam achievements via Greenworks</strong> — mappati agli eventi runtime già presenti (ENEMY_DIED, FLOOR_COMPLETE)</li>
+        <li><strong>Leaderboard daily seed</strong> — differenziatore rispetto alla versione browser gratuita</li>
+        <li>Il progetto ha già tutto (TypeScript, Vite build) per un deploy Electron in &lt;1 settimana</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- FINAL TABLE -->
+  <h3 style="color:var(--teal);margin:2rem 0 0.8rem;font-size:1rem;letter-spacing:1px;">MATRICE PRIORITÀ COMPLETA — TUTTI I GAP E MIGLIORAMENTI</h3>
+  <table class="gap-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Area</th>
+        <th>Miglioramento</th>
+        <th>Priorità</th>
+        <th>Effort</th>
+        <th>Stato</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="gap-id">G-03</td><td>Gameplay</td><td>Tutti gli archetipi nemici materializzabili + HurtboxSystem</td><td class="priority-high">🔴 CRITICA</td><td>Alto</td><td><span class="tag partial">🟡</span></td></tr>
+      <tr><td class="gap-id">G-04</td><td>Gameplay/AI</td><td>Consumer AI rumore, loot scavo, bracieri → Director</td><td class="priority-high">🔴 ALTA</td><td>Alto</td><td><span class="tag partial">🟡</span></td></tr>
+      <tr><td class="gap-id">G-06</td><td>Audio</td><td>Sample reali (Kenney/Sonniss), ambience per piano, musica adattiva</td><td class="priority-high">🔴 ALTA</td><td>Medio</td><td><span class="tag partial">🟡</span></td></tr>
+      <tr><td class="gap-id">QC-1</td><td>Performance</td><td>Wiring QualityController → shadow/bloom/particle limits</td><td class="priority-high">🔴 ALTA</td><td>Basso</td><td><span class="tag todo">⬜</span></td></tr>
+      <tr><td class="gap-id">G-05</td><td>Progressione</td><td>Graft equipaggiabili, loot fisico nel mondo</td><td class="priority-med">🟡 MEDIA</td><td>Alto</td><td><span class="tag partial">🟡</span></td></tr>
+      <tr><td class="gap-id">G-07</td><td>Accessibilità</td><td>amplifiedTelegraphs su nemici reali, torchToggle cleanup</td><td class="priority-med">🟡 MEDIA</td><td>Basso</td><td><span class="tag partial">🟡</span></td></tr>
+      <tr><td class="gap-id">FONT-1</td><td>Design</td><td>Cinzel + Noto Egyptian Hieroglyphs via fontsource</td><td class="priority-med">🟡 MEDIA</td><td>Basso</td><td><span class="tag todo">⬜</span></td></tr>
+      <tr><td class="gap-id">TEX-1</td><td>Grafica</td><td>KTX2 compression su texture (4MB → 800KB)</td><td class="priority-med">🟡 MEDIA</td><td>Basso</td><td><span class="tag todo">⬜</span></td></tr>
+      <tr><td class="gap-id">SSAO-1</td><td>Grafica</td><td>SSAOPass / N8AO per ambienti di pietra credibili</td><td class="priority-med">🟡 MEDIA</td><td>Basso</td><td><span class="tag todo">⬜</span></td></tr>
+      <tr><td class="gap-id">PROP-1</td><td>Decorazione</td><td>Props di riempimento (urne, ossi, torce a parete) via Kenney</td><td class="priority-med">🟡 MEDIA</td><td>Medio</td><td><span class="tag todo">⬜</span></td></tr>
+      <tr><td class="gap-id">RAPIER-1</td><td>Codice</td><td>Upgrade Rapier a versione SIMD (2-5× velocità)</td><td class="priority-med">🟡 MEDIA</td><td>Basso</td><td><span class="tag todo">⬜</span></td></tr>
+      <tr><td class="gap-id">NEW-1</td><td>Gameplay</td><td>Hitstop 3-5 frame su hit confermato</td><td class="priority-med">🟡 MEDIA</td><td>Basso</td><td><span class="tag todo">⬜</span></td></tr>
+      <tr><td class="gap-id">PWA-1</td><td>Rapidità</td><td>vite-plugin-pwa + Service Worker per offline + installazione</td><td class="priority-low">🟢 BASSA</td><td>Basso</td><td><span class="tag todo">⬜</span></td></tr>
+      <tr><td class="gap-id">HRTF-1</td><td>Audio</td><td>HRTF spaziale selettivo per nemici vicini (&lt;10m)</td><td class="priority-low">🟢 BASSA</td><td>Medio</td><td><span class="tag todo">⬜</span></td></tr>
+      <tr><td class="gap-id">ECS-1</td><td>Codice</td><td>Centralizzare EntityId, completare ECS con VelocityStore/AIStateStore</td><td class="priority-low">🟢 BASSA</td><td>Medio</td><td><span class="tag todo">⬜</span></td></tr>
+      <tr><td class="gap-id">V2-1</td><td>Futuro</td><td>Viewmodel mani/arma con animazione procedurale</td><td class="priority-low">🟢 FUTURA</td><td>Alto</td><td><span class="tag future">🔮</span></td></tr>
+      <tr><td class="gap-id">V6-1</td><td>Grafica</td><td>God rays volumetrici TSL per boss/tesoro (WebGPU)</td><td class="priority-low">🟢 FUTURA</td><td>Alto</td><td><span class="tag future">🔮</span></td></tr>
+      <tr><td class="gap-id">DAILY-1</td><td>Futuro</td><td>Modalità "Tomba del Giorno" — seed da data, no server</td><td class="priority-low">🟢 FUTURA</td><td>Basso</td><td><span class="tag future">🔮</span></td></tr>
+      <tr><td class="gap-id">STEAM-1</td><td>Futuro</td><td>Electron wrapper + Steam publishing</td><td class="priority-low">🟢 FUTURA</td><td>Medio</td><td><span class="tag future">🔮</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+</main>
+
+<footer>
+  <div>Report generato — La Piramide Perduta v0.1.0 Vertical Slice — Agosto 2026</div>
+  <div>Analisi codice + Ricerca internet (Three.js, Rapier, Web Audio, Game Design best practices 2025-2026)</div>
+  <div class="glyph">𓂀 𓃭 𓆣 𓇯 𓆣 𓃭 𓂀</div>
+</footer>
+
+</body>
+</html>

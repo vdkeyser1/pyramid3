@@ -1,0 +1,817 @@
+La Piramide Perduta — Analisi Deep & Miglioramenti
+La Piramide Perduta
+Deep Analysis Report — Gap Detection & Improvement Plan
+Egyptian Noir FPS Roguelike · Browser-First · Agosto 2026
+✅ 330+ Tests
+✅ Three.js 0.185 + WebGPU
+✅ Rapier 0.19.3
+✅ TypeScript Strict
+🟡 6 Gap Parziali
+⬜ 8 Gap Aperti
+Vite 8 · Vitest 4 · Playwright
+📊 Executive Summary
+🎮 Gameplay
+⚙️ Codice
+🎨 Design
+⚡ Fluidità
+🚀 Rapidità
+🖥️ Grafica
+🏺 Decorazione
+🔮 Futuro
+📊 Executive Summary
+La Piramide Perduta
+è un FPS roguelike "Egyptian Noir" browser-first in TypeScript con Three.js (WebGPU/WebGL2), fisica Rapier, generazione procedurale, ECS ibrido e 330+ test automatizzati. Il progetto è tecnicamente solido — architettura a layer enforced, determinismo replay, accessibilità a 14 parametri — ma si trova a un punto di svolta: la struttura è pronta, ma molti sistemi (combattimento AI, audio reale, loot, meta-loop) esistono come moduli testati ma
+non ancora connessi al loop di gioco reale
+.
+La ricerca internet effettuata rivela che il gioco si trova in una posizione ideale per il 2026: WebGPU è finalmente stabile su tutti i browser principali, la distribuzione browser-first è in forte crescita su itch.io e link diretti social, e Rapier ha appena ricevuto miglioramenti di velocità del 2-5× con SIMD WASM. Le opportunità di differenziazione sono significative.
+Questo report analizza
+7 aree
+del progetto, identifica gap specifici e propone miglioramenti concreti basati sulle best practice del 2025-2026.
+Gameplay
+6/10
+Basi solide, AI scollegata
+Codice
+8.5/10
+Architettura eccellente
+Design
+8/10
+Egyptian Noir coerente
+Fluidità
+7/10
+60Hz, QC non wired
+Rapidità
+6.5/10
+Vite rapido, asset pesanti
+Grafica
+7.5/10
+VFX buoni, asset stub
+Decorazione
+5/10
+Placeholder, no PBR reali
+Futuro
+9/10
+Stack perfetto per 2026
+🎮
+1. Gameplay & Giocabilità
+Meccaniche, AI, combattimento, progressione, feedback loop
+✅ Punti di Forza Attuali
+Torcia come risorsa critica
+— meccanica unica che governa esplorazione, stealth e combattimento simultaneamente
+Fisica Rapier reale
+— movimento FPS con collisioni vere, autostep, coyote time, input buffer per il salto
+Sistema Ka
+— 8 nodi con effetti reali (HP, torcia, resurrezione, bastone)
+Formula danno robusta
+— armatura cappata a 0.75, danno minimo 1, nessun NaN propagato
+Gramática combattimento
+— 4 fasi READY→ANTICIPATION→ACTIVE→RECOVERY per giocatore e nemici
+Ka Echo
+— meccanica sonar originale che rivela l'ambiente
+⚠️ Gap Critici di Gameplay
+AI scollegata
+— percezione, FSM, pathfinding esistono ma non pilotano nemici reali nella scena
+Solo 2 nemici materializzabili
+— SCARAB e MUMMY attivi, altri 6 archetipi solo su carta
+Nessun loot drop reale
+— monete conteggiate ma nessun oggetto fisico nel mondo
+Scavo senza ricompensa meccanica
+— event TREASURE_FOUND genera Frammenti ma nessun oggetto
+Meta-loop incompleto
+— discesa multi-floor funziona ma senza vera escalation di tensione
+Armi senza effetti
+— Khopesh/Bastone nominati nell'HUD ma senza meccaniche reali
+💡 Miglioramento: Feedback Loop di Combattimento
+La ricerca mostra che i migliori FPS roguelike (Hades, DUSK, Boomerang X) usano
+hitstop
+e
+screen freeze
+micro (2-4 frame) per comunicare l'impatto. Il gioco ha già camera shake — manca il freeze frame.
+Aggiungere
+hitstop
+di 3-5 frame su hit confermato (pausa del loop fisico, non del rendering)
+Hitmarker direzionale
+già presente — estendere con varianti per colpo critico / kill
+Crosshair dinamico
+che si espande con lo sprint/salto e si stringe accovacciato
+Sound design unico per archetipo
+— il cobra deve suonare diversamente dalla mummia
+💡 Miglioramento: Stealth e Torcia
+Il sistema torcia è il cuore del gioco ma manca di
+decision points
+interessanti basati sull'interazione luce-ombra.
+Proiezione ombra del player
+— i nemici dovrebbero reagire all'ombra proiettata dalla torcia sul pavimento (già Rapier raycast)
+Zona penombra
+— aggiungere stato intermedio LOW_LIGHT dove il player è "parzialmente visibile" (torch affinity a ±0.3)
+Counter-play visivo torcia posata
+— quando posata, il cono di luce fisso diventa un "esca" per lo Scarabeo (torch affinity +0.7)
+Bracieri come checkpoint tattici
+— non solo healing, ma riduzione permanente dell'aggressività nemica nella stanza
+💡 Miglioramento: Progressione e Ricompense
+Best practice roguelike 2025: le ricompense devono essere immediate, visibili e meccanicamente interessanti (non solo numeriche).
+Loot fisico nel mondo
+— il tesoro deve generare oggetti visibili raccoglibili (InteractE) con effetto immediato
+Armi trovate nel dungeon
+— Khopesh/Bastone come drop di stanze speciali, non solo dalla fucina
+Maledizioni attive
+— "Sangue di Ra" è cablato ma le maledizioni non esistono ancora come meccanica antagonista
+Bestiario come feedback
+— aggiungere hint tattici visibili al bestiario dopo aver incontrato un nemico
+💡 Miglioramento: Onboarding Progressivo
+Il tutorial attuale è un overlay statico. Le best practice 2025 per FPS roguelike raccomandano il
+tutorial organico
+.
+Piano 1 garantito semplice
+— solo SCARAB (già parzialmente fatto con InitialEncounterPlanner)
+Primo braciere sempre visibile
+— insegnare la meccanica torcia senza spiegazione testuale
+Porte segnalate chiaramente
+— già il doorway snap assist c'è, manca feedback visivo del corridoio raggiungibile
+Death screen con hint contestuale
+— "Sei morto per un attacco pesante della Mummia → schiva lateralmente durante il telegrafo"
+TABELLA GAP GAMEPLAY
+Gap
+Descrizione
+Priorità
+Impatto
+Stato
+G-03
+HurtboxSystem generale + tutti i 6 archetipi materializzabili
+CRITICA
+Il gioco non è giocabile senza nemici reali
+🟡 Parziale
+G-04
+AI consumer del rumore, loot scavo, bracieri → Director
+ALTA
+Stealth e torcia senza conseguenze AI
+🟡 Parziale
+G-05
+Graft equipaggiabili, armi come oggetti nel mondo
+MEDIA
+Progressione superficiale senza oggetti fisici
+🟡 Parziale
+NEW-1
+Hitstop / freeze frame sul colpo (2-4 tick)
+MEDIA
+Game feel percepito molto più soddisfacente
+⬜ Non pianificato
+NEW-2
+Crosshair dinamico (espansione sprint/salto)
+BASSA
+FPS readability standard
+⬜ Non pianificato
+NEW-3
+Maledizioni attive come meccanica antagonista
+BASSA
+Aggiunge tension e decisioni "Sangue di Ra"
+🔮 V2
+⚙️
+2. Codice & Architettura
+TypeScript, ECS, architettura a layer, testing, build pipeline
+✅ Eccellenze Tecniche
+Architettura a layer enforced staticamente
+— verify-boundaries script vieta import illegali tra layer a build time
+TypeScript strict mode completo
+— noUncheckedIndexedAccess, exactOptionalPropertyTypes, verbatimModuleSyntax
+RNG deterministico a 6 canali
+— xorshift32 con salt per canale, replay-safe
+Property-based testing
+— fast-check con 100+ run su invarianti combattimento e RNG
+4 tsconfig separati
+— simulation senza DOM, worker con WebWorker lib, nessuna contaminazione accidentale
+Result<T,E> pattern
+— nessuna eccezione nei path critici di validazione
+330 test, 11/11 e2e
+— copertura eccellente per un vertical slice
+⚠️ Debiti Tecnici Identificati
+EntityId ridichiarato
+— stesso branded type in 4+ file diversi (EntityAllocator, Director, combat, enemies) — rischio futuro di incompatibilità
+PlayerCharacterController è l'unica class
+— coerente ma segnalato come "andrebbe in src/adapters/" nel codice stesso
+HurtboxSystem manuale
+— GameApplication popola direttamente HurtboxStore invece di delegare a un sistema
+QualityController non letto
+— adatta il tier ma nessun sistema di rendering legge profile per applicare i limiti
+benchmark-generation.mjs
+— placeholder non collegato a FloorGenerator reale
+regression-seeds.json vuoto
+— array [] invece di semi reali per test di regressione
+💡 Miglioramento: Completare ECS
+Attualmente solo TransformStore e HealthStore sono componenti ECS reali. Tutti gli altri sistemi usano stato locale nelle closure.
+HurtboxStore come componente ECS
+— già esiste, da collegare al World
+VelocityStore in SoA
+— Float32Array 3D per tutti i nemici, cache-friendly
+AI StateStore
+— stato FSM per entità come TypedArray (enum → Uint8Array)
+Ricerca 2025: ECS SoA TypedArray scala da 20 a 10.000 entità senza degradazione
+💡 Miglioramento: Aggiornare Rapier SIMD
+Rapier 0.19.3 è in uso. Il report Dimforge 2025 indica che i nuovi package NPM WASM-SIMD sono
+2-5× più veloci
+.
+Upgrade a
+@dimforge/rapier3d-compat@0.21+
+(SIMD stabile su tutti i browser 2025)
+Nuova BVH dinamica con ribilanciamento automatico — migliore per dungeon procedurali con collider creati/distrutti dinamicamente
+Voxel collider support — utile per muri distruttibili futuri (scavo)
+25% speedup solver già incluso nelle nuove versioni
+💡 Miglioramento: Build Pipeline Asset
+gltf-transform è già in roadmap ma non integrato. Le best practice 2025 richiedono asset ottimizzati prima del deploy.
+# Draco compression: -90% size
+gltf-transform optimize assets/*.glb --draco
+# KTX2 texture: -10x VRAM
+gltf-transform etc1s assets/*.glb --slots
+# Verify output
+gltf-transform inspect assets/*.glb
+Draco geometry compression: riduzione 90-95% del peso GLB
+KTX2 texture compression: riduzione ~10× del VRAM usato
+Script CI già pronto in .github/workflows/verify.yml
+💡 Miglioramento: PWA + Offline
+Il gioco usa IndexedDB per il salvataggio. Aggiungere Service Worker lo rende
+installabile
+e giocabile offline.
+Vite PWA Plugin
+— genera service worker e manifest automaticamente
+Cache strategy
+— CacheFirst per asset statici, NetworkFirst per eventuali leaderboard future
+Installabile
+— icona su desktop/mobile, esperienza app nativa senza app store
+Il save su IndexedDB già presente è compatibile offline natively
+🔴 PRIORITÀ ALTA — EntityId centralizzato
+Consolidare EntityId in un'unica fonte (
+src/ecs/EntityAllocator.ts
+) e importarlo ovunque. Il debito attuale è a basso rischio ma cresce con ogni nuovo sistema aggiunto.
+🟡 PRIORITÀ MEDIA — QualityController wiring
+ThreeRendererService deve leggere
+qualityController.profile
+per applicare shadow map size, max luci e particle count. Oggi il tier degrada ma nessun sistema risponde.
+🟢 PRIORITÀ BASSA — Benchmark reali
+benchmark-generation.mjs è un placeholder. Collegarlo a FloorGenerator reale permetterebbe di monitorare regressioni di performance della generazione procedurale in CI.
+🎨
+3. Design & Direzione Artistica
+Art Bible, coerenza visiva, identità "Egyptian Noir", UX/UI
+✅ Identità Visiva "Egyptian Noir"
+Palette canonica a 8 colori
+— ben definita con ruoli semantici chiari (oro=ricompensa, rosso emissivo=pericolo, turchese=conoscenza)
+Regola dei 3 secondi
+— ogni screenshot deve comunicare "La Piramide Perduta"
+Silhouette come primo canale informativo
+— 6 famiglie distinte, nessun nemico condivide forma con landmark critico
+Luce come personaggio
+— la torcia come SpotLight calda + ambient PointLight, flicker a 5 sinusoidi
+Art Bible completa
+— contratto design↔rendering documentato
+⚠️ Gap di Design Visivo
+Font titoli non integrato
+— Cinzel (OFL) non ancora self-hostato; interfaccia usa font di sistema
+Nessun geroglifico reale
+— Noto Sans Egyptian Hieroglyphs non integrato; testi decorativi usano placeholder
+HUD senza tema coerente
+— barre HP/torcia funzionali ma senza il look "papiro annerito" completo
+Main menu minimale
+— funzionale ma senza artwork di background che comunichi il tema
+Nessuna transizione narrativa
+— tra i piani manca un "momento cinematografico" (testo geroglifico + sfondo)
+💡 Miglioramento: Font e Typography
+L'identità egiziana passa molto dai font. Cinzel ha un'estetica epigrafic romana-egiziana perfetta per il tone del gioco.
+Integrare
+@fontsource/cinzel
+— 1 riga in main.ts, nessuna CDN esterna
+Integrare
+Noto Sans Egyptian Hieroglyphs
+per decorazioni autentiche nei corridoi
+Font per body text:
+Josefin Slab
+o
+Playfair Display
+per i testi HUD
+Geroglifici emissivi sui muri procedurali — già l'infrastruttura TSL è pronta (G-16)
+💡 Miglioramento: UX / Lettura Informazioni
+La ricerca game design 2025 enfatizza che in un roguelike FPS le info critiche devono essere leggibili in <200ms sotto pressione.
+Barra torcia come bordo circolare bruciante
+— già descritto in Art Bible, da implementare in CSS/SVG dinamico
+Indicatore direzione danno
+— flash direzionale sul bordo schermo quando si riceve danno
+Minimappa: colori per ruolo stanza
+— ENTRY verde, TREASURE dorato, EXIT turchese, AMBUSH rosso
+Overlay Ka: layout ad albero visivo
+— oggi testuale, da evolvere in grafo radiale SVG
+💡 Miglioramento: Transizioni e Atmosfera
+I momenti narrativi in un Egyptian Noir FPS sono preziosi per costruire tensione senza cutscene costose.
+Testo geroglifico a comparsa
+— tra i piani, animazione testo da destra (come iscrizione sul muro)
+Death screen tematico
+— ora funzionale, da arricchire con citazione egiziana e immagine del Libro dei Morti
+Intro piano con camera pan
+— già implementata per piano 1; estendere con varianti per piani 2-10
+Musica adattiva a 3 stati
+— esplorazione (ambience), tensione (nemico vicino), combattimento (battito)
+💡 Miglioramento: Coerenza del Materiale
+Le best practice PBR 2025 richiedono coerenza fisica dei materiali. Il progetto usa textures CC0 su pavimento, mancano quelle sui muri.
+ambientCG "Plaster 001"
+— texture intonaco per muri interni, roughness 0.88
+ambientCG "Sandstone 011"
+— texture muri corridoi esterni
+Normal maps su tutti i materiali
+— già struttura pronta (wall_sandstone_n.jpg presente)
+Gold material per landmark
+— roughness 0.4, metalness 0.9, emissive basso (#2A1800)
+⚡
+4. Fluidità & Stabilità
+Frame rate, stuttering, game loop, recupero lag, input responsiveness
+✅ Fondamenta Solide
+Fixed step clock a 60Hz
+— simulazione a passo fisso, max 5 step di recupero (no spiral of death)
+Mouse smoothing esponenziale
+— filtro configurable 0-95% sullo yaw/pitch, no scatti da delta grezzi
+AI bucketing per EntityId
+— decisioni AI distribuite nel tempo, nessun spike CPU sincrono
+Adaptive quality controller
+— degrada il tier se frame time supera soglia
+Worker thread per generazione
+— FloorGenerator su web worker, non blocca il main thread
+⚠️ Gap di Fluidità
+QualityController non wired
+— il tier degrada ma renderer non legge i limiti → nessun effetto reale
+Shadow map non scalabile
+— size fissa indipendentemente dal tier di qualità
+Nessun object pool per VFX
+— particelle create/distrutte ogni frame invece di essere riusate (già parzialmente in Vfx.ts pool da 128)
+GLB loader senza streaming
+— tutti i 12 modelli caricati in parallelo al bootstrap (potenziale spike)
+Nessuna frustum culling esplicita
+— Three.js la fa automaticamente ma non per landmark fuori dalla vista in dungeon procedurali
+💡 Completare QualityController Wiring
+Il sistema esiste, basta connettere i profili al renderer. Investimento basso, impatto alto su dispositivi medi.
+// In ThreeRendererService, leggere il profilo:
+const p = quality.profile;
+dirLight.shadow.mapSize.set(
+p.shadowMapSize, p.shadowMapSize
+);
+torchFlame.setMaxParticles(p.maxParticles);
+bloom.strength = p.bloomStrength;
+Tier LOW: shadow 512, max 3 luci, bloom off
+Tier MED: shadow 1024, max 5 luci, bloom ridotto
+Tier HIGH: shadow 2048, max 8 luci, bloom pieno
+💡 InstancedMesh per Nemici Multipli
+Con 6+ archetipi nemici attivi simultaneamente, InstancedMesh riduce le draw call da N a 1 per archetipo.
+SCARAB
+— possono comparire in sciami (5-8 unità), InstancedMesh ideale
+Corridoi modulari
+— stessi muri ripetuti N volte → BatchedMesh
+Ricerca Three.js 2025: target <100 draw call per frame stabile a 60fps
+@three.ez/instanced-mesh
+— library con frustum culling + BVH già integrati
+💡 Occlusion Culling per Dungeon
+Nei dungeon procedurali, stanze non visibili dal player consumano GPU inutilmente. Three.js non ha occlusion culling nativo.
+Portal-based culling
+— nelle porte del dungeon, disabilitare la stanza oltre se non visibile (pattern classico BSP)
+Distanza massima di visibilità
+— FogExp2 già presente; abbassare far plane a 40-50m
+Visibilità per stanza
+— ogni stanza come gruppo Three.js, toggle visible=false per stanze non adiacenti
+Implementazione: O(N stanze adiacenti) invece di O(tutte le stanze)
+💡 Input Latency Optimization
+La ricerca FPS 2025 mostra che la latenza di input percepita è il parametro di "feel" più critico nei giochi d'azione.
+Pointer Lock API check
+— già presente; assicurarsi che il mouse-look non passi per nessun setTimeout
+Input pre-processing separato
+— processare input prima dell'inizio del fixed step, non dopo
+requestAnimationFrame priority
+— usare
+scheduler.postTask
+su Chrome per garantire priorità massima al frame render
+Input buffer salto/schivata
+— già presente (coyote time) — estendere anche alla schivata
+🚀
+5. Rapidità & Caricamento
+Time-to-play, asset loading, bundle size, cold start
+✅ Stack di Build Moderno
+Vite 8 + Rolldown
+— bundler più veloce disponibile nel 2026, HMR istantaneo
+ES2022 target
+— no transpilazione inutile per browser moderni
+Code splitting
+— generation.worker.ts è già un entry point separato
+Fire-and-forget preload
+— 12 GLB caricati in background senza bloccare il bootstrap
+Primitive fallback
+— se GLB manca, usa geometria di test (mai crash)
+⚠️ Gap di Performance al Caricamento
+Texture non compresse
+— floor_stone.jpg = 1.1MB, sand_desert_n.jpg = 1.2MB — dovrebbero essere KTX2/WebP
+Rapier WASM
+— ~2MB aggiuntivi al caricamento, non comprimibile facilmente
+12 GLB senza compressione Draco
+— ~3MB totali non ottimizzati
+Nessun loading screen con progress
+— loading generico senza feedback granulare
+Nessuna PWA / installazione offline
+— ogni sessione riscarica tutto
+💡 Ottimizzazione Texture KTX2
+Le 5 texture JPEG da ~700KB-1.2MB in public/textures possono ridursi del 60-80% in formato GPU-native.
+Convertire in
+KTX2 + Basis Universal
+via gltf-transform
+Three.js KTX2Loader già disponibile in three/examples/jsm/loaders
+Compressione adattiva: ETC1S per albedo (qualità bassa), UASTC per normal map
+Risparmio stimato: ~4MB → ~800KB per le texture attuali
+💡 Progressive Loading con Progress Bar
+La schermata di caricamento attuale è generica. Un loading con progress aumenta la percezione di velocità.
+Staged loading
+: (1) Rapier WASM → (2) generazione floor → (3) GLB nemici → (4) texture
+Progress bar animata
+con geroglifici che si rivelano progressivamente
+Quote dal "Libro dei Morti"
+— durante il caricamento, testi tematici brevi
+Loading screen già in main.ts — basta aggiungere progress callback agli asset loader
+💡 PWA per Installazione e Offline
+Con 100-200MB di asset budget realistico, una PWA rende il gioco installabile su desktop e mobile.
+vite-plugin-pwa
+— genera manifest.webmanifest e service worker automaticamente
+Icona PNG 512×512
+— logo piramide con stile Egyptian Noir
+Background color
+per splash: #0B0908 (già definito in Art Bible)
+Service worker con
+Workbox cache-first
+su asset statici
+Installazione aumenta session duration del 30-50% (dati itch.io 2025)
+💡 Code Splitting Aggressivo
+Il bundle attuale include tutto in un unico chunk. Split per sistemi consente caricamento progressivo.
+Lazy import AI
+— EnemyAI caricato solo alla prima scena con nemici
+Lazy import audio
+— WebAudioEngine solo dopo il primo gesto utente
+Dynamic import per piani avanzati
+— texture/asset dei piani 6-10 caricati al piano 4
+Vite config:
+manualChunks
+per separare three/rapier/game dal codice iniziale
+🖥️
+6. Grafica & Rendering
+Three.js, WebGPU/WebGL2, post-processing, shader TSL, materiali PBR
+✅ Pipeline di Rendering Solida
+WebGPU primary + WebGL2 fallback
+— rilevamento automatico con detectCapabilities()
+UnrealBloomPass
+— bloom selettivo su WebGL2 con accessibilità (contrasto alto → riduzione)
+Vignette + film grain DOM
+— effetti noir a zero costo GPU (CSS overlay)
+TSL materiali procedurali
+— geroglifici emissivi, sabbia granulare, dissolve nemici
+Fiamma torcia procedurale
+— cono emissivo + PointLight calda + 5 sinusoidi flicker
+Dissolve morte nemici
+— threshold clip + bordo emissivo dorato
+⚠️ Gap Grafici
+Nessun modello 3D reale per player
+— viewmodel mani/arma non esiste ancora
+God rays volumetrici
+— pianificati (V6) ma non implementati; momenti boss/tesoro senza impatto visivo
+Shadow mapping su nemici
+— ombre dei nemici non realistiche (capsule low-poly)
+Nessun motion blur
+— già pianificato in accessibilità come flag, non implementato
+Reflection / ambient occlusion
+— mancano per ambienti di pietra credibili
+HDRI environment
+— Poly Haven "Sand Dunes" pianificato (T2) ma non integrato
+💡 WebGPU TSL: Shader Avanzati
+Three.js 0.185 ha TSL maturo. Il progetto lo usa già per materiali — si può espandere.
+Sand erosion shader
+— particelle sabbia che si accumulano agli angoli proceduralmentevia noise TSL
+Emissive geroglifico pulsante
+— oscillazione seno su intensità emissive (già implementato, da raffinare)
+Torch volumetric cone
+— raggio luce visibile come cono di particelle semi-trasparenti TSL
+God rays via ray-marching TSL
+— solo WebGPU, fallback senza su WebGL2
+💡 HDRI + Ambient Occlusion
+L'ambient occlusion di screen-space (SSAO) cambia drasticamente la credibilità degli ambienti di pietra.
+SSAOPass
+da three/examples/jsm/postprocessing — zero dipendenze extra
+HDRI da Poly Haven
+— "Brown Photostudio 07" per interni di cripta, 4K EXR
+pmndrs/postprocessing
+— alternativa più performante con
+N8AOPass
+(N8 AO)
+SSAO aumenta la percezione di profondità senza costo di geometry reale
+💡 Viewmodel Mani/Arma
+In un FPS, il viewmodel è il secondo elemento più visto (dopo il crosshair). La sua assenza è subito percepibile.
+Camera separata per viewmodel
+— layer separato, nessun clipping con la geometria
+Animazione procedurale
+— oscillazione passo-passo dal PlayerController già disponibile
+Bob dello sprint
+— kick FOV + oscillazione verticale già pianificati come gap cosmetico
+Risorsa: Mixamo per rig mano + arma, Kenney Assets per la geometria base
+💡 Post-Processing Stack Completo
+Con pmndrs/postprocessing il progetto può costruire un look visivo completamente definito in 1-2 pass aggiuntivi.
+Chromatic Aberration
+— leggera distorsione agli angoli, look "antica lente"
+Depth of Field
+— sfocatura lontano dalla torcia, profondità percepita
+Color Grading LUT
+— tone map warm-shadow/cool-highlight per look "noir antico"
+Tutti condizionati su accessibilità: reduceMotionBlur, highContrast disabilita grading
+CONFRONTO: STATO ATTUALE VS OBIETTIVO PROFESSIONALE
+Elemento
+Stato Attuale
+Obiettivo
+Difficoltà
+Bloom
+✅ UnrealBloomPass WebGL2
+Bloom WebGPU nativo (TSL)
+Media
+Torcia
+✅ SpotLight + fiamma VFX + ambient
++ cono volumetrico TSL
+Media
+Ombre
+🟡 Shadow map fissa, qualità unica
+Tiered shadow (512/1024/2048)
+Bassa
+Materiali
+🟡 TSL procedurali + JPEG texture
+KTX2 + PBR completo + HDRI
+Media
+Viewmodel
+❌ Nessuno
+Mano+arma Mixamo riggata
+Alta
+Ambient Occlusion
+❌ Nessuno
+SSAO o N8AO pass
+Bassa
+God Rays
+❌ Pianificato V6
+Ray-marching TSL WebGPU
+Alta
+🏺
+7. Decorazione & Ambiente
+Asset 3D, landmark, props, texture PBR, audio spaziale, atmosfera
+✅ Infrastruttura Pronta
+12 GLB caricati
+— tutti gli archetipi nemici + landmark hanno un modello 3D reale
+AssetLoader con cache
+— GLTFLoader + cache Map, fallback a primitive
+9 famiglie landmark semantiche
+— altar, brazier, glyph, obelisk, portal, sarcophagus, statue, well, relic
+Texture PBR parziali
+— floor_stone, sand_desert, wall_sandstone + normal maps presenti
+Drone ambientale procedurale
+— 3 layer (55Hz + quinta + shimmer), LFO tensione modulato dal buio
+⚠️ Gap Decorativi Critici
+Muri senza texture PBR reale
+— materiale piatto sui muri (wall_sandstone.jpg usato solo su alcuni)
+Nessun prop di riempimento
+— stanze vuote eccetto landmark; urne, casse, scheletri mancano
+Nessun audio spaziale per ambiente
+— eco della cripta, passi sabbia, distanza-attenuati mancano
+Soffitto non texturizzato
+— vuoto scuro; anche solo una texture ripetuta di pietra aumenterebbe la credibilità
+Corridoi identici
+— stessa larghezza/altezza senza variazione visiva; nessun prop di corridoio
+💡 Miglioramento: Props di Riempimento
+Un dungeon credibile ha "clutter" — oggetti di sfondo che raccontano la storia senza essere interattivi.
+Kenney — Asset Pack "Dungeon"
+(CC0) — urne, ossi, torce a parete, catene
+ToxSam GLB registry
+— già in progetto, contiene "Egyptian temples" con 991+ GLB
+Generazione procedurale dei props
+— per stanza, usare canale RNG "decor" (già esiste!) per posizionare 2-4 props casuali
+Props come InstancedMesh — urne identiche in più stanze = 1 draw call
+💡 Miglioramento: Audio Spaziale Completo
+La ricerca Web Audio 2025 indica che l'audio spaziale HRTF è il singolo miglioramento di immersione più economico.
+HRTF selettivo
+— applicare a nemici vicini (<10m), semplice stereo pan per lontani
+Footstep audio contestuale
+— sabbia, pietra, acqua a seconda del materiale del pavimento
+Echo procedurale
+— riverbero più lungo in stanze grandi, corto nei corridoi (Web Audio ConvolverNode)
+Sample reali Kenney/Freesound
+— fiamma torcia, passi sabbia, sibilo cobra, strisciare fasciature
+Budget: 3-5% CPU mobile (target dalla ricerca 2025)
+💡 Miglioramento: Variazione dei Corridoi
+Nei dungeon procedurali, la ripetizione visiva è il principale motivo di "dungeon sameness feeling".
+Larghezza corridoi variabile
+— FloorGenerator già distingue stanze/corridoi; variare larghezza 2-4m
+Archi procedurali
+— aggiungere archi agli ingressi delle stanze con Quaternius Ruins
+Dettagli di parete
+— nicchie con urne o torce ogni 6-8 unità di corridoio
+Tema visivo per fascia di piano
+— già floorProgression.ts ha palette; applicare texture differenti per piani 1-3, 4-6, 7-10
+💡 Miglioramento: Integrazione Kenney + Sonniss
+Le risorse audio CC0/gratuite identificate nella roadmap possono essere integrate in 1-2 sessioni di lavoro.
+Kenney Interface Sounds
+— UI click/hover (8 sample, 2MB totali)
+Sonniss GDC Bundle 2024
+— footstep, cripta, pietra, fiamma (gigabyte di sample)
+freesound "torch crackle"
+— sample CC0 per fiamma torcia realistica
+AudioAssetLoader
+— già in roadmap, da implementare con preload a bootstrap
+🔮
+8. Prospettive Future
+Roadmap di evoluzione, pubblicazione, monetizzazione, espansione
+🗓️ Timeline Consigliata
+Fase 1 — Demo Giocabile (4-6 settimane)
+Completare G-03 (tutti gli archetipi), G-04 (AI consumer rumore), G-06 (sample reali). Risultato: 10 minuti di gameplay autentico con 3+ nemici diversi.
+Fase 2 — Polish e Assets (4-6 settimane)
+Font (Cinzel), props decorativi, KTX2 texture compression, viewmodel base, SSAO. Risultato: atmosfera Egyptian Noir completa visualmente.
+Fase 3 — Meta-Loop Completo (4-6 settimane)
+G-05 graft equipaggiabili, 10 piani completi, maledizioni attive, musica adattiva. Risultato: roguelike completo con replayability reale.
+Fase 4 — Pubblicazione (2 settimane)
+PWA, itch.io page con screenshot/trailer, steam wishlist. Deploy WebGPU-first con fallback WebGL2.
+Fase 5 — Espansione (futuro)
+Modalità daily seed (stesso seed per tutti i giocatori ogni giorno), leaderboard, mod support via JSON config.
+📈 Opportunità di Mercato 2026
+WebGPU è mainstream dal 2025
+Chrome, Firefox, Safari e Edge supportano tutti WebGPU stabile. Il gioco ha già il renderer WebGPU — è nella posizione perfetta per essere tra i primi titoli browser-native con grafica AAA-adjacent.
+Browser-first è una strategia vincente nel 2026
+I link diretti social convertono meglio degli store: la ricerca StraySpark mostra un aumento del 30-40% di conversione "vedo il link → provo il gioco" rispetto ai link Steam. Il tag "giocabile in browser" su itch.io ha trazione crescente.
+FPS Roguelike browser è una nicchia non satura
+La ricerca su itch.io mostra pochi competitor FPS roguelike browser-first di qualità. "Egyptian Noir" è un differenziatore di tono: i competitor usano fantasy o sci-fi.
+Daily Seed come retention loop
+Modalità "Tomba del Giorno" — stesso seed per tutti i giocatori ogni 24h. Zero server richiesti (seed derivato dalla data). Aumenta drasticamente le sessioni di ritorno.
+MIGLIORAMENTI TECNICI FUTURI CHIAVE
+🔮 Comportamenti AI Avanzati
+Il sistema AI (percezione, FSM, steering, utility AI) è già presente nel codice ma non wired. L'evoluzione naturale:
+Behavior Tree
+— sostituire FSM con BT per comportamenti più complessi e componibili
+SCARAB in sciame
+— Swarm AI già in src/ai, mai testata su nemici reali
+MUMMY sente il respiro
+— react a input joystick/tasto anche senza rumore esplicito
+COBRA posizionale
+— naviga verso punti di imboscata anziché inseguire direttamente
+🔮 Compute Shader per Fisica
+Con WebGPU maturo, migrating alcune computazioni a GPU compute offre guadagni 2-10×.
+Particle systems GPU-driven
+— fiamma/polvere su compute shader, decine di migliaia di particelle
+Crowd simulation
+— SCARAB in sciame da 20+ unità su GPU
+Ambient occlusion real-time
+— SSAO su compute invece di post-process pass
+Richiede WebGPU (già supportato dal renderer primario del gioco)
+🔮 Multiplayer Locale / Co-op
+Il determinismo del RNG e il design single-player non escludono una futura modalità co-op.
+WebRTC P2P
+— due giocatori, stesso seed, sincronizzazione eventi tramite CRDTs
+Modalità "Tomba Condivisa"
+— player 1 esplora, player 2 controlla i nemici (asimmetrico)
+Il determinismo RNG già garantisce risultati identici dati gli stessi input — base ideale per replay e futuro multiplayer
+🔮 Generazione AI di Contenuto
+Il 2026 offre strumenti per generare contenuto narrativo contestuale senza aumentare il bundle size.
+Messaggi geroglifici procedurali
+— testo narrativo contestuale generato dalla storia della run (morti, nemici sconfitti)
+Boss unici per run
+— parametri nemico generati da seed con nome procedurale egizio
+Iscrizioni sulle pareti
+— hint tattici in "antico egiziano" che cambiano a ogni run
+🔮 Mobile & Touch
+WebGPU è stabile su Android Chrome e iOS Safari 18.2. Il gioco potrebbe girare su mobile con adattamenti.
+Virtual joystick
+— movimento WASD come doppio joystick touch
+Gyroscope look
+— mouse look tramite giroscopio su mobile (API disponibile)
+Tile size UI scalabile
+— textScale già presente nell'accessibilità
+Reduced quality tier automatico
+— QualityController già pronto; mobile = tier LOW
+🔮 Steam + Electron Wrapper
+La strategia "web demo first → Steam full" è efficace per wishlisting e buzz secondo la ricerca 2026.
+Electron wrapper
+— il bundle Vite viene servito localmente, nessuna modifica al codice
+Steam achievements via Greenworks
+— mappati agli eventi runtime già presenti (ENEMY_DIED, FLOOR_COMPLETE)
+Leaderboard daily seed
+— differenziatore rispetto alla versione browser gratuita
+Il progetto ha già tutto (TypeScript, Vite build) per un deploy Electron in <1 settimana
+MATRICE PRIORITÀ COMPLETA — TUTTI I GAP E MIGLIORAMENTI
+ID
+Area
+Miglioramento
+Priorità
+Effort
+Stato
+G-03
+Gameplay
+Tutti gli archetipi nemici materializzabili + HurtboxSystem
+🔴 CRITICA
+Alto
+🟡
+G-04
+Gameplay/AI
+Consumer AI rumore, loot scavo, bracieri → Director
+🔴 ALTA
+Alto
+🟡
+G-06
+Audio
+Sample reali (Kenney/Sonniss), ambience per piano, musica adattiva
+🔴 ALTA
+Medio
+🟡
+QC-1
+Performance
+Wiring QualityController → shadow/bloom/particle limits
+🔴 ALTA
+Basso
+⬜
+G-05
+Progressione
+Graft equipaggiabili, loot fisico nel mondo
+🟡 MEDIA
+Alto
+🟡
+G-07
+Accessibilità
+amplifiedTelegraphs su nemici reali, torchToggle cleanup
+🟡 MEDIA
+Basso
+🟡
+FONT-1
+Design
+Cinzel + Noto Egyptian Hieroglyphs via fontsource
+🟡 MEDIA
+Basso
+⬜
+TEX-1
+Grafica
+KTX2 compression su texture (4MB → 800KB)
+🟡 MEDIA
+Basso
+⬜
+SSAO-1
+Grafica
+SSAOPass / N8AO per ambienti di pietra credibili
+🟡 MEDIA
+Basso
+⬜
+PROP-1
+Decorazione
+Props di riempimento (urne, ossi, torce a parete) via Kenney
+🟡 MEDIA
+Medio
+⬜
+RAPIER-1
+Codice
+Upgrade Rapier a versione SIMD (2-5× velocità)
+🟡 MEDIA
+Basso
+⬜
+NEW-1
+Gameplay
+Hitstop 3-5 frame su hit confermato
+🟡 MEDIA
+Basso
+⬜
+PWA-1
+Rapidità
+vite-plugin-pwa + Service Worker per offline + installazione
+🟢 BASSA
+Basso
+⬜
+HRTF-1
+Audio
+HRTF spaziale selettivo per nemici vicini (<10m)
+🟢 BASSA
+Medio
+⬜
+ECS-1
+Codice
+Centralizzare EntityId, completare ECS con VelocityStore/AIStateStore
+🟢 BASSA
+Medio
+⬜
+V2-1
+Futuro
+Viewmodel mani/arma con animazione procedurale
+🟢 FUTURA
+Alto
+🔮
+V6-1
+Grafica
+God rays volumetrici TSL per boss/tesoro (WebGPU)
+🟢 FUTURA
+Alto
+🔮
+DAILY-1
+Futuro
+Modalità "Tomba del Giorno" — seed da data, no server
+🟢 FUTURA
+Basso
+🔮
+STEAM-1
+Futuro
+Electron wrapper + Steam publishing
+🟢 FUTURA
+Medio
+🔮
+Report generato — La Piramide Perduta v0.1.0 Vertical Slice — Agosto 2026
+Analisi codice + Ricerca internet (Three.js, Rapier, Web Audio, Game Design best practices 2025-2026)
+𓂀 𓃭 𓆣 𓇯 𓆣 𓃭 𓂀

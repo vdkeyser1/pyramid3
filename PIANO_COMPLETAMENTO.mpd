@@ -1,0 +1,523 @@
+# 🏛️ LA PIRAMIDE PERDUTA — Piano Maestro di Completamento
+### Master Plan Document  ·  versione 1.3  ·  data 2026-08-17 (chiusura B-02-alt/B-03-alt/B-04-ext + documentazione asset bloccati)
+
+> **Scopo**: fotografare lo stato reale del vertical slice dopo il batch di chiusura
+> del 2026-08-16 e tracciare con precisione le lavorazioni ancora aperte,
+> distinguendo ciò che è **bloccante per la qualità del VS** da ciò che è
+> **opzionale/post-VS** e da ciò che è stato **deliberatamente rinviato**.
+>
+> Documento complementare a `roadmap.md` (registro cronologico) e
+> `PIANO_COLMATURA_GAP.md` (specifica tecnica per gap). Non sostituisce né
+> elimina quei file: ne è la sintesi decisionale aggiornata.
+>
+> ⚠️ **Simulazione su Web Worker**: valutata e **RINVIATA definitivamente**
+> (vedi §5). Non includere in nessun piano di sprint futuro senza profiling
+> concreto del main-thread che dimostri saturazione reale.
+
+---
+
+## 📊 STATO GLOBALE (2026-08-17)
+
+| Indicatore | Valore |
+|---|---|
+| Gate `npm run verify` | ✅ verde (≥ 401 test: 351 node + 50 DOM, 16/16 property — aggiornato 2026-08-17) |
+| Gate `npm run test:e2e` | ✅ 11/11 verdi |
+| Asset 3D caricati | ✅ 12/12 GLB meshopt verificati in browser |
+| Bloom WebGPU | ✅ attivo (RenderPipeline + BloomNode TSL) |
+| Bloom WebGL2 | ✅ UnrealBloomPass (EffectComposer, try/catch) |
+| PWA bundle | ✅ 8.8 MB (da 15.9 MB pre gltf-transform) |
+| Gap G-01 → G-23 | ✅ tutti chiusi o deliberatamente rinviati |
+| Worker simulation | 📋 RINVIATA — decisione registrata in roadmap §3 |
+
+---
+
+## 1. COMPLETATO — riepilogo batch 2026-08-14 / 2026-08-16
+
+> Lista di riferimento per evitare regressioni e non riaprire lavoro già fatto.
+> Dettagli tecnici completi nel registro di `roadmap.md` §3.
+
+| Area | Cosa è stato implementato |
+|---|---|
+| **Combat** | ParryResolver (350ms/100°/48 tick stordimento), FSM STAGGERED su tutti gli archetipi, i-frame parata |
+| **Enemy runtime** | GenericEncounterRuntime data-driven (TUTTI gli archetipi: SCARAB/MUMMY/COBRA/SHABTI/PRIEST/SOBEK_SPAWN/ROYAL_MUMMY), bug angolare atan2 risolto |
+| **Musica adattiva** | MusicPreset 3 stati (EXPLORE/TENSION/COMBAT) + crossfade 1.5s + stato derivato dai nemici in-frame |
+| **Viewmodel arma** | Khopesh procedurale (TubeGeometry + CatmullRomCurve3), swing/parata animati, metalness 0.9 |
+| **HDRI / env map** | PMREMGenerator su scena Egyptian Noir, riflessioni metalli (WebGL2) |
+| **Texture PBR** | Ground054 + Rock064 ambientCG CC0 (color/normal/roughness/AO, 1024px, uv2 per aoMap) |
+| **SFX reali** | 17 OGG Kenney + 13 RPG foley CC0, AudioAssetLibrary, loadAssets(), branch buffer reale/procedurale |
+| **gltf-transform** | 12/12 GLB ottimizzati meshopt, MeshoptDecoder registrato, -44% bundle PWA |
+| **InstancedMesh decor** | N draw call decor → ≤ 8 (1 per DecorType) |
+| **Bloom WebGPU** | RenderPipeline + BloomNode TSL, verificato in browser |
+| **Nemici — A-01 noiseStimulus** | `GenericEncounterRuntime.tick()`: `noiseStimulus` wired, `canHearNoise` in DORMANT — A-01 ✅ chiuso |
+| **Accessibilità — A-02 amplifiedTelegraphs** | `ThreeRendererService.setEnemyStates()`: `telegraphGain = amplifiedTelegraphs ? 1.9 : 1.0` su scale + emissive — A-02 ✅ chiuso |
+| **Calibrazione A-03** | COBRA: anticipation 0.25→0.30s, hearRadius 12→10; SHABTI: baseHp 120→100, Carica range 8.0→6.5m |
+| **Ambience B-05** | 4° layer sawtooth 110Hz (rombo di pietra), `gainMultiplierForFloor`, `stoneRumbleGainForFloor` |
+| **Documentazione A-04** | roadmap.md: header test, G-04/G-07 ✅, T1/T3/S1/P2/P4 ✅, §2 Passo 6 ✅, §3 registro 3 nuove voci |
+| **B-04-ext cue sintetici** | `ProceduralCueLibrary.ts`: 11 profili per `audioCue` di tutti gli archetipi nemico; 4 nuovi test; copertura completa `enemies.ts` |
+| **B-03-alt animazioni procedurali** | `ThreeRendererService`: idle breathing (0.45/1.15Hz), attack lunge (sin telegraph×π), breathScale — senza GLB rigged |
+| **B-02-alt landmark geometry** | `ThreeDungeonLayout`: pyramidion obelisco, coperchio+bordura sarcofago, testa+nemes statua — mesh di dettaglio procedurali |
+| **Asset bloccati documentati** | T2/S4/A1/A2/A4: nessuna rete da VM, percorso download manuale documentato in roadmap §3 e PIANO §3 |
+| **Debug overlay** | DebugOverlay.ts (F3/Backtick): FPS/ms/draw calls/triangoli/memoria/entity/seed/tier/backend |
+| **Tutorial contestuale** | 12 hint contestuali (HUD.ts ContextualHint), dedupe per id, coda FIFO, fade 300ms |
+| **Run summary** | DeathOverlay con piani percorsi/nemici abbattuti/oro raccolto |
+| **Hitmarker differenziale** | oro=colpo, rosso=critico, grigio=mancato |
+| **Fade piano** | CinematicOverlay.fadeToBlack() 380ms attorno al rebuild |
+| **Decor per fascia** | Cripta (5+): ossa/scheletri; Anticamera (1-2): vasi/colonne; Galleria: neutro |
+| **Geroglifici generativi** | inscriptions.ts (hash32 → 12-20 glifi Noto Egyptian), seed e daily |
+| **Meta-loop multi-floor** | 10 piani, floorProgression.ts, palette per fascia, budget Director crescente |
+| **Doorway snap assist** | Niente più incastri sugli stipiti (pure function testata) |
+| **Luce torcia realistica** | SpotLight 56°, torchAmbientLight alone caldo, flicker 5 sinusoidi |
+| **Intro cinematografica** | Panoramica 3.2s, torcia da raccogliere con E, tutorial post-raccolta |
+| **Mouse smoothing** | Filtro esponenziale yaw/pitch, slider % nel menu impostazioni |
+| **God rays volumetrici** | Fake volumetric cross-backend (torcia + reliquiario tesoro) |
+
+---
+
+## 2. LAVORI ANCORA APERTI — Priorità A (qualità del vertical slice)
+
+> Questi item impattano direttamente l'esperienza di gioco o la correttezza
+> del codice del VS. Completarli prima di considerare il VS "ship-ready".
+
+### A-01 · G-04 residui gameplay: rumore AI + ricompense scavo + bracieri Director
+
+**✅ COMPLETATO (2026-08-16)** — le tre lavorazioni sono implementate e testate:
+- **Consumer rumore generalizzato**: `GenericEncounterRuntime.tick()` ora accetta
+  `noiseStimulus {x, z, intensity}` — amplifica il raggio di wake per TUTTI gli
+  archetipi (`hearRadiusM × (0.6 + 0.4×intensity)`) e in PURSUING attira lo sguardo
+  se il rumore è più vicino del player (investigazione). Wiring: `GameApplication`
+  passa `runtimeStimulusState.activeStimulus` (NOISE_PULSE/KA_ECHO_PULSE).
+- **Ricompense scavo**: nuovo `src/content/digLoot.ts` (puro) — `rollDigLoot(floorSeed,
+  siteX, siteZ, tier)`: 55% none / 22% Frammenti (3-8+tier×2) / 16% oro (8-20+tier×4) /
+  7% graft raro dal catalogo `ALL_UPGRADES`; deterministico via `hash32`. Wiring al
+  `DIG_COMPLETE` in GameApplication (messaggio HUD + cue + persistenza profilo).
+- **Impatto braciere su Director**: `EnemySpawnDirector.setLitRoom(roomId, lit)` — le
+  stanze illuminate vanno in fondo alla coda di `planNext()` (luce = presidio
+  territoriale, fallback se tutte illuminate). Wiring: al `BRAZIER_LIT` la stanza del
+  braciere viene marcata (log Director).
+- Test: 5 digLoot + 2 rumore (wake/no-wake) + 1 lit-room = **8 nuovi**, verify verde.
+
+**Stato attuale (aggiornato 2026-08-17 — verifica sorgenti)**: ✅ **CHIUSO COMPLETAMENTE**.
+- `GenericEncounterRuntime.ts` (15 064 byte, mtime 1786914298477) contiene il campo
+  `noiseStimulus?: {x, z, intensity} | null` in `GenericEncounterTickOptions` e la logica
+  `canHearNoise` nel ramo DORMANT: `hearRadiusM × (0.6 + 0.4 × min(1, intensity))`.
+  Tutti gli archetipi (SERPENT/COBRA/SHABTI/PRIEST/SOBEK_SPAWN/ROYAL_MUMMY) reagiscono
+  ai segnali NOISE_PULSE e KA_ECHO_PULSE — non solo SCARAB.
+- `getGenericTelegraphStrength()` esposta nel tick result.
+- Parata: check `parryWindowActive && isEnemyInParryArc()` al tick ATTACKING con
+  branch STAGGERED funzionante (`staggerTicks -= 1`, ritorno a PURSUING).
+
+**Cosa manca**: nessuna lavorazione residua — A-01 completamente chiuso.
+
+**Criterio di completamento**: ✅ SODDISFATTO (verifica diretta sorgente, 2026-08-17).
+
+**Stima sforzo**: N/A — implementato.
+
+---
+
+### A-02 · G-07 residui accessibilità: amplifiedTelegraphs + torchToggle
+
+**✅ COMPLETATO (2026-08-16)**:
+- `amplifiedTelegraphs`: verificato GIÀ funzionante per tutti gli archetipi —
+  `getGenericTelegraphStrength()` è data-driven (`anticipationTicksLeft/Total` per
+  QUALSIASI `EnemyDef`), sincronizzato in `syncGenericEnemyEntityState` e amplificato
+  ×1.9 nel renderer quando il flag è attivo. Nessuna modifica necessaria.
+- `torchToggle`: **RIMOSSO** (decisione formalizzata) — F è già un toggle nativo,
+  il setting era ridondante e inerte. Rimozione da `GameConfig` schema (Zod) e
+  `SettingsMenu` (riga + read); `AccessibilitySettings` è derivato dallo schema,
+  quindi il tipo si aggiorna da solo; i save legacy con la chiave vengono parsati
+  senza errore (Zod strip). 4 test settings ancora verdi.
+
+**Stato attuale**: 9-11/14 impostazioni con effetto reale. Restano aperte:
+- `amplifiedTelegraphs`: il flag esiste, il renderer scala già `telegraphStrength` ×1.9,
+  ma i nemici reali (GenericEncounterRuntime) non propagano ancora `telegraphStrength`
+  al renderer in modo uniforme per tutti gli archetipi.
+- `torchToggle`: ridondante (F è già toggle nativo). Decisione design da formalizzare:
+  rimuovere il setting oppure reindirizzarlo a un comportamento distinto (es. torcia
+  automatica su raccolta oggetti).
+
+**Cosa manca**:
+- In `GenericEncounterRuntime.tickResult()`: esporre `telegraphStrength` (0.0-1.0 in base
+  a `anticipationTicksLeft / anticipationTicksTotal`) per tutti gli archetipi, non solo MUMMY.
+- In `GameApplication.syncEnemyVisuals()`: passare `telegraphStrength × 1.9` quando
+  `amplifiedTelegraphs = true`.
+- Decisione `torchToggle`: se si rimuove, aggiornare `SettingsMenu.ts`,
+  `RuntimeSettings.ts` e i test DOM relativi. Se si reindirizza, definire la nuova semantica.
+
+**Criterio di completamento**: con `amplifiedTelegraphs = ON`, il cambio colore/scala del
+  telegrapho è visibilmente più pronunciato per tutti gli archetipi; `torchToggle` ha
+  un comportamento definito e documentato.
+
+**Stima sforzo**: basso (< 1 ora ciascuno, modifiche localizzate).
+
+---
+
+### A-03 · Calibrazione COBRA / SHABTI con playtest reali (G-03 residuo)
+
+**🟢 PROTTOCOLLO PRONTO (2026-08-16)**: `docs/PLAYTEST_PROTOCOLLO.md` operativo —
+setup con seed fisso, tabella osservazioni, check-in/out, criteri di completamento e
+soglie di tuning (finestra parata 350→400ms se tasso < 30%, danno/velocità COBRA se
+> 50%). In attesa di tester esterni; dopo 3 sessioni aggiornare `balance.ts` e
+`enemyTemplates.ts` (verify:content valida i range).
+
+**Stato attuale**: `GenericEncounterRuntime` funziona per tutti gli archetipi, ma i parametri
+di COBRA (veloce, morso rapido) e SHABTI (statua, carica) sono stati definiti a partire dai
+template `enemyTemplates.ts` senza playtest hands-on. La finestra di parata (350ms) e il
+danno per tier potrebbero risultare frustranti o banali in funzione della velocità reale.
+
+**Cosa manca**: sessione di playtest manuale con registrazione di:
+- Tasso di successo parata COBRA (target: 30-50% nei primi tentativi)
+- Latenza percepita telegrafo SHABTI carica (target: "difficile ma leggibile")
+- Confronto danno player vs HP rimasti dopo scontro 2vs1 (floor 3)
+
+**Output del playtest**: aggiornare le costanti in `balance.ts` e `enemyTemplates.ts`
+  (mai valori magici fuori da quei file) con le misurazioni. Aggiungere test invarianti
+  sulle nuove soglie (`verify:content` copre già questo).
+
+**Criterio di completamento**: almeno un tester esterno completa piano 1 senza softlock;
+  il feedback "non capisco quando devo parare" non emerge da 3/3 sessioni osservate.
+
+---
+
+### A-04 · Aggiornamento documentazione stale
+
+**✅ COMPLETATO (2026-08-16)**:
+- `roadmap.md` §1.1: celle G-03→G-07/G-22 aggiornate (✅ con note sintetiche, G-04/G-07 🟡→🟢 con rinvio ad A-01/A-02).
+- `RESOCONTO_PROGETTO.md`: §10 fisica "collegata e attiva", §13 audio "reale (Kenney CC0) + sintetico + musica adattiva", §11 conteggi test aggiornati (333 node + 43 DOM + 11 e2e), §15 gap 1-6 marcati RISOLTI.
+- `PIANO_COLMATURA_GAP.md` §9: checklist allineata — G-03/05/06/12→19/22 `[x]` con note aggiornate; G-04/G-07 `[ ]` con rinvio esplicito ad A-01/A-02 (chiuse dopo la loro implementazione).
+- Criterio `grep -r "nessun asset" docs/` → 0 risultati; aggiunto `docs/PLAYTEST_PROTOCOLLO.md`.
+
+**Tre file erano parzialmente o completamente obsoleti dopo i batch 2026-08-14/16:**
+
+| File | Problema | Azione |
+|---|---|---|
+| `PIANO_COLMATURA_GAP.md` §9 checklist | Mostra `[ ]` per G-12→G-19, G-22, G-23 già completati | Marcare ✅ i gap chiusi; aggiornare descrizione stato per G-03/04/06/07 |
+| `RESOCONTO_PROGETTO.md` | Dice "nessun asset grafico o audio authored è presente" — falso dal 2026-08-14 | Aggiornare §6 (stato attuale), §2 (dipendenze), aggiungere sezione asset/audio reali |
+| `roadmap.md` §1.1 tabella Codice/Gameplay | Mostra ancora 🟡 per G-03-G-07 e G-22 senza riflettere le implementazioni 2026-08-14/16 | Aggiornare le celle `Stato` a ✅ con nota sintetica per G-03/05/06/19/22 |
+
+**Criterio di completamento**: `grep -r "nessun asset" docs/` ritorna zero risultati;
+  la checklist §9 di PIANO_COLMATURA_GAP.md ha tutti i `[x]` corretti.
+
+---
+
+## 3. LAVORI ANCORA APERTI — Priorità B (arricchimento post-VS)
+
+> Item opzionali: migliorano l'esperienza ma il VS funziona e comunica il
+> design anche senza di essi. Pianificare dopo la stabilizzazione Priorità A.
+
+### B-01 · Asset 3D modulari Quaternius Ruins CC0
+
+**📋 REGISTRATO COME BLOCCATO (2026-08-16)**: il download diretto non è disponibile
+senza interazione umana — `quaternius.com/packs/ultimatemodularruins.html` espone il
+download via lightbox JS (`#inline`, lity-hide, solo invito alla donazione) e
+`quaternius.com/assets/UltimateModularRuins.zip` risponde 404/503. I pack sono dietro
+Patreon/itch.io. **Alternativa già attiva**: i muri/pavimenti usano texture PBR reali
+(Ground054/Rock064) e il look architettonico è coperto dal set di landmark GLB +
+InstancedMesh decor. Se in futuro si vuole il kit, il percorso è: download manuale
+dal browser → `scripts/optimize-assets.mjs` (meshopt) → `ThreeDungeonLayout` come skin.
+
+**Perché**: i muri e i pavimenti del dungeon sono ancora costruiti con box Three.js.
+Il kit Quaternius Ultimate Modular Ruins (CC0) darebbe look architettonico autentico
+senza impattare la generazione procedurale (l'infrastruttura `ThreeDungeonLayout`
+è già pronta ad accettare GLB modulari).
+
+**Come**: scaricamento da `quaternius.com/packs/ultimatemodularruins.html`,
+  selezione dei moduli compatibili con la griglia `ROOM_SIZE_M = 12`,
+  ottimizzazione via `scripts/optimize-assets.mjs`, integrazione in
+  `ThreeDungeonLayout.buildDungeonLayout()` come skin dei box esistenti.
+
+**Vincolo**: i GLB richiedono `GLTFLoader.setMeshoptDecoder(MeshoptDecoder)` già registrato.
+  Licenza CC0 — nessuna attribuzione obbligatoria (buona pratica: aggiornare `CREDITS.md`).
+
+---
+
+### B-02 · Selezione asset Sketchfab CC0 (sarcofagi, statue, vasi canopi)
+
+**📋 REGISTRATO COME BLOCCATO (2026-08-16)**: il download Sketchfab richiede
+autenticazione (token o login) — non automatizzabile senza credenziali. I landmark
+`sarcophagus`/`obelisk`/`vase_canopic` restano placeholder geometrici + texture
+PBR. Da fare a mano (browser) quando serve: download .glb → meshopt → manifest.
+
+**✅ ALTERNATIVA IMPLEMENTATA (2026-08-17)**: `ThreeDungeonLayout.ts` (13311 byte)
+aggiornato con mesh di dettaglio procedurali per i tre tipi landmark principali —
+**Obelisco**: pyramidion dorato (ConeGeometry 4 facce, 0xd4a05a, yOffset+1.35) +
+base BoxGeometry(0.9,0.28,0.9); **Sarcofago**: coperchio dorato BoxGeometry
+(1.88,0.22,0.93, yOffset+0.48) + bordura BoxGeometry(1.92,0.08,0.97); **Statua**:
+testa SphereGeometry(0.28) + nemes dorato CylinderGeometry(0.34,0.38,0.1,12).
+I landmark ora hanno una lettura semantica chiara anche senza asset GLB reali.
+La struttura `loadLandmarkModels()` rimane pronta ad accettare i GLB quando disponibili.
+
+**Perché**: i landmark `sarcophagus`, `obelisk`, `vase_canopic` sono attualmente
+  placeholder geometrici. Asset reali aumenterebbero la leggibilità semantica del VS.
+
+**Come**: ricerca su `sketchfab.com/search?q=egyptian&type=models&features=downloadable`
+  con filtro `CC0` o `CC-BY`; download `.glb`, ottimizzazione meshopt, aggiunta al
+  manifest `src/content/assets.ts` nelle slot `landmarkAssetFor()` già presenti.
+
+**Attenzione**: verificare la licenza file per file prima del download.
+  CC-BY richiede attribuzione in `CREDITS.md`; CC0 no.
+
+---
+
+### B-03 · Mixamo — animazioni idle/walk/attack per nemici
+
+**📋 REGISTRATO COME BLOCCATO (2026-08-16)**: Mixamo richiede login Adobe — non
+automatizzabile. **Nota**: il runtime espone già `animState` e `AnimationMixer` è in
+three; il percorso alternativo CC0 è Quaternius Animated Creatures (download manuale).
+
+**✅ ALTERNATIVA IMPLEMENTATA (2026-08-17)**: animazioni procedurali pure in
+`ThreeRendererService.setEnemyStates()` — nessun GLB rigged richiesto.
+Ogni nemico ha `phaseOffset = index × 1.618` (golden ratio → nessun sync visivo):
+(1) **idle breathing**: sin a 0.45 Hz (dormiente) / 1.15 Hz (sveglio), ampiezza
+0.006/0.032 m su Y; (2) **attack lunge**: anticipo `sin(telegraph×π)×0.04×telegraphGain`
+verso il player durante la fase ANTICIPATION; (3) **breathScale**: modulazione separata
+(freq×0.7, +1.2 rad phase) su scala per leggibilità respirazione torace.
+La leggibilità del combattimento è significativamente migliorata anche senza rig.
+
+**Perché**: i modelli nemici sono attualmente meshes statiche; animarli (anche solo
+  idle breathing + attack lunge) aumenta enormemente la leggibilità del combattimento.
+
+**Come**: export FBX da Mixamo (gratis, no login), conversione in GLB via
+  `@gltf-transform` + `meshopt`, caricamento tramite `AssetLoader` + `THREE.AnimationMixer`
+  (già in `three`). Il runtime (`GenericEncounterRuntime`) espone già `animState` —
+  wiring da `GameApplication.syncEnemyVisuals()`.
+
+**Nota**: Mixamo usa licenza non-commerciale per uso personale / prototipo.
+  Per un rilascio commerciale valutare Quaternius Animated Creatures (CC0).
+
+---
+
+### B-04 · Foley professionale — Sonniss GDC + freesound specifici
+
+**✅ PARZIALE (2026-08-16)**: pack Kenney **RPG Audio** aggiunto — 10 nuovi OGG
+(door creak×3, handleCoins×2, knifeSlice/drawKnife×3, footstep×5) cablati in
+`AudioAssetLibrary` per i cue `door_creak`, `gold_pickup`, `attack_swing`,
+`footstep_sand` (varianti reali con fallback procedurale). **Bloccato**: Sonniss
+richiede registrazione, freesound richiede API key — nessun credential disponibile.
+
+**✅ ESTESO (B-04-ext, 2026-08-17)**: `ProceduralCueLibrary.ts` — 11 nuovi profili
+sintetici coprendo TUTTI i `audioCue` degli archetipi nemico (enemies.ts):
+`scarab_click`, `snake_hiss`, `mummy_creak`, `mummy_grab`, `shabti_swing`,
+`shabti_charge`, `sobek_bite`, `sobek_tail`, `royal_swing`, `priest_dart`,
+`stone_scrape`. Ogni profilo ha waveform+envelope+lowpass appropriati al suono
+richiesto — funzionali in assenza dei sample Sonniss/freesound.
+4 nuovi test in `ProceduralCueLibrary.test.ts`. I cue reali (Sonniss/freesound)
+restano manuale — le varianti OGG si aggiungono semplicemente in `AudioAssetLibrary`.
+
+**Perché**: i 17 OGG Kenney coprono SFX di base (hit, parry, click). Per cues specifici
+  (`snake_hiss`, `stone_scrape`, `mummy_creak`, `sand_footstep`) la sintesi procedurale
+  attuale è funzionale ma non convincente.
+
+**Cosa scaricare**:
+- Sonniss GDC Game Audio Bundle (`sonniss.com/gameaudiogdc`): foley professionale
+  (richiede registrazione gratuita, non CC0 ma uso in giochi consentito).
+- freesound specifici: ricerca `torch fire`, `stone scrape`, `snake hiss`, `sand footsteps`
+  con filtro `CC0`; selezione ≤ 5 sample per cue; formato OGG 44100Hz.
+
+**Integrazione**: aggiungere varianti in `AudioAssetLibrary.AUDIO_ASSET_MAP`
+  (struttura già pronta per N varianti per cue).
+
+---
+
+### B-05 · Loop ambience reali (desert ambience OpenGameArt)
+
+**📋 DECISIONE REGISTRATA (2026-08-16)**: nessun pack ambience CC0 direttamente
+scaricabile trovato (il pack Kenney "nature-kit" è di modelli 3D, non audio; Sonniss
+richiede registrazione). Il drone procedurale (`AmbiencePreset`, pilotato
+dall'oscurità) resta la scelta attiva — già integrato e testato. Opzione futura:
+Sonniss GDC bundle (manuale) → loop WAV come buffer loopato accanto al drone.
+
+**Perché**: `AmbiencePreset.ts` usa sintesi procedurale (drone 55Hz + quinta).
+  Sostituire/affiancare con loop WAV/OGG ambientali reali darebbe profondità.
+
+**Come**: download da `opengameart.org` (search `desert ambience`, filtro CC0/CC-BY);
+  caricare come buffer loopato in `WebAudioEngine.setAmbienceLevel()` accanto al drone.
+  Il livello procedurale rimarrebbe come fallback se i file non sono presenti.
+
+---
+
+### B-06 · OpenGameArt ancient-egypt-0 (texture geroglifici reali)
+
+**✅ COMPLETATO (2026-08-16)**: pack OGA `ancient-egypt-0` (CC0) scaricato —
+3 fogli geroglifici (`hieroglyphs_a_m.png` 131², `hieroglyphs_s_l.png`, `all_hieroglyphs.png`)
++ `papyrus_texture.png` ricompresso (1024px, 5.2MB→100KB) in `public/textures/`.
+`loadRealTexture()` in ThreeRendererService: il foglio è l'**emissiveMap** dei landmark
+glyph (repeat 2×2, fallback al canvas procedurale), il **papiro è la color map**
+(il testo è scolpito nella pietra). CREDITS.md aggiornato.
+
+**Perché**: `createHieroglyphTexture()` in `Materials.ts` usa canvas procedurali
+  (ankh, occhio di Horus). La texture pack CC0 di OpenGameArt include 3 fogli
+  di geroglifici reali + papiro per landmark/HUD.
+
+**Come**: download da `opengameart.org/content/ancient-egypt-0`;
+  integrazione come `CanvasTexture` sostituita da `TextureLoader` in `Materials.ts`,
+  usata per i landmark di tipo `glyph` in `ThreeDungeonLayout.addLandmark()`.
+
+---
+
+## 4. LAVORI ANCORA APERTI — Priorità C (espansione futura)
+
+> Non parte del VS. Da progettare separatamente quando il VS sarà completo
+> e testato con utenti reali.
+
+### C-01 · Leaderboard e seed sharing
+
+**✅ COMPLETATO (2026-08-16)**: `src/progression/Leaderboard.ts` (puro, storage
+iniettato) — top 10 localStorage per piano→oro→nemici, dedup runId, storage corrotto
+⇒ [], `shareSeedUrl()` per l'URL `?seed=N` riproducibile. `DeathOverlay`: sezione
+🏆 Classifica locale (top 3) + bottone "🔗 Condividi questo seed" (clipboard API con
+fallback prompt). Wiring in `showDeathOverlay()`: `submitRunScore` alla morte con
+runId unico per pagina. Test: 8 in `tests/progression/Leaderboard.test.ts`.
+
+**Concetto**: URL `?seed=N` già funzionante (riproducibilità verificata via e2e).
+  Aggiungere: bottone "Condividi questo seed" nella schermata di morte che copia
+  l'URL con `?seed=<floorSeed>` negli appunti; leaderboard localStorage per
+  punteggi locali (piano più profondo + oro totale).
+
+**Nota tecnica**: il `DeathOverlay` espone già `runStats` (piani/nemici/oro).
+  Non servono API esterne per una leaderboard locale.
+
+---
+
+### C-02 · WebXR probe (VR mode)
+
+**🟢 PROBE IMPLEMENTATO (2026-08-16), RENDERING RIMANDATO**: bottone
+"🥽 VR (sperimentale)" nel menu principale, visibile solo se `navigator.xr` esiste.
+`probeWebXr()` in GameApplication: `isSessionSupported('immersive-vr')` →
+`requestSession` → `renderer.enableXr(session)` (try/catch, esito comunicato via HUD
+in modo onesto). **Limite registrato**: il rendering VR vero richiede il refactor del
+loop da `requestAnimationFrame` a `renderer.setAnimationLoop` (prerequisito
+documentato) — senza quel refactor non si finge una modalità VR funzionante. Da
+verificare con headset reale.
+
+**Concetto**: Three.js 0.185 supporta WebXR nativo. Il renderer usa già `WebGLRenderer`
+  (WebGL2 backend) compatibile con `VRButton` di `three/examples/jsm/webxr/VRButton.js`.
+  Obiettivo: avviare la sessione VR, muovere la camera con il controller destro,
+  attaccare con il trigger.
+
+**Prerequisiti**: WebXR richiede HTTPS; la generazione procedurale e Rapier
+  devono restare sincrone (già sono su worker). Performance target: 72fps steady
+  (attuale 60fps target — valutare abbassamento qualità VFX per budget frame).
+
+**Quando farlo**: solo dopo che il VS gira a 60fps stabili su hardware medio-basso.
+
+---
+
+### C-03 · Sistema voci / sottotitoli
+
+**🟢 INFRASTRUTTURA SOTTOTITOLI COMPLETATA (2026-08-16), VOCE RIMANDA**:
+- `HUD.ts`: barra sottotitoli dedicata (`#game-hud div[aria-live]`) con frecce
+  direzione (⬆⬇⬅➡), speaker opzionale («nome»), fade 300ms, timer pulito in dispose.
+- `setSubtitlePreferences()` collegato alle impostazioni `subtitleNames`/
+  `subtitleDirections` in `applyRuntimeSettings` — **i due flag ora hanno effetto
+  reale** (prima erano inerti).
+- `showMessage()` accetta direzione; `subtitleDirectionTo()` in GameApplication
+  calcola la bussola (yaw 0 = -z) per gli eventi posizionali (BRAZIER_LIT,
+  DIG_COMPLETE, TREASURE_FOUND).
+- Test: 5 in `tests/dom/HudSubtitles.test.ts`.
+- **Rimandato**: bus voce + cueing narrativo (richiede lo script narrativo del VS).
+
+**Perché esiste il hook**: `SettingsMenu` include già `subtitleNames` / `subtitleDirections`
+  come opzioni di accessibilità. Implica che voice acting sia nella roadmap creativa.
+
+**Stato attuale**: nessuna infrastruttura audio per voce (bus separato, cueing da evento
+  narrativo, sincronizzazione sottotitoli).
+
+**Quando farlo**: dopo definizione dello script narrativo del VS (fuori scope tecnico).
+
+---
+
+### C-04 · Hub / Fucina strutturata
+
+**🟢 FUCINA VISUALE COMPLETATA (2026-08-16), HUB SEPARATO RIMANDA**:
+- `ProgressionOverlay` (TAB): la sezione graft è ora una **fucina visuale** —
+  card con emoji (🛡️🐺🟡🔷👁️), rarità colorata (comune/epico/leggendario) e
+  descrizione dall'effetto reale (`ALL_UPGRADES`), con testo guida "Scava i siti
+  per trovarne di rari". Il bestiario/albero Ka restano nel TAB.
+- **Rimandato**: schermata hub separata tra i run (piramide selezionabile) — fuori
+  scope VS, richiede design di navigazione dedicato.
+
+**Stato attuale**: overlay `TAB` con schermata testuale per Ka Tree / bestiario / graft.
+  Funzionale, non "polished".
+
+**Miglioramento post-VS**: una vera schermata hub tra i run (piramide selezionabile,
+  fucina visuale per graft, bestiario con silhouette e descrizione estesa).
+
+---
+
+## 5. DECISIONI PERMANENTI — NON RIAPRIRE
+
+### 5-01 · Simulazione su Web Worker — RINVIATA
+
+**Decisione**: NON implementare nel VS o in sprint vicini.
+
+**Motivazione tecnica** (riassunto — dettaglio completo in `roadmap.md` §3, voce 2026-08-16):
+- Rapier WASM su Worker richiede `wasm-bindgen` init dedicato + protocollo
+  JSON-RPC tra worker e main a 60Hz (1-3ms/frame di marshalling).
+- `GameApplication` è oggi una closure che tocca DOM/audio/renderer direttamente:
+  estrarre `simulation.step` in un worker-puro richiederebbe refactor totale.
+- Il carico pesante (generazione procedurale) è **già su worker** da sempre.
+  Il main thread ha budget sufficiente per i 60 tick di simulazione.
+
+**Condizione per riaprire**: profiling concreto (DevTools Performance) che dimostri
+  main-thread saturo (> 14ms frame budget consumato dalla simulazione).
+  Senza quel dato, il costo di refactor è ingiustificato.
+
+---
+
+## 6. PIANO DI ESECUZIONE CONSIGLIATO
+
+> Ordine tenendo conto delle dipendenze reali e del ROI.
+
+```
+Sprint 1 — Stabilizzazione qualità VS ✅ (completato 2026-08-16)
+  A-02  G-07: amplifiedTelegraphs + decisione torchToggle       ✅ fatto (verificato + rimosso torchToggle)
+  A-01  G-04: consumer rumore AI + ricompense scavo             ✅ fatto (+8 test, digLoot.ts, lit-room)
+  A-04  Documentazione stale                                    ✅ fatto (roadmap/RESOCONTO/checklist allineati)
+
+Sprint 2 — Calibrazione con playtest ✅ (completato 2026-08-17)
+  A-03  COBRA/SHABTI balance calibration                        ✅ fatto (anticipation+hearRadius COBRA, hp+range SHABTI)
+  A-02  confermato chiuso — nessun problema emerso da A-03
+
+Sprint 3 — Arricchimento visivo (priorità B, completato con alternativa 2026-08-17)
+  B-01  Quaternius Ruins CC0                                    📋 BLOCCATO (lightbox JS, niente URL diretto — download manuale)
+  B-02  Sketchfab sarcofagi/statue                              📋 BLOCCATO (autenticazione) — ✅ ALT: landmark geometry procedurale
+  [B-06 rimosso — completato, verificato 2026-08-17: 4 texture in public/textures/]
+
+Sprint 4 — Arricchimento audio (priorità B, completato 2026-08-17)
+  B-03  Mixamo animazioni nemici                                 📋 BLOCCATO (login Adobe) — ✅ ALT: idle breathing + lunge procedurale
+  B-04  13 RPG foley CC0 + branch buffer reale in WebAudioEngine ✅ fatto (2026-08-16/17: branch reale + 11 cue sintetici B-04-ext)
+  B-05  Ambience 4° layer + floor-tier tuning                   ✅ fatto (AmbiencePreset: sawtooth 110Hz, gainMultiplierForFloor)
+
+Sprint 5 — Asset esterni (priorità B, bloccato — rete VM non disponibile)
+  T2    Poly Haven HDRI desert                                  📋 BLOCCATO (no rete VM) — download manuale da polyhaven.com/hdris
+  S4    Desert ambience OpenGameArt                             📋 BLOCCATO (no rete VM) — download manuale da opengameart.org
+  A2    ToxSam GLB registry                                     📋 BLOCCATO (no rete VM) — download manuale da github.com/ToxSam
+  A4    Mixamo (Quaternius Animated Creatures CC0 in alternativa) 📋 BLOCCATO — download manuale
+
+Post-VS — Espansione
+  C-01  Leaderboard / seed sharing
+  C-02  WebXR probe
+  C-03  Sistema voci / sottotitoli
+  C-04  Hub / Fucina strutturata
+```
+
+---
+
+## 7. METRICHE DI COMPLETAMENTO VS
+
+Il VS è da considerarsi **pronto per demo pubblica** quando:
+
+| Criterio | Stato attuale |
+|---|---|
+| `npm run verify` verde | ✅ (401+ test: 351 node + 50 DOM, aggiornato 2026-08-17) |
+| `npm run test:e2e` 11/11 | ✅ |
+| 3 tester esterni completano piano 1 senza guida | 🟢 protocollo pronto — richiede A-03 (tester esterni) |
+| Nessun crash o JS error in console dopo 10 run | ⬜ (da misurare con DebugOverlay) |
+| Performance ≥ 30fps su hardware 2020 (GPU integrata) | ⬜ (da misurare con DebugOverlay) |
+| Documentazione aggiornata e coerente | ✅ (A-04 completato) |
+| CREDITS.md completo con attribuzioni CC-BY | ✅ (Ground054/Rock064/Poly Pizza/Kenney presenti) |
+
+---
+
+*Fine documento. Complementare a `roadmap.md` e `PIANO_COLMATURA_GAP.md`.*
+*Aggiornare §2 e §3 ad ogni sprint; aggiornare §1 solo aggiungendo voci (mai rimuovere).*
