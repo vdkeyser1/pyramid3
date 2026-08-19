@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { resolveLandmarkPlaceholder } from '@/content/LandmarkPlaceholders.js';
+import type { RoomBounds as CullBounds } from '@/rendering/FrustumCuller.js';
 import type {
   FloorSceneCorridor,
   FloorSceneLandmark,
@@ -49,8 +50,12 @@ export interface BuildDungeonLayoutOptions {
   readonly glyphColorMap?: THREE.Texture | null;
 }
 
-export function buildDungeonLayout(options: BuildDungeonLayoutOptions): void {
+export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBounds[] {
   const { layout, dungeonRoot, floorMaterial, wallMaterial, createStaticBox, glyphEmissiveMap } = options;
+
+  // R-03: active room group — geometry goes here instead of dungeonRoot during
+  // addRoom / addCorridor so the FrustumCuller can cull per-room.
+  let _roomGroup: THREE.Group | null = null;
 
   function addDungeonBox(
     width: number,
@@ -72,7 +77,7 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): void {
     mesh.position.set(x, y, z);
     mesh.castShadow = castShadow;
     mesh.receiveShadow = true;
-    dungeonRoot.add(mesh);
+    (_roomGroup ?? dungeonRoot).add(mesh);
   }
 
   function addWallSegment(width: number, height: number, depth: number, x: number, y: number, z: number): void {
@@ -328,13 +333,39 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): void {
     createStaticBox(landmark.position.x, 0.18, landmark.position.z, 0.55, 0.18, 0.55);
   }
 
+  const cullBounds: CullBounds[] = [];
+
   for (const room of layout.rooms) {
+    const group = new THREE.Group();
+    dungeonRoot.add(group);
+    _roomGroup = group;
     addRoom(room);
+    _roomGroup = null;
+    cullBounds.push({
+      id: String(room.roomId),
+      min: { x: room.bounds.minX, y: -FLOOR_THICKNESS_M, z: room.bounds.minZ },
+      max: { x: room.bounds.maxX, y: WALL_HEIGHT_M, z: room.bounds.maxZ },
+      group,
+    });
   }
+
   for (const corridor of layout.corridors) {
+    const group = new THREE.Group();
+    dungeonRoot.add(group);
+    _roomGroup = group;
     addCorridor(corridor);
+    _roomGroup = null;
+    cullBounds.push({
+      id: `${String(corridor.fromRoomId)}-${String(corridor.toRoomId)}`,
+      min: { x: corridor.bounds.minX, y: -FLOOR_THICKNESS_M, z: corridor.bounds.minZ },
+      max: { x: corridor.bounds.maxX, y: WALL_HEIGHT_M, z: corridor.bounds.maxZ },
+      group,
+    });
   }
+
   for (const landmark of layout.landmarks) {
     addLandmark(landmark);
   }
+
+  return cullBounds;
 }

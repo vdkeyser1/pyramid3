@@ -74,6 +74,8 @@ export interface FloorSceneLayout {
   readonly braziers: readonly FloorSceneBrazier[];
   readonly doorways: readonly FloorSceneDoorway[];
   readonly digSite: FloorSceneDigSite | null;
+  /** Posizione del pickup della pala (se presente in questo piano). */
+  readonly shovelPickup: SceneVector3 | null;
 }
 
 const FLOOR_Y = 0;
@@ -164,6 +166,17 @@ function offsetTargetPosition(room: RoomNode, seed: number): SceneVector3 {
   return {
     x: clamp(center.x + xOffset, room.bounds.minX + ROOM_INSET_M, room.bounds.maxX - ROOM_INSET_M),
     y: center.y,
+    z: clamp(center.z + zOffset, room.bounds.minZ + ROOM_INSET_M, room.bounds.maxZ - ROOM_INSET_M),
+  };
+}
+
+function offsetShovelPosition(room: RoomNode, seed: number): SceneVector3 {
+  const center = centerOfBounds(room.bounds, FLOOR_Y);
+  const xOffset = DIG_SITE_OFFSET_OPTIONS[Math.abs(seed * 7 + room.id) % DIG_SITE_OFFSET_OPTIONS.length] ?? 0;
+  const zOffset = DIG_SITE_OFFSET_OPTIONS[Math.abs(seed * 11 ^ room.id) % DIG_SITE_OFFSET_OPTIONS.length] ?? 0;
+  return {
+    x: clamp(center.x + xOffset, room.bounds.minX + ROOM_INSET_M, room.bounds.maxX - ROOM_INSET_M),
+    y: 0.04,
     z: clamp(center.z + zOffset, room.bounds.minZ + ROOM_INSET_M, room.bounds.maxZ - ROOM_INSET_M),
   };
 }
@@ -313,6 +326,14 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
     }
     : null;
 
+  // Pala: posizionata in una stanza qualsiasi che non sia l'entrata né il tesoro.
+  const shovelCandidates = floor.rooms.filter(
+    (r) => r.id !== floor.entryRoomId && r.id !== floor.treasureRoomId,
+  );
+  const shovelRoomIdx = (floor.seed ^ 0x3a1b) % Math.max(1, shovelCandidates.length);
+  const shovelRoom = shovelCandidates[shovelRoomIdx] ?? floor.rooms[0];
+  const shovelPickup = shovelRoom ? offsetShovelPosition(shovelRoom, floor.seed ^ 0x5c2d) : null;
+
   const exitDoorClosedPosition = positionInsideWall(exitRoom.bounds, exitDirection, DOOR_OFFSET_M, EXIT_Y);
   const slideSign = floor.seed % 2 === 0 ? 1 : -1;
   const exitDoorOpenPosition =
@@ -358,5 +379,6 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
     braziers,
     doorways,
     digSite,
+    shovelPickup,
   };
 }

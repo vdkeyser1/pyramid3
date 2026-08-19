@@ -39,59 +39,81 @@ export const MUSIC_STATES: readonly MusicState[] = ['EXPLORE', 'TENSION', 'COMBA
 
 export const MUSIC_PRESET: Record<MusicState, MusicStateDef> = {
   EXPLORE: {
-    masterGain: 0.42,
-    filterHz: 900,
+    // Respiro della piramide: sine puri + triangle caldo — nessun sawtooth,
+    // nessun buzz. Scala frigia dominante (La, Do♯, Mi) per colore egizio.
+    masterGain: 0.36,
+    filterHz: 650,
     layers: [
-      { waveform: 'sine', frequencyHz: 110, detuneCent: 0, gain: 0.55 },       // La2: radice
-      { waveform: 'sine', frequencyHz: 164.81, detuneCent: 5, gain: 0.28 },    // Mi3: quinta
+      { waveform: 'sine', frequencyHz: 55,  detuneCent: 2,  gain: 0.40 },   // sub-bass La1
+      { waveform: 'sine', frequencyHz: 110, detuneCent: -2, gain: 0.38 },   // La2 fondamentale
+      { waveform: 'triangle', frequencyHz: 164.81, detuneCent: 4, gain: 0.18 }, // Mi3 quinta
       {
-        waveform: 'triangle',
+        waveform: 'sine',
         frequencyHz: 220,
         detuneCent: 0,
-        gain: 0.14,
-        pulseHz: 0.12,
-        pulseDepth: 0.6,
-      }, // Respiro lento della piramide
+        gain: 0.09,
+        pulseHz: 0.07,
+        pulseDepth: 0.8,
+      }, // Respiro molto lento (ogni ~14 s)
     ],
   },
   TENSION: {
-    masterGain: 0.5,
-    filterHz: 1600,
+    // Pericolo palpitante: triangle cupi + battito cardiaco (1.1 Hz ≈ 66 bpm)
+    masterGain: 0.44,
+    filterHz: 900,
     layers: [
-      { waveform: 'sawtooth', frequencyHz: 55, detuneCent: -6, gain: 0.3 },    // La1 grave
-      { waveform: 'sawtooth', frequencyHz: 82.41, detuneCent: 6, gain: 0.22 }, // Mi2
+      { waveform: 'triangle', frequencyHz: 55,    detuneCent: -6, gain: 0.34 },
+      { waveform: 'triangle', frequencyHz: 82.41, detuneCent:  6, gain: 0.22 },
+      {
+        waveform: 'sine',
+        frequencyHz: 110,
+        detuneCent: 0,
+        gain: 0.16,
+        pulseHz: 1.1,
+        pulseDepth: 0.70,
+      }, // Battito lento del cuore
       {
         waveform: 'triangle',
         frequencyHz: 220,
         detuneCent: 0,
-        gain: 0.18,
+        gain: 0.10,
         pulseHz: 2.2,
-        pulseDepth: 0.7,
-      }, // Pulsazione di pericolo
+        pulseDepth: 0.65,
+      }, // Tensione doppia
     ],
   },
   COMBAT: {
-    masterGain: 0.6,
-    filterHz: 4000,
+    // Scontro: sawtooth filtrato + pulsazioni rapide — più aggressivo ma
+    // contenuto dal compressore per non stridere sulle cuffie.
+    masterGain: 0.50,
+    filterHz: 1800,
     layers: [
-      { waveform: 'sawtooth', frequencyHz: 55, detuneCent: -10, gain: 0.38 },
-      { waveform: 'sawtooth', frequencyHz: 55.5, detuneCent: 10, gain: 0.38 }, // Battimento lento aggressivo
+      { waveform: 'sawtooth', frequencyHz: 55,   detuneCent: -10, gain: 0.26 },
+      { waveform: 'sawtooth', frequencyHz: 55.5, detuneCent:  10, gain: 0.26 }, // battimento
       {
         waveform: 'square',
         frequencyHz: 110,
         detuneCent: 0,
-        gain: 0.14,
+        gain: 0.09,
         pulseHz: 6.0,
-        pulseDepth: 0.85,
+        pulseDepth: 0.88,
       }, // Ritmo incalzante
       {
         waveform: 'triangle',
         frequencyHz: 329.63,
         detuneCent: 0,
-        gain: 0.1,
+        gain: 0.07,
         pulseHz: 9.0,
-        pulseDepth: 0.9,
-      }, // Shimmer d'emergenza
+        pulseDepth: 0.92,
+      }, // Shimmer alto
+      {
+        waveform: 'sine',
+        frequencyHz: 440,
+        detuneCent: 0,
+        gain: 0.04,
+        pulseHz: 12.0,
+        pulseDepth: 0.85,
+      }, // Picco d'urgenza
     ],
   },
 };

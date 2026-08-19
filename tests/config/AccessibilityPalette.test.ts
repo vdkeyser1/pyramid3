@@ -12,7 +12,7 @@ describe('AccessibilityPalette', () => {
     expect(ui.textColor).toBe('#D4A05A');
     expect(ui.accentColor).toBe('#2E8B8B');
     expect(world.backgroundColor).toBe(0x0b0908);
-    expect(world.exitColor).toBe(0x5a3f1b);
+    expect(world.exitColor).toBe(0xd4900a);
   });
 
   it('restituisce palette visibilmente distinta per tritanopia', () => {

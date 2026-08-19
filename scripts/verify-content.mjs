@@ -39,9 +39,11 @@ const RULES = [
   { path: 'WEAPONS.khopesh.damageHp',   min: 10,  max: 30  },
   { path: 'WEAPONS.staff.damageHp',     min: 5,   max: 20  },
   { path: 'WEAPONS.shovel.damageHp',    min: 3,   max: 15  },
+  // durability: le armi da mischia si misurano in HITS (durabilityUnit: 'HITS'),
+  // la pala in SCAVI (durabilityUnit: 'DIGS') — range diversi per unità diverse.
   { path: 'WEAPONS.khopesh.durability', min: 50,  max: 300 },
   { path: 'WEAPONS.staff.durability',   min: 50,  max: 500 },
-  { path: 'WEAPONS.shovel.durability',  min: 10,  max: 100 },
+  { path: 'WEAPONS.shovel.durability',  min: 1,   max: 10  },  // DIGS, non HITS
 
   // DIGGING
   { path: 'DIGGING.segments',           min: 2,   max: 8   },

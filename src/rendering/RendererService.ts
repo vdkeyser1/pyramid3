@@ -140,8 +140,14 @@ export interface RendererHandle {
   /** G-05: mostra/nasconde il reliquiario del tesoro dissotterrato (loot fisico). */
   setLootReliquary(position: { readonly x: number; readonly y: number; readonly z: number } | null): void;
 
+  /** Pala: mostra/nasconde il pickup della pala a terra. null = rimossa. */
+  setShovelPickup(position: { readonly x: number; readonly z: number } | null): void;
+
   /** Debug overlay (v2): draw calls, triangoli, memoria GPU del frame corrente. */
   getDebugStats(): { readonly drawCalls: number; readonly triangles: number; readonly memoryMB: number };
+
+  /** W-7: imposta l'intensità dell'effetto sandstorm (0 = off, 1 = piena). Solo WebGL2. */
+  setSandStormIntensity?(value: number): void;
 
   /** Ridimensiona il canvas. */
   resize(width: number, height: number, pixelRatio: number): void;

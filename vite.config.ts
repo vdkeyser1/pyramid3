@@ -36,21 +36,84 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,glb,jpg,png,woff2}"],
+        globPatterns: ["**/*.{js,css,html,glb,jpg,png,woff2,ktx2}"],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        // daily-seed.json: NetworkFirst con 25h di stale-while-revalidate
+        runtimeCaching: [
+          {
+            urlPattern: /\/daily-seed\.json$/,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "daily-seed-cache",
+              networkTimeoutSeconds: 5,
+              expiration: { maxAgeSeconds: 90000 }, // 25h
+            },
+          },
+          {
+            urlPattern: /\.ktx2$/,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "ktx2-textures",
+              expiration: { maxEntries: 64, maxAgeSeconds: 31536000 }, // 1 anno
+            },
+          },
+        ],
       },
     }),
   ],
   build: {
     target: "es2022",
     sourcemap: process.env.VITE_SOURCEMAP === "true",
+    // B-01: mai inline WASM — Rapier necessita fetch separato
+    assetsInlineLimit: 0,
     rollupOptions: {
       output: {
+        // B-01: chunk splitting per caching granulare
         manualChunks(id) {
-          if (id.includes("@dimforge/rapier3d-compat")) return "rapier";
-          if (id.includes("three/webgpu")) return "three.webgpu";
+          // Three.js WebGPU (chunk separato — solo se importato)
+          if (id.includes("three/webgpu")) return "vendor-three-webgpu";
+          // Three.js core
           if (id.includes("/three/") || id.includes("\\three\\")) {
-            return "rendering";
+            return "vendor-three";
+          }
+          // Rapier physics
+          if (id.includes("@dimforge/rapier3d-compat")) return "vendor-rapier";
+          // IDB (meta-progressione)
+          if (id.includes("/idb/") || id.includes("\\idb\\")) {
+            return "vendor-idb";
+          }
+          // Font (woff2 non-JS, ma i loader TS vanno qui)
+          if (
+            id.includes("@fontsource/cinzel") ||
+            id.includes("@fontsource/noto-sans")
+          ) {
+            return "vendor-fonts";
+          }
+          // Zod (validazione seed)
+          if (id.includes("/zod/") || id.includes("\\zod\\")) {
+            return "vendor-zod";
+          }
+          // Gameplay logic chunks (source code)
+          if (
+            id.includes("/src/rendering/") ||
+            id.includes("\\src\\rendering\\")
+          ) {
+            return "floor-renderer";
+          }
+          if (id.includes("/src/meta/") || id.includes("\\src\\meta\\")) {
+            return "meta-progression";
+          }
+          if (
+            id.includes("/src/gameplay/DailyChallengeSystem") ||
+            id.includes("\\src\\gameplay\\DailyChallengeSystem")
+          ) {
+            return "daily-challenge";
+          }
+          if (
+            id.includes("/src/analytics/") ||
+            id.includes("\\src\\analytics\\")
+          ) {
+            return "analytics";
           }
           return undefined;
         },
@@ -59,5 +122,10 @@ export default defineConfig({
   },
   server: {
     open: true,
+    headers: {
+      // COEP/COOP necessari per SharedArrayBuffer (Rapier WASM threading)
+      "Cross-Origin-Embedder-Policy": "require-corp",
+      "Cross-Origin-Opener-Policy": "same-origin",
+    },
   },
 });

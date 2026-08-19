@@ -63,6 +63,18 @@ export const AUDIO_ASSET_MAP: Readonly<Record<string, readonly string[]>> = {
     'audio/real_swing_2.ogg',
     'audio/real_swing_3.ogg',
   ],
+  // W-3: audio atmosferico egizio (CC0 — da scaricare e piazzare in public/audio/).
+  // Se i file mancano il motore usa il fallback procedurale (silenzio pesante).
+  // Sorgenti consigliate: Freesound.org CC0, OpenGameArt CC0.
+  stone_door: [
+    'audio/effects/stone_door_open.ogg',
+  ],
+  trap_trigger: [
+    'audio/effects/trap_trigger.ogg',
+  ],
+  torch_ignite: [
+    'audio/effects/torch_ignite.ogg',
+  ],
 };
 
 /** Invarianti della mappa (usata dai test). */

@@ -1,11 +1,11 @@
 {
   "name": "la-piramide-perduta",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Egyptian Noir Roguelike FPS — Vertical Slice",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --force",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
@@ -21,11 +21,14 @@
     "verify:content": "node scripts/verify-content.mjs",
     "verify": "npm run typecheck && npm run lint && npm run verify:boundaries && npm run verify:content && npm run test && npm run test:dom && npm run build",
     "benchmark:gen": "node scripts/benchmark-generation.mjs",
-    "benchmark:replay": "node scripts/benchmark-replay.mjs"
+    "benchmark:replay": "node scripts/benchmark-replay.mjs",
+    "daily-seed": "node scripts/generate-daily-seed.mjs",
+    "daily-seed:date": "node scripts/generate-daily-seed.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@gltf-transform/cli": "^4.4.2",
+    "@lhci/cli": "^0.15.0",
     "@playwright/test": "1.62.0",
     "@types/node": "^26.1.2",
     "@types/three": "^0.185.1",

@@ -20,6 +20,7 @@ import { resolveWorldAccessibilityPalette } from '@/config/AccessibilityPalette.
 import {
   createDissolveMaterial,
   createHieroglyphTexture,
+  createHieroglyphPanelTexture,
   createSandTexture,
   loadPbrTextureSet,
 } from '@/rendering/Materials.js';
@@ -28,6 +29,9 @@ import type { AssetLoader } from '@/rendering/AssetLoader.js';
 import type { ParticleBurst } from '@/rendering/Vfx.js';
 import type { PhysicsKinematicBox, PhysicsWorld } from '@/physics/PhysicsWorld.js';
 import type { FloorSceneLayout } from '@/world/FloorSceneLayout.js';
+import { createFrustumCuller } from '@/rendering/FrustumCuller.js';
+import type { FrustumCuller } from '@/rendering/FrustumCuller.js';
+import { getReducedMotionAdapter } from '@/platform/ReducedMotionAdapter.js';
 
 const log = createLogger('ThreeRenderer');
 
@@ -42,8 +46,25 @@ function loadRealTexture(
   repeatX: number,
   repeatY: number,
   fallback: () => THREE.Texture | null,
+  renderer?: THREE.WebGLRenderer,
 ): THREE.Texture | null {
   try {
+    // I .ktx2 vanno transcodificati da Basis: TextureLoader non li legge.
+    // Senza renderer WebGL non è possibile, quindi si usa il fallback.
+    if (path.endsWith('.ktx2')) {
+      if (!renderer) return fallback();
+      const placeholder = new THREE.Texture();
+      placeholder.colorSpace = THREE.SRGBColorSpace;
+      placeholder.wrapS = THREE.RepeatWrapping;
+      placeholder.wrapT = THREE.RepeatWrapping;
+      placeholder.repeat.set(repeatX, repeatY);
+      placeholder.anisotropy = 4;
+      void import('@/rendering/KTX2TextureLoader.js').then(({ loadKTX2TextureSync }) => {
+        loadKTX2TextureSync(path, renderer, () => placeholder, { transcoderPath: '/basis/' });
+      });
+      return placeholder;
+    }
+
     const texture = new THREE.TextureLoader().load(path);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.wrapS = THREE.RepeatWrapping;
@@ -64,14 +85,15 @@ export function createThreeRenderer(
   let renderer: ThreeWebGPURenderer | THREE.WebGLRenderer;
   let scene: THREE.Scene;
   let dungeonRoot: THREE.Group;
+  let frustumCuller: FrustumCuller;
   let camera: THREE.PerspectiveCamera;
   let torchLight: THREE.SpotLight;
   let torchAmbientLight: THREE.PointLight;
   let placedTorchLight: THREE.PointLight;
   let placedTorchMesh: THREE.Mesh;
   // G-15: fiamma procedurale della torcia (mano) e della torcia posata.
-  let handFlame: { group: THREE.Group; update(deltaMs: number, intensity: number): void } | null = null;
-  let placedFlame: { group: THREE.Group; update(deltaMs: number, intensity: number): void } | null = null;
+  let handFlame: { group: THREE.Group; update(deltaMs: number, intensity: number): void; setFlickerReduced(reduced: boolean): void } | null = null;
+  let placedFlame: { group: THREE.Group; update(deltaMs: number, intensity: number): void; setFlickerReduced(reduced: boolean): void } | null = null;
   // V6: god ray della torcia accesa — cono additivo che segue la camera.
   let torchBeam: { mesh: THREE.Mesh; material: THREE.MeshBasicMaterial } | null = null;
   let sparkBurst: ParticleBurst | null = null;
@@ -114,6 +136,9 @@ export function createThreeRenderer(
     phaseOffset: number;
   }[] = [];
   let exitBeacon: THREE.Mesh | null = null;
+  let exitBeaconLight: THREE.PointLight | null = null;
+  /** Materiale dei glifi sul pavimento — animato nel render loop (pulsazione emissiva). */
+  let decorGlyphMaterial: THREE.MeshStandardMaterial | null = null;
   let disposed = false;
   let initialized = false;
   let activeFloorLayout: FloorSceneLayout | null = null;
@@ -142,10 +167,20 @@ export function createThreeRenderer(
   let webgpuPipeline: { render(): void; dispose(): void } | null = null;
   // SSAO-1: ambient occlusion screen-space (solo WebGL2, per ambienti di pietra).
   let ssaoPass: { dispose(): void; setSize(width: number, height: number): void } | null = null;
+  // W-7: sandstorm post-processing controller (heat shimmer + grain).
+  let sandStormController: import('@/rendering/SandStormPass.js').SandStormController | null = null;
   // QC-1: post-fx (bloom+SSAO) attivo? Controllato da applyQualityProfile.
+  // _qualityWantsPostFx e _motionReduced si combinano: entrambi devono essere
+  // veri per attivare il composer (prefers-reduced-motion disabilita gli effetti).
+  let _qualityWantsPostFx = true;
+  let _motionReduced = false;
   let postFxEnabled = true;
   // G-05: reliquiario del tesoro dissotterrato (loot fisico raccoglibile).
   let lootReliquary: THREE.Group | null = null;
+  // Pickup della pala — piccola croce dorata sul pavimento.
+  let shovelPickupGroup: THREE.Group | null = null;
+  // KayKit: torcia posata (GLB) — sostituisce il cilindro placeholder se caricato.
+  let placedTorchGlb: THREE.Group | null = null;
 
   async function init(): Promise<void> {
     let webgpuReady = false;
@@ -166,20 +201,74 @@ export function createThreeRenderer(
         await assetLoader.preload(paths);
         log.info('Asset preload completato', { assets: paths.length, caricate: paths.filter((p) => assetLoader?.has(p) ?? false).length });
       }
+
+      // Carica torcia KayKit (CC0) — sostituisce il cilindro placeholder.
+      const torchGltf = await assetLoader.load('assets/props/torch_lit.glb');
+      if (torchGltf && !disposed) {
+        const group = torchGltf.scene.clone(true);
+        group.scale.setScalar(0.9);
+        // KayKit usa asse Y verso l'alto, origine alla base — nessuna rotazione necessaria.
+        group.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        group.visible = false;
+        scene.add(group);
+        placedTorchGlb = group;
+      }
+
+      // W-1: HDRI Poly Haven CC0 — migliora l'IBL su tutti i MeshStandardMaterial.
+      // Sostituisce l'env map procedurale se il file è disponibile.
+      if (backend === 'webgl2' && !disposed) {
+        const { loadHDRI } = await import('@/rendering/HDRILoader.js');
+        const hdri = await loadHDRI(renderer as THREE.WebGLRenderer, '/hdri/sahara_2k.hdr');
+        // `disposed` può cambiare durante l'await (dispose() concorrente): TS non
+        // modella la mutazione attraverso il confine async e crede sia sempre false,
+        // ma il controllo è una guardia reale contro l'uso dopo il rilascio.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (hdri && !disposed) {
+          envMapTexture?.dispose();
+          scene.environment = hdri.envMap;
+          scene.environmentIntensity = 0.45;
+          envMapTexture = hdri.envMap;
+          log.info('HDRI Poly Haven caricato');
+        }
+      }
     })();
 
     if (backend === 'webgpu') {
+      // Verifica preventiva: richiedi esplicitamente un GPU adapter prima di creare
+      // il WebGPURenderer. Su Linux/Ubuntu senza driver Vulkan, navigator.gpu esiste
+      // ma requestAdapter() ritorna null — in quel caso usiamo direttamente WebGL2.
+      let gpuAdapterAvailable = false;
       try {
-        const { WebGPURenderer } = await import('three/webgpu');
-        renderer = new WebGPURenderer({
-          canvas,
-          antialias: true,
-          alpha: false,
-          powerPreference: 'high-performance',
-        });
-        webgpuReady = true;
+        const gpu = (navigator as { gpu?: { requestAdapter?: () => Promise<unknown> } }).gpu;
+        if (gpu?.requestAdapter) {
+          const adapter = await gpu.requestAdapter();
+          gpuAdapterAvailable = adapter !== null;
+        }
       } catch {
-        log.warn('WebGPU non disponibile, fallback WebGL2');
+        gpuAdapterAvailable = false;
+      }
+
+      if (gpuAdapterAvailable) {
+        try {
+          const { WebGPURenderer } = await import('three/webgpu');
+          renderer = new WebGPURenderer({
+            canvas,
+            antialias: true,
+            alpha: false,
+            powerPreference: 'high-performance',
+          });
+          webgpuReady = true;
+        } catch {
+          log.warn('WebGPU non disponibile, fallback WebGL2');
+          backend = 'webgl2';
+        }
+      } else {
+        log.warn('Nessun GPU adapter WebGPU disponibile (Linux/Ubuntu senza Vulkan) — uso WebGL2');
         backend = 'webgl2';
       }
     }
@@ -211,6 +300,18 @@ export function createThreeRenderer(
 
     dungeonRoot = new THREE.Group();
     scene.add(dungeonRoot);
+    frustumCuller = createFrustumCuller();
+
+    // A-10: prefers-reduced-motion → disabilita bloom+SSAO per accessibilità.
+    const motionAdapter = getReducedMotionAdapter();
+    _motionReduced = motionAdapter.isReduced;
+    motionAdapter.onChange((reduced) => {
+      _motionReduced = reduced;
+      postFxEnabled = _qualityWantsPostFx && !_motionReduced;
+      if (bloomPass) {
+        bloomPass.strength = _motionReduced ? 0 : (_qualityWantsPostFx ? 0.55 : 0);
+      }
+    });
     brazierRoot = new THREE.Group();
     scene.add(brazierRoot);
 
@@ -274,8 +375,18 @@ export function createThreeRenderer(
           0.42,
         );
         composition.addPass(bloom);
+        // W-7: SandStorm ShaderPass — heat shimmer + grain desertico (intensità default 0.12).
+        const { ShaderPass } = await import('three/examples/jsm/postprocessing/ShaderPass.js');
+        const { SandStormShader, createSandStormController } = await import('@/rendering/SandStormPass.js');
+        const sandPass = new ShaderPass(SandStormShader);
+        composition.addPass(sandPass);
+        sandStormController = createSandStormController(
+          sandPass.uniforms as unknown as import('@/rendering/SandStormPass.js').SandStormUniforms,
+        );
+        sandStormController.setIntensity(0.12);
         composer = {
           render: () => {
+            sandStormController?.update(performance.now() * 0.001);
             composition.render();
           },
           setSize: (width, height) => {
@@ -356,76 +467,99 @@ export function createThreeRenderer(
     placedTorchLight.shadow.bias = -0.00018;
     scene.add(placedTorchLight);
 
+    // W-2: renderer WebGL2 passato a loadPbrTextureSet per upgrade KTX2 asincrono.
+    const glRenderer = backend === 'webgl2' ? renderer as THREE.WebGLRenderer : undefined;
+
     floorMaterial = new THREE.MeshStandardMaterial({
       color: 0x3a2a1a,
       roughness: 0.92,
       metalness: 0.08,
     });
-    // G-16: texture PBR reale di sabbia (ambientCG CC0, set Ground054 —
-    // color+normal+roughness+AO coerenti) con fallback procedurale.
-    const sandPbr = loadPbrTextureSet(
-      'textures/sand_color.jpg',
-      'textures/sand_normalgl.jpg',
-      6,
-      6,
-      'textures/sand_roughness.jpg',
-      'textures/sand_ambientocclusion.jpg',
+    // Pavimento: lastre di pietra egizia (Poly Haven stone_floor CC0, 512px).
+    // Fallback: sabbia procedurale se il file manca.
+    const floorPbr = loadPbrTextureSet(
+      'textures/stone_floor_color.ktx2',
+      'textures/stone_floor_normal.ktx2',
+      5, 5,
+      'textures/stone_floor_roughness.ktx2',
+      'textures/stone_floor_ao.ktx2',
+      glRenderer,
     );
-    if (sandPbr.color) {
-      floorMaterial.map = sandPbr.color;
-      if (sandPbr.normal) {
-        floorMaterial.normalMap = sandPbr.normal;
-        floorMaterial.normalScale.set(0.6, 0.6);
+    if (floorPbr.color) {
+      floorMaterial.map = floorPbr.color;
+      if (floorPbr.normal) {
+        floorMaterial.normalMap = floorPbr.normal;
+        floorMaterial.normalScale.set(0.5, 0.5);
       }
-      if (sandPbr.roughness) {
-        floorMaterial.roughnessMap = sandPbr.roughness;
-      }
-      if (sandPbr.ao) {
-        floorMaterial.aoMap = sandPbr.ao;
-        floorMaterial.aoMapIntensity = 0.7;
+      if (floorPbr.roughness) floorMaterial.roughnessMap = floorPbr.roughness;
+      if (floorPbr.ao) {
+        floorMaterial.aoMap = floorPbr.ao;
+        floorMaterial.aoMapIntensity = 0.65;
       }
       floorMaterial.color.setHex(0xffffff);
+      floorMaterial.roughness = 0.88;
     } else {
-      const sandTexture = createSandTexture(256, '#8a7350');
-      if (sandTexture) {
-        floorMaterial.map = sandTexture;
-        floorMaterial.color.setHex(0xb09a70);
+      // fallback sabbia procedurale
+      const sandPbr = loadPbrTextureSet(
+        'textures/sand_color.ktx2', 'textures/sand_normalgl.ktx2', 6, 6,
+        'textures/sand_roughness.ktx2', 'textures/sand_ambientocclusion.ktx2',
+        glRenderer,
+      );
+      if (sandPbr.color) {
+        floorMaterial.map = sandPbr.color;
+        if (sandPbr.normal) { floorMaterial.normalMap = sandPbr.normal; floorMaterial.normalScale.set(0.6, 0.6); }
+        if (sandPbr.roughness) floorMaterial.roughnessMap = sandPbr.roughness;
+        if (sandPbr.ao) { floorMaterial.aoMap = sandPbr.ao; floorMaterial.aoMapIntensity = 0.7; }
+        floorMaterial.color.setHex(0xffffff);
+      } else {
+        const sandTexture = createSandTexture(256, '#8a7350');
+        if (sandTexture) { floorMaterial.map = sandTexture; floorMaterial.color.setHex(0xb09a70); }
       }
     }
-    // G-16 + B-06: texture geroglifica per i landmark glyph — ora il foglio
-    // REALE (OpenGameArt "ancient-egypt-0", CC0) con fallback procedurale;
-    // il papiro reale è la color map dei glifi (testo scolpito nella pietra).
-    glyphTexture = loadRealTexture('textures/hieroglyphs_a_m.png', 2, 2, () =>
+    // Texture geroglifica per i landmark glyph (sprite sheet CC0).
+    glyphTexture = loadRealTexture('textures/hieroglyphs_a_m.ktx2', 2, 2, () =>
       createHieroglyphTexture(0, 256, '#6ee0d1'),
+      glRenderer,
     );
-    glyphColorMap = loadRealTexture('textures/papyrus.jpg', 1, 1, () => null);
+    glyphColorMap = loadRealTexture('textures/papyrus.ktx2', 1, 1, () => null, glRenderer);
     wallMaterial = new THREE.MeshStandardMaterial({
-      color: 0x6b5432,
-      roughness: 0.88,
-      metalness: 0.05,
+      color: 0xffffff,
+      roughness: 0.90,
+      metalness: 0.04,
     });
-    // G-16: texture PBR di arenaria sui muri (ambientCG CC0, set Rock064)
-    // con fallback.
+    // Muri: arenaria sabbiosa egizia (Poly Haven sandstone_brick_wall_01 CC0, 512px).
+    // Per i livelli profondi (floorIndex >= 5) si usa old_sandstone_02 (più scura).
     const wallPbr = loadPbrTextureSet(
-      'textures/stone_color.jpg',
-      'textures/stone_normalgl.jpg',
-      4,
-      3,
-      'textures/stone_roughness.jpg',
-      'textures/stone_ambientocclusion.jpg',
+      'textures/sandstone_wall_color.ktx2',
+      'textures/sandstone_wall_normal.ktx2',
+      4, 3,
+      'textures/sandstone_wall_roughness.ktx2',
+      'textures/sandstone_wall_ao.ktx2',
+      glRenderer,
     );
     if (wallPbr.color) {
       wallMaterial.map = wallPbr.color;
       if (wallPbr.normal) {
         wallMaterial.normalMap = wallPbr.normal;
-        wallMaterial.normalScale.set(0.7, 0.7);
+        wallMaterial.normalScale.set(0.85, 0.85);
       }
-      if (wallPbr.roughness) {
-        wallMaterial.roughnessMap = wallPbr.roughness;
-      }
+      if (wallPbr.roughness) wallMaterial.roughnessMap = wallPbr.roughness;
       if (wallPbr.ao) {
         wallMaterial.aoMap = wallPbr.ao;
-        wallMaterial.aoMapIntensity = 0.75;
+        wallMaterial.aoMapIntensity = 0.80;
+      }
+    } else {
+      // fallback: vecchia texture generica
+      const fallbackPbr = loadPbrTextureSet(
+        'textures/stone_color.ktx2', 'textures/stone_normalgl.ktx2', 4, 3,
+        'textures/stone_roughness.ktx2', 'textures/stone_ambientocclusion.ktx2',
+        glRenderer,
+      );
+      if (fallbackPbr.color) {
+        wallMaterial.map = fallbackPbr.color;
+        if (fallbackPbr.normal) { wallMaterial.normalMap = fallbackPbr.normal; wallMaterial.normalScale.set(0.7, 0.7); }
+        if (fallbackPbr.roughness) wallMaterial.roughnessMap = fallbackPbr.roughness;
+        if (fallbackPbr.ao) { wallMaterial.aoMap = fallbackPbr.ao; wallMaterial.aoMapIntensity = 0.75; }
       }
     }
     doorMaterial = new THREE.MeshStandardMaterial({
@@ -439,10 +573,11 @@ export function createThreeRenderer(
     enemyMaterial.emissive = new THREE.Color(0x000000);
     dissolveSetter = dissolve.setDissolve;
     exitBeaconMaterial = new THREE.MeshStandardMaterial({
-      color: 0x5a3f1b,
-      emissive: 0x000000,
-      roughness: 0.4,
-      metalness: 0.25,
+      color: 0xd4900a,
+      emissive: 0xcc6600,
+      emissiveIntensity: 1.8,
+      roughness: 0.3,
+      metalness: 0.45,
     });
     placedTorchMaterial = new THREE.MeshStandardMaterial({
       color: 0x6a4824,
@@ -452,11 +587,11 @@ export function createThreeRenderer(
       metalness: 0.12,
     });
     digSiteMaterial = new THREE.MeshStandardMaterial({
-      color: 0x6a5638,
-      emissive: 0x261608,
-      emissiveIntensity: 0.35,
-      roughness: 0.92,
-      metalness: 0.05,
+      color: 0x9a7030,
+      emissive: 0x7a4a10,
+      emissiveIntensity: 1.2,
+      roughness: 0.9,
+      metalness: 0.08,
     });
 
     _doorMesh = new THREE.Mesh(new THREE.BoxGeometry(2.0, 3.5, 0.2), doorMaterial);
@@ -465,10 +600,13 @@ export function createThreeRenderer(
     _doorMesh.receiveShadow = true;
     scene.add(_doorMesh);
 
-    exitBeacon = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), exitBeaconMaterial);
+    exitBeacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), exitBeaconMaterial);
     exitBeacon.position.set(_doorClosedPos.x, _doorClosedPos.y + 1.0, _doorClosedPos.z);
     exitBeacon.visible = true;
     scene.add(exitBeacon);
+    exitBeaconLight = new THREE.PointLight(0xffaa22, 14, 7, 2);
+    exitBeaconLight.position.set(_doorClosedPos.x, _doorClosedPos.y + 1.0, _doorClosedPos.z);
+    scene.add(exitBeaconLight);
 
     placedTorchMesh = new THREE.Mesh(
       new THREE.CylinderGeometry(0.05, 0.09, 0.85, 8),
@@ -493,6 +631,15 @@ export function createThreeRenderer(
     placedFlame = placed;
     sparkBurst = createParticleBurst();
     scene.add(sparkBurst.points);
+    // W-6: texture Kenney CC0 per le scintille — caricamento asincrono, fallback al disco.
+    // Catturiamo il riferimento locale: la callback può arrivare dopo un dispose()
+    // che ha già azzerato `sparkBurst`, e il materiale locale resta comunque valido.
+    const burstForTexture = sparkBurst;
+    new THREE.TextureLoader().load('/textures/particles/spark.png', (tex) => {
+      const mat = burstForTexture.points.material as THREE.PointsMaterial;
+      mat.map = tex;
+      mat.needsUpdate = true;
+    });
     const trail = createWeaponTrail();
     scene.add(trail.mesh);
     weaponTrail = trail;
@@ -525,6 +672,7 @@ export function createThreeRenderer(
       torchBeamMaterial,
     );
     torchBeamMesh.position.set(0, -0.1, -3.75);
+    torchBeamMesh.rotation.x = Math.PI / 2; // ruota il cono da asse Y → asse -Z (forward)
     torchBeamMesh.visible = false;
     camera.add(torchBeamMesh);
     torchBeam = { mesh: torchBeamMesh, material: torchBeamMaterial };
@@ -604,7 +752,8 @@ export function createThreeRenderer(
 
     // SSAO/bloom (solo WebGL2): il profilo low salta il composer in render()
     // (SSAOPass non ha un toggle runtime semplice e ri-crearlo è costoso).
-    postFxEnabled = profile.usePostFx;
+    _qualityWantsPostFx = profile.usePostFx;
+    postFxEnabled = _qualityWantsPostFx && !_motionReduced;
     if (ssaoPass && composer) {
       // Mantieni i target dell'SSAO allineati al canvas corrente
       composer.setSize(canvas.clientWidth, canvas.clientHeight);
@@ -685,21 +834,138 @@ export function createThreeRenderer(
     log.info('Reliquiario del tesoro appare', { x: position.x, z: position.z });
   }
 
+  function setShovelPickup(
+    position: { readonly x: number; readonly z: number } | null,
+  ): void {
+    if (shovelPickupGroup) {
+      brazierRoot.remove(shovelPickupGroup);
+      shovelPickupGroup = null;
+    }
+    if (!position || !initialized) return;
+
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xc89030,
+      roughness: 0.4,
+      metalness: 0.7,
+      emissive: 0x6a3a00,
+      emissiveIntensity: 0.5,
+    });
+    // Manico orizzontale
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.55), mat);
+    handle.position.y = 0.04;
+    // Testa della pala
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, 0.18), mat);
+    blade.position.set(0, 0.04, 0.3);
+    group.add(handle, blade);
+
+    // Bagliore a terra
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0xffd060,
+      transparent: true,
+      opacity: 0.28,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const glow = new THREE.Mesh(new THREE.CircleGeometry(0.38, 16), glowMat);
+    glow.rotation.x = -Math.PI / 2;
+    glow.position.y = 0.01;
+    group.add(glow);
+
+    group.position.set(position.x, 0, position.z);
+    brazierRoot.add(group);
+    shovelPickupGroup = group;
+  }
+
+  // W-5 / task-9: posiziona props 3D CC0 nelle stanze.
+  // Stanze ≥ 8×8: colonne/pilastri KayKit agli angoli.
+  // Stanze più piccole: colonne Kenney Dungeon.
+  async function placeKayKitRoomProps(layout: FloorSceneLayout, root: THREE.Group): Promise<void> {
+    const { loadArtifact } = await import('@/rendering/ArtifactLoader.js');
+    const { getArtifactsBySource, getArtifactById } = await import('@/content/ArtifactRegistry.js');
+    const kayKitDefs = getArtifactsBySource('kaykit');
+    const columnDef = kayKitDefs.find((d) => d.id === 'column_kaykit');
+    const pillarDef = kayKitDefs.find((d) => d.id === 'pillar_decorated');
+    const ruinsColumnDef = getArtifactById('ruins_column');
+    if (!columnDef && !pillarDef && !ruinsColumnDef) return;
+
+    for (const room of layout.rooms) {
+      const { minX, maxX, minZ, maxZ } = room.bounds;
+      const w = maxX - minX;
+      const d = maxZ - minZ;
+      if (w < 8 || d < 8) continue;
+
+      const cx = (minX + maxX) / 2;
+      const cz = (minZ + maxZ) / 2;
+      const halfW = w / 2 - 1.2;
+      const halfD = d / 2 - 1.2;
+
+      // 4 angoli della stanza — 1 colonna o pilastro per angolo.
+      // Stanze grandi: KayKit (più elaborate). Stanze medie: Kenney ruins.
+      const isLarge = w >= 10 && d >= 10;
+      const corners = [
+        { x: cx - halfW, z: cz - halfD },
+        { x: cx + halfW, z: cz - halfD },
+        { x: cx - halfW, z: cz + halfD },
+        { x: cx + halfW, z: cz + halfD },
+      ];
+
+      for (let i = 0; i < corners.length; i++) {
+        const def = isLarge
+          ? (i % 2 === 0 ? (columnDef ?? pillarDef) : (pillarDef ?? columnDef))
+          : ruinsColumnDef;
+        if (!def) continue;
+        const prop = await loadArtifact(def);
+        if (!prop || disposed) return;
+        const corner = corners[i];
+        if (!corner) continue;
+        prop.position.set(corner.x, 0, corner.z);
+        root.add(prop);
+      }
+    }
+  }
+
   async function rebuildFloorLayout(layout: FloorSceneLayout): Promise<void> {
+    // Swap texture muri: arenaria chiara nei livelli bassi, scura in cripta.
+    const useDeepWall = layout.floorIndex >= 5;
+    const wPbr = loadPbrTextureSet(
+      useDeepWall ? 'textures/sandstone_dark_color.ktx2' : 'textures/sandstone_wall_color.ktx2',
+      useDeepWall ? 'textures/sandstone_dark_normal.ktx2' : 'textures/sandstone_wall_normal.ktx2',
+      4, 3,
+      useDeepWall ? 'textures/sandstone_dark_roughness.ktx2' : 'textures/sandstone_wall_roughness.ktx2',
+      useDeepWall ? 'textures/sandstone_dark_ao.ktx2' : 'textures/sandstone_wall_ao.ktx2',
+      backend === 'webgl2' ? renderer as THREE.WebGLRenderer : undefined,
+    );
+    if (wPbr.color) {
+      wallMaterial.map = wPbr.color;
+      wallMaterial.normalMap = wPbr.normal ?? null;
+      if (wPbr.normal) wallMaterial.normalScale.set(0.85, 0.85);
+      wallMaterial.roughnessMap = wPbr.roughness ?? null;
+      wallMaterial.aoMap = wPbr.ao ?? null;
+      if (wPbr.ao) wallMaterial.aoMapIntensity = 0.80;
+      wallMaterial.needsUpdate = true;
+    }
+
     dungeonRoot.clear();
     brazierRoot.clear();
     brazierLights.clear();
     brazierMaterials.clear();
     digSiteMarker = null;
+    decorGlyphMaterial = null;
     if (lootReliquary) {
       brazierRoot.remove(lootReliquary);
       lootReliquary = null;
+    }
+    if (shovelPickupGroup) {
+      brazierRoot.remove(shovelPickupGroup);
+      shovelPickupGroup = null;
     }
 
     _doorPhysics?.dispose();
     _doorPhysics = null;
 
-    buildDungeonLayout?.({
+    frustumCuller.clearRooms();
+    const roomBounds = buildDungeonLayout?.({
       layout,
       dungeonRoot,
       floorMaterial,
@@ -707,7 +973,10 @@ export function createThreeRenderer(
       createStaticBox,
       glyphEmissiveMap: glyphTexture,
       glyphColorMap,
-    });
+    }) ?? [];
+    for (const bounds of roomBounds) {
+      frustumCuller.registerRoom(bounds);
+    }
 
     // G-14: carica i modelli .glb dei landmark dichiarati nel manifest e li
     // aggiunge sopra la primitiva placeholder (la copre visivamente). Se il
@@ -721,7 +990,7 @@ export function createThreeRenderer(
     // v2: mood per fascia del piano (Cripta = ossa, Anticamera = vasi).
     try {
       const { decorateRooms } = await import('@/rendering/RoomDecor.js');
-      decorateRooms({
+      const decorResult = decorateRooms({
         layout,
         dungeonRoot,
         wallMaterial,
@@ -729,10 +998,15 @@ export function createThreeRenderer(
         clayColor: 0x9c6b3c,
         candleColor: 0xd4a05a,
         mood: layout.floorIndex >= 5 ? 'cripta' : layout.floorIndex <= 2 ? 'anticamera' : 'galleria',
+        hieroglyphPanelTexture: createHieroglyphPanelTexture(layout.floorIndex),
       });
+      decorGlyphMaterial = decorResult.glyphMaterial;
     } catch (error) {
       log.warn('Decorazione stanze non disponibile', { error: String(error) });
     }
+
+    // W-5 / task-9: piazza props GLB KayKit nelle stanze grandi.
+    void placeKayKitRoomProps(layout, dungeonRoot);
 
     _doorClosedPos.x = layout.exitDoorClosedPosition.x;
     _doorClosedPos.y = layout.exitDoorClosedPosition.y;
@@ -749,6 +1023,9 @@ export function createThreeRenderer(
     }
     if (exitBeacon) {
       exitBeacon.position.set(_doorClosedPos.x, _doorClosedPos.y + 1.0, _doorClosedPos.z);
+    }
+    if (exitBeaconLight) {
+      exitBeaconLight.position.set(_doorClosedPos.x, _doorClosedPos.y + 1.0, _doorClosedPos.z);
     }
 
     if (physicsWorld) {
@@ -875,6 +1152,11 @@ export function createThreeRenderer(
       lootReliquary.rotation.y = Math.sin(t * 0.6) * 0.4;
       lootReliquary.position.y = 0.02 + Math.sin(t * 1.4) * 0.06;
     }
+    if (shovelPickupGroup) {
+      const t = performance.now() * 0.001;
+      shovelPickupGroup.rotation.y = t * 0.8;
+      shovelPickupGroup.position.y = 0.04 + Math.sin(t * 1.8) * 0.04;
+    }
 
     if (placedTorchMesh.visible) {
       placedTorchMesh.rotation.z = Math.PI / 2.9;
@@ -883,11 +1165,29 @@ export function createThreeRenderer(
 
     applyCameraShake(deltaMs);
 
+    // Pulsazione beacon uscita: rotazione lenta + emissive oscillante per
+    // rendere l'uscita individuabile anche da lontano.
+    if (exitBeacon) {
+      const beaconT = performance.now() * 0.002;
+      const beaconPulse = 0.7 + Math.sin(beaconT) * 0.3;
+      exitBeaconMaterial.emissiveIntensity = 1.8 * beaconPulse;
+      if (exitBeaconLight) exitBeaconLight.intensity = 14 * beaconPulse;
+      exitBeacon.rotation.y += deltaMs * 0.001;
+    }
+
+    // Glifi sul pavimento: pulsazione emissiva lenta (2 onde indipendenti sfasate).
+    if (decorGlyphMaterial) {
+      const gt = performance.now() * 0.00085;
+      decorGlyphMaterial.emissiveIntensity = 0.95 + Math.sin(gt) * 0.45 + Math.sin(gt * 1.618) * 0.1;
+    }
+
     // Occhio del Ladro: pulsazione del tell di pericolo sul sito di scavo.
     if (dangerTellActive && digSiteMarker) {
-      const pulse = 1.2 + Math.sin(performance.now() * 0.006) * 0.5;
+      const pulse = 1.4 + Math.sin(performance.now() * 0.006) * 0.6;
       digSiteMaterial.emissiveIntensity = pulse;
     }
+
+    frustumCuller.update(camera);
 
     if (webgpuPipeline) {
       webgpuPipeline.render();
@@ -933,11 +1233,11 @@ export function createThreeRenderer(
     dangerTellActive = active;
     if (!digSiteMarker) return;
     if (active) {
-      digSiteMaterial.emissive.setHex(0x7a1f16);
-      digSiteMaterial.emissiveIntensity = 1.6;
+      digSiteMaterial.emissive.setHex(0xaa2a10);
+      digSiteMaterial.emissiveIntensity = 2.0;
     } else {
-      digSiteMaterial.emissive.setHex(0x1b1206);
-      digSiteMaterial.emissiveIntensity = 0.6;
+      digSiteMaterial.emissive.setHex(0x7a4a10);
+      digSiteMaterial.emissiveIntensity = 1.2;
     }
   }
 
@@ -1025,6 +1325,9 @@ export function createThreeRenderer(
     if (bloomPass) {
       bloomPass.strength = settings.highContrast ? 0.22 : 0.55;
     }
+
+    handFlame?.setFlickerReduced(settings.reduceTorchFlicker);
+    placedFlame?.setFlickerReduced(settings.reduceTorchFlicker);
 
     const palette = resolveWorldAccessibilityPalette(
       settings.colorBlindMode,
@@ -1125,13 +1428,20 @@ export function createThreeRenderer(
     exitBeaconMaterial.emissive.setHex(
       state.completed ? 0x44ff88 :
       state.exitUnlocked ? 0x66c97c :
-      0x442000,
+      0xcc6600,
     );
     exitBeaconMaterial.color.setHex(
       state.completed ? 0xb6ffca :
       state.exitUnlocked ? 0x93d39f :
-      0x5a3f1b,
+      0xd4900a,
     );
+    if (exitBeaconLight) {
+      exitBeaconLight.color.setHex(
+        state.completed ? 0x44ff88 :
+        state.exitUnlocked ? 0x66c97c :
+        0xffaa22,
+      );
+    }
     _doorMesh.rotation.z = state.completed ? 0.04 : 0;
   }
 
@@ -1202,15 +1512,21 @@ export function createThreeRenderer(
     setPlacedTorchState(state: RendererPlacedTorchState | null): void {
       if (!state) {
         placedTorchMesh.visible = false;
+        if (placedTorchGlb) placedTorchGlb.visible = false;
         placedTorchLight.visible = false;
-        if (placedFlame) {
-          placedFlame.group.visible = false;
-        }
+        if (placedFlame) placedFlame.group.visible = false;
         return;
       }
-      placedTorchMesh.visible = true;
+      // Se il GLB KayKit è caricato lo usa; altrimenti il cilindro placeholder.
+      if (placedTorchGlb) {
+        placedTorchGlb.visible = true;
+        placedTorchGlb.position.set(state.x, state.y, state.z);
+        placedTorchMesh.visible = false;
+      } else {
+        placedTorchMesh.visible = true;
+        placedTorchMesh.position.set(state.x, state.y + 0.38, state.z);
+      }
       placedTorchLight.visible = true;
-      placedTorchMesh.position.set(state.x, state.y + 0.38, state.z);
       placedTorchLight.position.set(state.x, state.y + 0.72, state.z);
       if (placedFlame) {
         placedFlame.group.visible = true;
@@ -1279,8 +1595,13 @@ export function createThreeRenderer(
     applyFloorPalette,
     applyQualityProfile,
     setLootReliquary,
+    setShovelPickup,
     getDebugStats,
     resize,
     dispose,
+    /** W-7: imposta l'intensità dell'effetto sandstorm (0 = off, 1 = piena). */
+    setSandStormIntensity(value: number): void {
+      sandStormController?.setIntensity(value);
+    },
   };
 }

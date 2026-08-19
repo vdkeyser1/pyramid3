@@ -82,21 +82,36 @@ export function applyCurseEffects(
     readonly maxHp: number;
     readonly damageTakenMultiplier: number;
     readonly goldMultiplier: number;
+    /** Moltiplicatore budget Director (>1 = più nemici). Default 1. */
+    readonly enemyBudgetMultiplier?: number;
+    /** Frammenti Ka bonus per nemico ucciso. Default 0. */
+    readonly kaPerKillBonus?: number;
   },
 ): {
   readonly torchDrainRatio: number;
   readonly maxHp: number;
   readonly damageTakenMultiplier: number;
   readonly goldMultiplier: number;
+  readonly enemyBudgetMultiplier: number;
+  readonly kaPerKillBonus: number;
 } {
+  const base = {
+    torchDrainRatio: params.torchDrainRatio,
+    maxHp: params.maxHp,
+    damageTakenMultiplier: params.damageTakenMultiplier,
+    goldMultiplier: params.goldMultiplier,
+    enemyBudgetMultiplier: params.enemyBudgetMultiplier ?? 1,
+    kaPerKillBonus: params.kaPerKillBonus ?? 0,
+  };
   switch (curse.definition.id) {
     case 'oscurita-antica':
-      return { ...params, torchDrainRatio: params.torchDrainRatio * 1.25 };
+      return { ...base, torchDrainRatio: base.torchDrainRatio * 1.25 };
     case 'fame-del-deserto':
-      return { ...params, maxHp: params.maxHp - 10, goldMultiplier: params.goldMultiplier * 2 };
+      return { ...base, maxHp: base.maxHp - 10, goldMultiplier: base.goldMultiplier * 2 };
     case 'furia-degli-sciacalli':
-      return { ...params };
+      // Nemici più numerosi (+20% budget Director) e ogni uccisione vale 1 Ka.
+      return { ...base, enemyBudgetMultiplier: base.enemyBudgetMultiplier * 1.20, kaPerKillBonus: base.kaPerKillBonus + 1 };
     case 'sigillo-di-sobek':
-      return { ...params, damageTakenMultiplier: params.damageTakenMultiplier * 1.2 };
+      return { ...base, damageTakenMultiplier: base.damageTakenMultiplier * 1.2 };
   }
 }

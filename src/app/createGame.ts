@@ -8,6 +8,7 @@ import { DEFAULT_CONFIG } from '@/config/GameConfig.js';
 import { getGameRuntimeModules } from '@/app/GameRuntimeModules.js';
 import { createLogger } from '@/core/Logger.js';
 import { preloadStartupModules } from '@/app/StartupPreload.js';
+import { createDailyChallengeSystem } from '@/gameplay/DailyChallengeSystem.js';
 
 const log = createLogger('Bootstrap');
 
@@ -64,20 +65,26 @@ export async function createGame(options: CreateGameOptions = {}): Promise<GameA
   onStatus?.('Caricamento modulo gioco...');
   const { createGameApplication } = await getGameRuntimeModules().gameApplication;
   // G-22: supporto ?seed=N nell'URL → run riproducibile (debug, test e2e).
-  // DAILY-1: ?daily → "Tomba del Giorno" — stesso seed per tutti ogni 24h.
+  // DAILY-1 / G-02: ?daily → "Tomba del Giorno" con seed + modifiers dal server.
   const search = window.location.search;
   const urlSeed = parseSeedParam(search);
-  const dailySeed = isDailyMode(search) ? dailySeedFor(new Date()) : null;
-  const fixedSeed = urlSeed ?? dailySeed;
+
+  let dailyContextArg: Parameters<typeof createGameApplication>[2] = null;
+  if (isDailyMode(search) && urlSeed === null) {
+    const dailySystem = createDailyChallengeSystem();
+    const payload = await dailySystem.fetchTodaySeed(Date.now());
+    dailyContextArg = { system: dailySystem, payload };
+    log.info('Tomba del Giorno attiva', { seed: payload.seed, modifiers: payload.modifiers });
+  }
+
+  const fixedSeed = urlSeed ?? dailyContextArg?.payload.seed ?? null;
   const app = createGameApplication(
     fixedSeed === null
       ? undefined
       : { debug: { ...DEFAULT_CONFIG.debug, fixedSeed } },
     onStatus,
+    dailyContextArg,
   );
-  if (dailySeed !== null && urlSeed === null) {
-    log.info('Tomba del Giorno attiva', { seed: dailySeed });
-  }
 
   // Prepara il canvas
   canvas.width = canvas.clientWidth * window.devicePixelRatio;

@@ -13,12 +13,12 @@ export const TICK_HZ = 60 as const;
 export const secondsToTicks = (seconds: number): number => Math.round(seconds * TICK_HZ);
 
 export const PLAYER = {
-  walkSpeedMps: 3.4,
-  sprintSpeedMps: 5.2,
-  crouchSpeedMps: 1.8,
-  groundAccelerationMps2: 22,
-  groundDecelerationMps2: 26,
-  airAccelerationMps2: 4,
+  walkSpeedMps: 4.5,
+  sprintSpeedMps: 7.0,
+  crouchSpeedMps: 2.0,
+  groundAccelerationMps2: 40,
+  groundDecelerationMps2: 50,
+  airAccelerationMps2: 5,
   capsuleHeightM: 1.75,
   capsuleRadiusM: 0.32,
   maxStepM: 0.3,
@@ -77,13 +77,15 @@ export const COMBAT = {
   durabilityMultiplierSoft: 0.5,
   /** §9.4: al 20% durabilità avviso visivo/sonoro */
   durabilityWarningThreshold: 0.2,
+  /** G-06: cooldown del quick-switch tra slot arma PRIMARY/SECONDARY. */
+  weaponSwapCooldownTicks: secondsToTicks(0.35),
 } as const;
 
 export const WEAPONS = {
   fists:   { damageHp: 3,  intervalTicks: secondsToTicks(0.65), reachM: 1.1, durability: Number.POSITIVE_INFINITY },
   khopesh: { damageHp: 18, intervalTicks: secondsToTicks(0.78), reachM: 1.7, durability: 120 },
   staff:   { damageHp: 11, intervalTicks: secondsToTicks(0.55), reachM: 2.2, durability: 180 },
-  shovel:  { damageHp: 7,  intervalTicks: secondsToTicks(1.0),  reachM: 1.5, durability: 30 }, // in scavi
+  shovel:  { damageHp: 7,  intervalTicks: secondsToTicks(1.0),  reachM: 1.5, durability: 3  }, // in scavi
 } as const;
 
 export const DIGGING = {

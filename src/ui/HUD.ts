@@ -100,6 +100,17 @@ export interface HUD {
   /** Mostra/nasconde l'intera HUD. */
   setVisible(visible: boolean): void;
 
+  /**
+   * Aggiorna la barra HP del boss (mostrata in alto al centro).
+   * Passa null per nascondere la barra.
+   */
+  updateBossBar(data: {
+    readonly name: string;
+    readonly hp: number;
+    readonly maxHp: number;
+    readonly phase: string;
+  } | null): void;
+
   /** Crea l'elemento DOM. Da chiamare dopo aver aggiunto il container al DOM. */
   mount(container: HTMLElement): void;
 
@@ -164,6 +175,10 @@ export function createHUD(): HUD {
   let objectiveEl: HTMLElement | null = null;
   let progressEl: HTMLElement | null = null;
   let floorEl: HTMLElement | null = null;
+  let bossBarContainerEl: HTMLElement | null = null;
+  let bossBarFillEl: HTMLElement | null = null;
+  let bossBarNameEl: HTMLElement | null = null;
+  let bossBarPhaseEl: HTMLElement | null = null;
   let messageTimer: ReturnType<typeof setTimeout> | null = null;
   let soundIndicatorTimer: ReturnType<typeof setTimeout> | null = null;
   let tutorialFocusTimer: ReturnType<typeof setTimeout> | null = null;
@@ -582,6 +597,13 @@ export function createHUD(): HUD {
           <div><span style="color:#9A5A38;">TAB</span> &nbsp;Mappa</div>
           <div><span style="color:#9A5A38;">ESC</span> &nbsp;Pausa / Impostazioni</div>
           <div><span style="color:#9A5A38;">\`</span> &nbsp;Overlay debug</div>
+
+          <div style="color: #D4A05A; margin: 10px 0 4px;">━ SIMBOLI SUL PAVIMENTO ━</div>
+          <div><span style="color:#C89030;">▣ Forma dorata</span> &nbsp;= Pala raccoglibile (E) — ti serve per scavare</div>
+          <div><span style="color:#808570;">▨ Zona sabbiosa</span> &nbsp;= Sito di scavo — tieni E con la pala per dissotterrare il tesoro</div>
+          <div><span style="color:#8B7355; font-size:11px; margin-top:4px; display:block;">
+            Attenzione: lo scavo fa rumore e attira i nemici. Tieni la torcia accesa!
+          </span></div>
         </div>
 
         <div style="margin-top: 20px; text-align: center;">
@@ -639,6 +661,45 @@ export function createHUD(): HUD {
     subtitleEl.style.display = 'none';
     root.appendChild(subtitleEl);
 
+    // ── Barra boss (in alto al centro) ──────────────────────────────────────
+    bossBarContainerEl = document.createElement('div');
+    bossBarContainerEl.style.cssText = `
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      width: min(480px, 80vw); display: flex; flex-direction: column; align-items: center;
+      gap: 4px; pointer-events: none; display: none;
+    `;
+
+    bossBarNameEl = document.createElement('div');
+    bossBarNameEl.style.cssText = `
+      font-size: 13px; color: #D4A05A; letter-spacing: 1px; text-align: center;
+      font-family: 'Cinzel', 'Courier New', monospace;
+      text-shadow: 0 0 8px rgba(0,0,0,0.9);
+    `;
+
+    const bossBarTrack = document.createElement('div');
+    bossBarTrack.style.cssText = `
+      width: 100%; height: 10px; background: #1a1008;
+      border: 1px solid #8B3A00; border-radius: 2px; overflow: hidden;
+    `;
+
+    bossBarFillEl = document.createElement('div');
+    bossBarFillEl.style.cssText = `
+      height: 100%; width: 100%;
+      background: linear-gradient(90deg, #8B1A1A, #C84A00);
+      transition: width 0.2s ease-out;
+    `;
+    bossBarTrack.appendChild(bossBarFillEl);
+
+    bossBarPhaseEl = document.createElement('div');
+    bossBarPhaseEl.style.cssText = `
+      font-size: 10px; color: #C77D3A; letter-spacing: 2px; text-align: center;
+    `;
+
+    bossBarContainerEl.appendChild(bossBarNameEl);
+    bossBarContainerEl.appendChild(bossBarTrack);
+    bossBarContainerEl.appendChild(bossBarPhaseEl);
+    root.appendChild(bossBarContainerEl);
+
     return root;
   }
 
@@ -663,15 +724,32 @@ export function createHUD(): HUD {
       return;
     }
 
+    const { visited, total } = minimap.exploredFraction;
+
+    // Corridoi visibili come rettangoli sottili
+    const corridorRects = minimap.corridors
+      .filter((c) => c.visible)
+      .map((c) => `
+        <rect
+          x="${c.x.toFixed(2)}"
+          y="${c.y.toFixed(2)}"
+          width="${c.width.toFixed(2)}"
+          height="${c.height.toFixed(2)}"
+          fill="#3A2810"
+          fill-opacity="0.85"
+        />
+      `).join('');
+
     const visibleRooms = minimap.rooms.filter((room) => room.visible);
     const roomRects = visibleRooms.map((room) => {
       const fill =
         room.isPlayerRoom ? '#D4A05A'
         : room.isExit ? '#2E8B8B'
         : room.isMapRoom ? '#8B7355'
+        : room.visited ? '#5A3F20'
         : '#4A2F1A';
-      const stroke = room.isTargetRoom ? '#C77D3A' : '#8B7355';
-      const opacity = room.isPlayerRoom || room.isEntry || room.isExit || room.isMapRoom ? 0.95 : 0.75;
+      const stroke = room.isTargetRoom ? '#C77D3A' : room.isPlayerRoom ? '#F7C86A' : '#6B5030';
+      const opacity = room.isPlayerRoom || room.isEntry || room.isExit || room.isMapRoom ? 0.95 : 0.78;
       return `
         <rect
           x="${room.x.toFixed(2)}"
@@ -701,11 +779,25 @@ export function createHUD(): HUD {
       `
       : '';
 
+    // Contatore esplorazione in basso
+    const exploredLabel = `
+      <text
+        x="50"
+        y="97"
+        text-anchor="middle"
+        font-size="6"
+        fill="#8B7355"
+        font-family="'Courier New', monospace"
+      >${visited}/${total}</text>
+    `;
+
     minimapEl.innerHTML = `
       <svg viewBox="0 0 100 100" width="100%" height="100%" aria-label="Minimappa runtime">
         <rect x="0" y="0" width="100" height="100" fill="rgba(11, 9, 8, 0.88)" />
+        ${corridorRects}
         ${roomRects}
         ${playerMarker}
+        ${exploredLabel}
       </svg>
     `;
   }
@@ -931,6 +1023,32 @@ export function createHUD(): HUD {
       }
     },
 
+    updateBossBar(data): void {
+      if (!bossBarContainerEl) return;
+      if (data === null) {
+        bossBarContainerEl.style.display = 'none';
+        return;
+      }
+      bossBarContainerEl.style.display = 'flex';
+      if (bossBarNameEl) bossBarNameEl.textContent = data.name.toUpperCase();
+      if (bossBarFillEl) {
+        const pct = Math.max(0, Math.min(100, (data.hp / data.maxHp) * 100));
+        bossBarFillEl.style.width = `${pct}%`;
+        if (pct <= 20) {
+          bossBarFillEl.style.background = 'linear-gradient(90deg, #4A0000, #FF2200)';
+        } else {
+          bossBarFillEl.style.background = 'linear-gradient(90deg, #8B1A1A, #C84A00)';
+        }
+      }
+      if (bossBarPhaseEl) {
+        const phaseLabel: Record<string, string> = {
+          INTRO: 'INTRO', PHASE_1: 'FASE I', PHASE_2: 'FASE II',
+          ENRAGE: '⚠ FURIA', DEFEATED: 'SCONFITTO',
+        };
+        bossBarPhaseEl.textContent = phaseLabel[data.phase] ?? data.phase;
+      }
+    },
+
     dispose(): void {
       if (messageTimer) {
         clearTimeout(messageTimer);
@@ -984,6 +1102,10 @@ export function createHUD(): HUD {
       tutorialDismissBtn = null;
       hintEl = null;
       lastFocusedElement = null;
+      bossBarContainerEl = null;
+      bossBarFillEl = null;
+      bossBarNameEl = null;
+      bossBarPhaseEl = null;
     },
   };
 }

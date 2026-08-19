@@ -45,6 +45,7 @@ function createLayout(): FloorSceneLayout {
     braziers: [],
     doorways: [],
     digSite: null,
+    shovelPickup: null,
   };
 }
 
@@ -53,6 +54,7 @@ describe('RuntimeMinimap', () => {
     const minimap = buildRuntimeMinimap({
       layout: createLayout(),
       revealedRoomIds: [],
+      visitedRoomIds: [],
       playerPosition: { x: 4, z: 4 },
       mapRoomId: 2,
     });
@@ -79,6 +81,7 @@ describe('RuntimeMinimap', () => {
         rooms: [...layout.rooms, extraRoom],
       },
       revealedRoomIds: [4],
+      visitedRoomIds: [],
       playerPosition: null,
       mapRoomId: 2,
     });

@@ -7,7 +7,7 @@ import { type GameConfig, DEFAULT_CONFIG, GameConfigSchema } from '@/config/Game
 import { detectCapabilities, selectBackend } from '@/config/PerformanceTiers.js';
 import { type FixedStepClock, createFixedStepClock } from '@/core/FixedStepClock.js';
 import { type Simulation, createSimulation } from '@/simulation/Simulation.js';
-import { TICK_HZ, PLAYER, TORCH } from '@/content/balance.js';
+import { TICK_HZ, PLAYER, TORCH, WEAPONS } from '@/content/balance.js';
 import { createLogger, configureLogger, type Logger } from '@/core/Logger.js';
 import type {
   RendererBrazierState,
@@ -120,6 +120,7 @@ import {
   WEAPON_FISTS,
   WEAPON_KHOPESH,
   WEAPON_STAFF,
+  WEAPON_SHOVEL,
 } from '@/content/weapons.js';
 import { ENEMIES } from '@/content/enemies.js';
 import { rollGoldDrop } from '@/content/economy.js';
@@ -131,6 +132,7 @@ import {
 } from '@/gameplay/combat/CombatSystem.js';
 import type { AttackDefinition } from '@/gameplay/combat/AttackDefinition.js';
 import type { WeaponDefinition } from '@/gameplay/weapons/WeaponDefinition.js';
+import { WeaponSlotManager } from '@/gameplay/weapons/WeaponSlotManager.js';
 import { deriveEventFeedback } from '@/app/AudioEventDirector.js';
 import {
   createBrazier,
@@ -179,6 +181,8 @@ import {
 import { resolveDamage } from '@/gameplay/combat/DamageResolver.js';
 import { PARRY_IFRAME_MS, PARRY_WINDOW_MS, parryWindowActive } from '@/gameplay/combat/ParryResolver.js';
 import type { MusicState } from '@/audio/MusicPreset.js';
+import { createMusicStateMachine } from '@/audio/MusicStateMachine.js';
+import type { MusicStateMachine } from '@/audio/MusicStateMachine.js';
 import {
   applyDamageToGenericEnemy,
   createGenericEncounterState,
@@ -200,6 +204,19 @@ import {
   tickMummyEncounter,
   type MummyEncounterState,
 } from '@/gameplay/enemies/MummyEncounterRuntime.js';
+import { BossEncounterRuntime } from '@/gameplay/enemies/BossEncounterRuntime.js';
+import { getBossForFloor, BOSS_FLOORS } from '@/content/bossTemplates.js';
+import { createMetaProgressionStore } from '@/meta/MetaProgressionStore.js';
+import {
+  createMetaProgressionScreen,
+  type MetaProgressionScreen,
+} from '@/ui/MetaProgressionScreen.js';
+import type {
+  DailyChallengeSystem,
+  DailySeedPayload,
+  DailyModifier,
+} from '@/gameplay/DailyChallengeSystem.js';
+import { createGameAnalytics, type GameAnalytics } from '@/analytics/GameAnalytics.js';
 
 export type AppState = 'uninitialized' | 'initializing' | 'running' | 'paused' | 'disposed';
 
@@ -223,11 +240,18 @@ export interface GameApplication {
 export function createGameApplication(
   configOverrides?: Partial<GameConfig>,
   onStatus?: (status: string) => void,
+  dailyContext?: { readonly system: DailyChallengeSystem; readonly payload: DailySeedPayload } | null,
 ): GameApplication {
   const config = GameConfigSchema.parse({ ...DEFAULT_CONFIG, ...configOverrides });
+  const dailyMods = new Set<DailyModifier>(dailyContext?.payload.modifiers ?? []);
+  const kaMultiplier = dailyMods.has('GOLDEN_RUN') ? 2 : 1;
   const caps = detectCapabilities();
   const backend = selectBackend(caps, config.render.backend);
-  const quality = new QualityController(config.render.qualityTier);
+  // Usa il tier rilevato come cap: se l'hardware è 'low' non forziamo 'medium'.
+  const effectiveTier = (caps.detectedTier === 'low' && config.render.qualityTier === 'medium')
+    ? 'low'
+    : config.render.qualityTier;
+  const quality = new QualityController(effectiveTier);
 
   configureLogger(config.debug.logLevel);
 
@@ -242,9 +266,13 @@ export function createGameApplication(
   const settingsMenu = createSettingsMenu();
   const progressionOverlay: ProgressionOverlay = createProgressionOverlay();
   const deathOverlay: DeathOverlay = createDeathOverlay();
+  // G-01: schermata meta-progressione permanente (IndexedDB).
+  let metaProgressionScreen: MetaProgressionScreen | null = null;
   // Debug overlay (v2): F3/Backquote — profiling in-game (draw calls, ms, seed).
   const debugOverlay = createDebugOverlay();
   const audio = createAudioEngine();
+  // T-01: analytics solo-localStorage — heatmap morti, tempi per piano, nemici fatali.
+  const analytics: GameAnalytics = createGameAnalytics();
   const runtimeModules = getGameRuntimeModules();
   const accessibilityToggleRuntime = createAccessibilityToggleRuntime();
 
@@ -272,6 +300,12 @@ export function createGameApplication(
   let placedTorchPosition: RendererPlacedTorchState | null = null;
   let brazierStates: BrazierState[] = [];
   let digSite: DigSite | null = null;
+  // Pala: scavi rimanenti (0 = nessuna pala in inventario).
+  let shovelDigs = 0;
+  // Posizione world del pickup pala corrente (null = già raccolta o non presente).
+  let shovelPickupPos: { readonly x: number; readonly z: number } | null = null;
+  const SHOVEL_DIGS_PER_PICKUP = WEAPONS.shovel.durability;
+  const SHOVEL_INTERACT_RADIUS_M = 2.0;
   let runtimeStimulusState = createRuntimeStimulusState();
   let runtimeBonuses: RuntimeBonuses = {
     torchCapacitySeconds: TORCH.initialFuelSeconds,
@@ -295,6 +329,8 @@ export function createGameApplication(
   // G-13: slot generico — qualsiasi archetipo del Director (COBRA, SHABTI,
   // PRIEST, SOBEK_SPAWN, ROYAL_MUMMY) materializzabile via runtime data-driven.
   let genericEnemyState: GenericEncounterState | null = null;
+  // G-02: boss encounter runtime (piani 5 e 10).
+  let activeBossRuntime: BossEncounterRuntime | null = null;
   let enemySpawnDirector: EnemySpawnDirector | null = null;
   const enemyHurtboxes = new HurtboxStore();
   const playerHitRegistry = new HitRegistry();
@@ -327,9 +363,16 @@ export function createGameApplication(
   // Stato del player per l'input → HUD
   let playerMaxHp: number = PLAYER.baseHealthHp;
   let runtimeGameplayState = createRuntimeGameplayState();
-  const weapons: readonly WeaponDefinition[] = [WEAPON_FISTS, WEAPON_KHOPESH, WEAPON_STAFF];
+  // Stanze fisicamente visitate dal player in questo piano (si azzera a ogni cambio piano).
+  let visitedRoomIds = new Set<number>();
+  // Slot 0=Pugni, 1=Khopesh, 2=Bastone, 3=Pala (disponibile solo se shovelDigs > 0)
+  const weapons: readonly WeaponDefinition[] = [WEAPON_FISTS, WEAPON_KHOPESH, WEAPON_STAFF, WEAPON_SHOVEL];
   let currentWeaponIndex = 1;
   let weaponName = weapons[currentWeaponIndex]?.name ?? 'Khopesh';
+  // G-06: WeaponSlotManager gestisce PRIMARY/SECONDARY per le armi da combattimento
+  // (slot 1=Khopesh, slot 2=Bastone). Slot 0 (pugni) e 3 (pala) restano speciali.
+  const weaponMgr = new WeaponSlotManager();
+  weaponMgr.equip('PRIMARY', WEAPON_KHOPESH);
   // G-05: modifier di combattimento derivati dai graft scoperti nel profilo.
   let combatModifiers: CombatModifiers = {
     damageMultiplier: 1,
@@ -347,6 +390,10 @@ export function createGameApplication(
   let currentFloorIndex = 1;
   // NEW-3: maledizione attiva sul piano corrente (Sangue di Ra).
   let activeCurse: ActiveCurse | null = null;
+  // G-02 SPEED_RUN: timestamp inizio piano corrente (0 = non attivo).
+  let speedRunFloorStartMs = 0;
+  const SPEED_RUN_LIMIT_MS = 5 * 60 * 1000; // 5 minuti per piano
+  let speedRunWarnedSeconds = new Set<number>(); // soglie già notificate
   // G-05: reliquiario del tesoro dissotterrato, in attesa di raccolta (E).
   let pendingLoot: { readonly x: number; readonly z: number; readonly siteId: string } | null = null;
   // Run summary (v2): statistiche della run corrente per la schermata finale.
@@ -356,6 +403,8 @@ export function createGameApplication(
     floorsCleared: 0,
     enemiesDefeated: 0,
     goldEarned: 0,
+    kaEarnedThisRun: 0,
+    runStartMs: Date.now(),
   };
   const playerCombatState = createCombatState();
   let guardianHitFlashUntilMs = 0;
@@ -377,13 +426,13 @@ export function createGameApplication(
   // primo tick ACTIVE dei loro attacchi (parryable + arco frontale).
   let parryWindowUntilMs = Number.NEGATIVE_INFINITY;
   let parryIFramesUntilMs = Number.NEGATIVE_INFINITY;
-  // G-19: stato corrente della musica adattiva (crossfade al cambio).
+  // G-19 / W-4: stato corrente della musica adattiva (crossfade al cambio).
   let currentMusicState: MusicState = 'EXPLORE';
+  let musicMachine: MusicStateMachine | null = null;
 
   /**
-   * G-19: musica adattiva — deriva lo stato dai nemici vivi:
-   * COMBAT se un nemico sta ATTACCANDO/caricando, TENSION se qualcuno è
-   * sveglio, EXPLORE altrimenti. Chiamato una volta per frame.
+   * G-19 / W-4: musica adattiva — deriva lo stato dai nemici vivi e dal boss.
+   * BOSS se boss attivo, COMBAT se attacco in corso, TENSION se svegli, EXPLORE altrimenti.
    */
   function updateMusicState(): void {
     const scarabCombat = scarabState?.runtime.state === 'CHARGING';
@@ -394,10 +443,22 @@ export function createGameApplication(
       scarabState?.awakened === true ||
       mummyState?.runtime.state !== 'SLEEPING' ||
       genericEnemyState?.runtime.state !== 'DORMANT';
-    const next: MusicState = anyCombat ? 'COMBAT' : anyAwake ? 'TENSION' : 'EXPLORE';
-    if (next !== currentMusicState) {
-      currentMusicState = next;
-      audio.setMusicState(next);
+    const isBossActive = activeBossRuntime !== null;
+    const nextProcedural: MusicState = anyCombat ? 'COMBAT' : anyAwake ? 'TENSION' : 'EXPLORE';
+
+    if (musicMachine) {
+      // W-4: MusicStateMachine gestisce OGG reali + fallback procedurale.
+      const nextExtended = isBossActive ? 'BOSS'
+        : anyCombat ? 'COMBAT'
+        : anyAwake  ? 'TENSION'
+        : 'EXPLORE';
+      musicMachine.transition(nextExtended);
+    } else {
+      // Fallback: solo sistema procedurale originale.
+      if (nextProcedural !== currentMusicState) {
+        currentMusicState = nextProcedural;
+        audio.setMusicState(nextProcedural);
+      }
     }
   }
 
@@ -682,18 +743,25 @@ export function createGameApplication(
   }
 
   function currentWeapon(): WeaponDefinition {
-    return weapons[currentWeaponIndex] ?? WEAPON_KHOPESH;
+    // Slot 0 (pugni) e 3 (pala) sono speciali — non nel WeaponSlotManager.
+    if (currentWeaponIndex === 0) return WEAPON_FISTS;
+    if (currentWeaponIndex === 3) return WEAPON_SHOVEL;
+    // Slot 1/2: usa il manager per il runtime dell'arma attiva.
+    return weaponMgr.activeWeapon?.definition ?? weapons[currentWeaponIndex] ?? WEAPON_KHOPESH;
   }
 
   function isWeaponUnlocked(index: number): boolean {
-    if (index === 2) {
-      return runtimeBonuses.startsWithStaff;
-    }
+    if (index === 2) return runtimeBonuses.startsWithStaff;
+    if (index === 3) return shovelDigs > 0;
     return index >= 0 && index < weapons.length;
   }
 
   function buildWeaponSlotLabels(): readonly (string | null)[] {
-    return weapons.map((weapon, index) => (isWeaponUnlocked(index) ? weapon.name : null));
+    return weapons.map((weapon, index) => {
+      if (!isWeaponUnlocked(index)) return null;
+      if (index === 3) return `Pala (${String(shovelDigs)})`;
+      return weapon.name;
+    });
   }
 
   function buildRuntimeSettings(): RuntimeSettings {
@@ -854,6 +922,34 @@ export function createGameApplication(
   function showDeathOverlay(canRetry: boolean): void {
     // G-18: cue di morte del player (una sola volta per run fallita)
     audio.play({ name: 'player_death', volume: 0.6 });
+    const deathPos = currentPlayerPosition();
+    analytics.track('PLAYER_DEATH', Date.now(), {
+      floor: currentFloorIndex,
+      cause: deathCause,
+      x: deathPos ? Math.round(deathPos.x * 10) / 10 : 0,
+      z: deathPos ? Math.round(deathPos.z * 10) / 10 : 0,
+      kills: runStats.enemiesDefeated,
+      floorReached: runStats.floorsCleared,
+    });
+    analytics.track('RUN_END', Date.now(), {
+      floor: currentFloorIndex,
+      kills: runStats.enemiesDefeated,
+      ka: runStats.kaEarnedThisRun,
+      durationMs: Date.now() - runStats.runStartMs,
+    });
+    // G-02: registra il risultato nella challenge giornaliera se attiva.
+    if (dailyContext) {
+      const dateStr = dailyContext.payload.date;
+      dailyContext.system.recordResult({
+        date: dateStr,
+        floorReached: runStats.floorsCleared,
+        completed: false,
+        durationMs: Date.now() - runStats.runStartMs,
+        kills: runStats.enemiesDefeated,
+        kaEarned: runStats.kaEarnedThisRun,
+        completedAt: null,
+      });
+    }
     // C-01: registra la run nella classifica locale e costruisce l'URL seed.
     const floorSeed = sliceState?.floor.seed ?? 0;
     const board = submitRunScore(
@@ -867,14 +963,18 @@ export function createGameApplication(
       window.localStorage,
     );
     const shareUrl = shareSeedUrl(floorSeed, window.location);
+    const prevBest = board.length > 1 ? (board[1]?.floorReached ?? 0) : 0;
+    const isPersonalRecord = runStats.floorsCleared > 0 && runStats.floorsCleared >= prevBest;
     deathOverlay.show({
       cause: deathCause,
       fragments: saveData?.payload.fragments ?? null,
       canRetry,
-      // Run summary (v2): chiude il loop roguelike con le statistiche
       floorsCleared: runStats.floorsCleared,
       enemiesDefeated: runStats.enemiesDefeated,
       goldEarned: runStats.goldEarned,
+      kaEarnedThisRun: runStats.kaEarnedThisRun,
+      runDurationMs: Date.now() - runStats.runStartMs,
+      isPersonalRecord,
       leaderboard: board,
       shareUrl,
     });
@@ -887,6 +987,20 @@ export function createGameApplication(
   function startIntroCinematic(): void {
     if (introStarted || !sliceState || !playerController) return;
     introStarted = true;
+
+    // G-02 NO_TORCH: nessuna torcia — oscurità assoluta, skip intro cinematic.
+    if (dailyMods.has('NO_TORCH')) {
+      introCinematicUntilMs = 0;
+      introTorchPosition = null;
+      hud.showMessage('Oscurità Assoluta — discendi senza luce.', 3200);
+      if (!tutorialShown) {
+        hud.showTutorial();
+        tutorialShown = true;
+      }
+      log.info('NO_TORCH: intro torcia saltata');
+      return;
+    }
+
     introCinematicUntilMs = performance.now() + 3200;
     const spawn = sliceState.sceneLayout.entrySpawn;
     // Torcia posata 1.9m davanti allo spawn (direzione di default -Z), accesa
@@ -904,6 +1018,10 @@ export function createGameApplication(
       z: introTorchPosition.z,
     });
     hud.showMessage('Raccogli la torcia (E) per iniziare la discesa.', 3200);
+    hud.showContextualHint({
+      id: 'hint-torch-start',
+      text: 'Avvicinati alla torcia e premi E per raccoglierla. La torcia illumina la stanza e ti permette di scavare.',
+    });
     log.info('Intro cinematografica avviata', { untilMs: introCinematicUntilMs });
   }
 
@@ -920,8 +1038,12 @@ export function createGameApplication(
     if (distanceM > PLACED_TORCH_PICKUP_RADIUS_M) {
       return false;
     }
-    // Raccoglie: la torcia si accende (TOGGLE su OFF → HIGH), la posata sparisce.
-    const resolved = runTorchAction('TOGGLE');
+    // Raccoglie: la torcia deve essere ACCESA dopo il pickup, indipendentemente
+    // da quale stato è attualmente (il player potrebbe aver già premuto F).
+    // TOGGLE da HIGH darebbe OFF — invece forziamo sempre → HIGH.
+    if (torchRuntime.state !== 'HIGH' && torchRuntime.state !== 'LOW') {
+      runTorchAction('TOGGLE');
+    }
     introTorchPosition = null;
     renderer?.setPlacedTorchState(null);
     introCinematicUntilMs = 0;
@@ -929,13 +1051,55 @@ export function createGameApplication(
     syncTorchPresentation();
     hud.showMessage('Torcia in pugno. La discesa comincia.', 2000);
     audio.play({ name: 'brazier_ignite', volume: 0.5 });
-    if (!resolved.result.changed) {
-      log.warn('Intro torch pickup: TOGGLE senza cambiamento di stato');
+    if (dailyContext) {
+      const modNames = dailyContext.payload.modifiers
+        .map((m: DailyModifier) => {
+          const labels: Partial<Record<DailyModifier, string>> = {
+            NO_TORCH: 'Oscurità Assoluta',
+            FAST_ENEMIES: 'Nemici Veloci',
+            ONE_HIT_KILL: 'Morte Immediata',
+            GOLDEN_RUN: 'Piramide Dorata (Ka ×2)',
+            CURSED_FLOOR: 'Pavimento Maledetto',
+            SPEED_RUN: 'Corsa Contro il Tempo',
+          };
+          return labels[m] ?? m;
+        })
+        .join(' · ');
+      const msg = modNames.length > 0
+        ? `☥ TOMBA DEL GIORNO — ${modNames}`
+        : '☥ TOMBA DEL GIORNO — Discesa standard';
+      setTimeout(() => { hud.showMessage(msg, 4000); }, 2200);
     }
     // Il tutorial dei comandi appare dopo la raccolta (non copre l'intro).
     if (!tutorialShown) {
       hud.showTutorial();
       tutorialShown = true;
+      // Dopo qualche secondo dal tutorial, guida il giocatore agli obiettivi.
+      setTimeout(() => {
+        hud.showContextualHint({
+          id: 'hint-findsite',
+          text: 'Trova il simbolo dorato pulsante sul pavimento — è il sito di scavo. Premi E vicino ad esso per dissotterrare il tesoro.',
+        });
+      }, 6000);
+      setTimeout(() => {
+        hud.showContextualHint({
+          id: 'hint-findexit',
+          text: 'L\'uscita è la gemma ambrata luminosa sulla porta. Scava il tesoro prima di salire al piano successivo.',
+        });
+      }, 12000);
+    }
+    if (dailyMods.has('SPEED_RUN')) {
+      speedRunFloorStartMs = Date.now();
+      speedRunWarnedSeconds = new Set();
+      setTimeout(() => { hud.showMessage('⏱ CORSA — 5 minuti per piano!', 3000); }, 1500);
+    }
+    const nowMs = Date.now();
+    analytics.setRunContext(runStats.runId, currentFloorIndex);
+    analytics.track('RUN_START', nowMs, { seed: config.debug.fixedSeed ?? 0, daily: dailyContext ? 1 : 0 });
+    analytics.track('TORCH_LIT', nowMs);
+    analytics.track('FLOOR_START', nowMs, { floor: currentFloorIndex });
+    if (dailyContext) {
+      analytics.track('DAILY_CHALLENGE_START', nowMs, { date: dailyContext.payload.date, seed: dailyContext.payload.seed });
     }
     log.info('Torcia introduttiva raccolta', { distanceM });
     return true;
@@ -1045,6 +1209,12 @@ export function createGameApplication(
       // G-19/Kenney: carica gli asset audio reali dopo lo sblocco
       // (fire-and-forget; i cue usano il sintetico finché non sono pronti).
       void audio.loadAssets();
+      // W-4: inizializza MusicStateMachine con crossfade OGG + fallback procedurale.
+      const audioCtx = audio.getAudioContext();
+      if (audioCtx) {
+        musicMachine = createMusicStateMachine(audio, audioCtx);
+        musicMachine.transition('EXPLORE');
+      }
     });
   }
 
@@ -1219,7 +1389,8 @@ export function createGameApplication(
           shouldPersistProfile = true;
           if (progression.fragmentDelta > 0) {
             audio.play({ name: 'fragment_pickup', volume: 0.6 });
-            hud.showMessage(`+${progression.fragmentDelta} Frammenti di Ka`, 2200);
+            hud.showMessage(`+${progression.fragmentDelta * kaMultiplier} Frammenti di Ka${kaMultiplier > 1 ? ' (×2)' : ''}`, 2200);
+            runStats = { ...runStats, kaEarnedThisRun: runStats.kaEarnedThisRun + progression.fragmentDelta * kaMultiplier };
           }
           if (progression.unlockedBestiaryEntry) {
             hud.showMessage(
@@ -1231,6 +1402,14 @@ export function createGameApplication(
             hud.showMessage(`Innesto scoperto: ${progression.unlockedGraft}`, 2200);
           }
           refreshProgressionOverlay();
+        }
+        // NEW-3: "Furia degli Sciacalli" — +1 Ka per ogni nemico abbattuto
+        if (event.kind === 'ENEMY_DIED' && activeCurse?.definition.id === 'furia-degli-sciacalli') {
+          saveData = { ...saveData, payload: { ...saveData.payload, fragments: saveData.payload.fragments + 1 } };
+          shouldPersistProfile = true;
+          audio.play({ name: 'fragment_pickup', volume: 0.5 });
+          hud.showMessage(`☥ +${kaMultiplier} Ka (Furia degli Sciacalli)${kaMultiplier > 1 ? ' (×2)' : ''}`, 1800);
+          runStats = { ...runStats, kaEarnedThisRun: runStats.kaEarnedThisRun + kaMultiplier };
         }
       }
       shouldPersistProfile ||= shouldPersistAfterEvent(event);
@@ -1274,6 +1453,11 @@ export function createGameApplication(
           break;
         }
         case 'DIG_COMPLETE':
+          // Consuma un uso della pala.
+          shovelDigs = Math.max(0, shovelDigs - 1);
+          if (shovelDigs === 0) {
+            hud.showMessage('La pala si è consumata!', 1800);
+          }
           // G-05: il tesoro NON viene dato subito — appare un reliquiario
           // fisico che il player raccoglie con E (loot nel mondo).
           pendingLoot = {
@@ -1316,8 +1500,9 @@ export function createGameApplication(
                 },
               };
               shouldPersistProfile = true;
-              hud.showMessage(`+${loot.amount} Frammenti di Ka dal tesoro.`, 1800);
+              hud.showMessage(`+${loot.amount * kaMultiplier} Frammenti di Ka dal tesoro.${kaMultiplier > 1 ? ' (×2)' : ''}`, 1800);
               audio.play({ name: 'fragment_pickup', volume: 0.6 });
+              runStats = { ...runStats, kaEarnedThisRun: runStats.kaEarnedThisRun + loot.amount * kaMultiplier };
             } else if (loot.kind === 'graft' && loot.graftName !== undefined && saveData) {
               if (!saveData.payload.discoveredGrafts.includes(loot.graftName)) {
                 saveData = {
@@ -1436,10 +1621,15 @@ export function createGameApplication(
       placedTorchPosition = null;
     }
     renderer?.setTorchLit(presentation.handLightOn);
+    // Crackle del fuoco: attivo quando la torcia è in mano e accesa
+    audio.setTorchActive(torchRuntime.state === 'HIGH' || torchRuntime.state === 'LOW');
     syncWorldInteractables();
   }
 
   function runTorchAction(action: TorchActionKind, durationMs = 1800) {
+    if (dailyMods.has('NO_TORCH') && (action === 'TOGGLE' || action === 'WAVE')) {
+      return { result: { runtime: torchRuntime, changed: false, effects: [] }, message: null };
+    }
     const previousRuntime = torchRuntime;
     const resolved = resolveTorchAction(torchRuntime, action);
     const { result, message } = resolved;
@@ -1492,6 +1682,25 @@ export function createGameApplication(
   function isNearDigSite(playerPosition: { readonly x: number; readonly z: number }): boolean {
     if (!digSite) return false;
     return distanceXZ(playerPosition, { x: digSite.positionX, z: digSite.positionZ }) <= DIG_SITE_INTERACT_RADIUS_M;
+  }
+
+  function isNearShovelPickup(playerPosition: { readonly x: number; readonly z: number }): boolean {
+    if (!shovelPickupPos) return false;
+    return distanceXZ(playerPosition, shovelPickupPos) <= SHOVEL_INTERACT_RADIUS_M;
+  }
+
+  function tryPickUpShovel(playerPosition: { readonly x: number; readonly z: number } | null): boolean {
+    if (!playerPosition || !shovelPickupPos) return false;
+    if (!isNearShovelPickup(playerPosition)) return false;
+    shovelDigs += SHOVEL_DIGS_PER_PICKUP;
+    shovelPickupPos = null;
+    renderer?.setShovelPickup(null);
+    hud.showMessage(`Pala raccolta! (${String(shovelDigs)} scavi rimasti)`, 2200);
+    hud.showContextualHint({
+      id: 'hint-shovel-picked',
+      text: 'Raggiungi il marcatore sul pavimento e tieni premuto E per scavare il tesoro.',
+    });
+    return true;
   }
 
   function tryHandleBrazierInteract(): boolean {
@@ -1626,6 +1835,7 @@ export function createGameApplication(
     }
     // Run summary (v2): il piano corrente è stato completato
     runStats = { ...runStats, floorsCleared: runStats.floorsCleared + 1 };
+    analytics.track('FLOOR_COMPLETE', Date.now(), { floor: currentFloorIndex });
 
     const nextSlice = await generateFloorWithFallback(nextIndex);
     sliceState = nextSlice;
@@ -1642,7 +1852,7 @@ export function createGameApplication(
         id: 'hint-curse',
         text: `Maledizione attiva: ${curse.name}. ${curse.reward} — Sangue di Ra la dissolve.`,
       });
-      // Applica subito gli effetti (HP max, drenaggio torcia)
+      // Applica subito gli effetti (HP max, drenaggio torcia, budget nemici)
       const cursed = applyCurseEffects(activeCurse, {
         torchDrainRatio: 1,
         maxHp: playerMaxHp,
@@ -1654,6 +1864,10 @@ export function createGameApplication(
       if (playerHp && playerEntityId !== null) {
         simulation.world.health.set(playerEntityId, Math.min(playerHp.hp, cursed.maxHp), cursed.maxHp);
       }
+      // Furia degli Sciacalli: memorizza il bonus Ka-per-kill per il piano
+      if (cursed.kaPerKillBonus > 0) {
+        log.info('Furia degli Sciacalli attiva', { kaPerKill: cursed.kaPerKillBonus, budgetMult: cursed.enemyBudgetMultiplier });
+      }
     }
     log.info('Discesa al piano successivo', {
       floorIndex: nextIndex,
@@ -1664,11 +1878,20 @@ export function createGameApplication(
     });
 
     // Reset dei runtime per-piano
+    visitedRoomIds = new Set();
     scarabState = null;
     mummyState = null;
     genericEnemyState = null;
+    activeBossRuntime = null;
+    hud.updateBossBar(null);
     enemyHurtboxes.clear();
     playerHitRegistry.clear();
+
+    // Budget Director: amplificato dalla maledizione Furia degli Sciacalli (+20%)
+    const cursedEffects = activeCurse
+      ? applyCurseEffects(activeCurse, { torchDrainRatio: 1, maxHp: playerMaxHp, damageTakenMultiplier: 1, goldMultiplier: 1 })
+      : null;
+    const floorBudget = Math.round(progression.directorBudget * (cursedEffects?.enemyBudgetMultiplier ?? 1));
 
     // Threat Director con budget del piano (difficoltà per composizione)
     enemySpawnDirector = createEnemySpawnDirector({
@@ -1679,7 +1902,7 @@ export function createGameApplication(
       currentFuelSeconds: torchRuntime.fuelSeconds,
       metaNodes: saveData?.payload.kaNodes.length ?? 0,
       hadWipeThisFloor: false,
-      baseBudget: progression.directorBudget,
+      baseBudget: floorBudget,
     });
     const encounterPlan = enemySpawnDirector.planNext();
     if (encounterPlan?.enemyType === 'SCARAB') {
@@ -1692,6 +1915,9 @@ export function createGameApplication(
         encounterPlan.enemyType as import('@/content/enemies.js').EnemyArchetype,
         encounterPlan.position,
       );
+      if (dailyMods.has('FAST_ENEMIES') && genericEnemyState) {
+        genericEnemyState = { ...genericEnemyState, def: { ...genericEnemyState.def, speedMps: genericEnemyState.def.speedMps * 1.5 } };
+      }
       log.info('Director: spawn iniziale del nuovo piano', { enemyType: encounterPlan.enemyType });
     }
     if (encounterPlan) {
@@ -1725,6 +1951,10 @@ export function createGameApplication(
         nextSlice.sceneLayout.digSite.position.z,
       )
       : null;
+    // Pala: nuovo piano, nuovo pickup (se il player non ne ha già una).
+    shovelPickupPos = nextSlice.sceneLayout.shovelPickup
+      ? { x: nextSlice.sceneLayout.shovelPickup.x, z: nextSlice.sceneLayout.shovelPickup.z }
+      : null;
 
     // Layout al renderer + respawn player alla entry del piano.
     // v2: dissolvenza nera — copre il rebuild della scena (main thread) e
@@ -1732,6 +1962,7 @@ export function createGameApplication(
     cinematicOverlay?.fadeToBlack(true);
     await new Promise((resolve) => setTimeout(resolve, 380));
     renderer?.setFloorLayout(nextSlice.sceneLayout);
+    renderer?.setShovelPickup(shovelPickupPos);
     renderer?.applyFloorPalette(progression.palette);
     syncWorldInteractables();
     if (playerController) {
@@ -1749,6 +1980,52 @@ export function createGameApplication(
     syncTorchPresentation();
     cinematicOverlay?.fadeToBlack(false);
     hud.showMessage(`Piano ${nextIndex} — ${progression.theme}`, 2800);
+    analytics.setFloor(nextIndex);
+    analytics.track('FLOOR_START', Date.now(), { floor: nextIndex });
+    if (dailyMods.has('SPEED_RUN')) {
+      speedRunFloorStartMs = Date.now();
+      speedRunWarnedSeconds = new Set();
+    }
+
+    // G-02: boss floor — avvia l'encounter runtime e blocca l'arena finché non è sconfitto.
+    activeBossRuntime = null;
+    hud.updateBossBar(null);
+    if (BOSS_FLOORS.has(nextIndex)) {
+      const bossTpl = getBossForFloor(nextIndex);
+      if (bossTpl) {
+        activeBossRuntime = BossEncounterRuntime.create(bossTpl.type);
+        activeBossRuntime.onPhaseChanged((evt) => {
+          const phaseNames: Record<string, string> = {
+            PHASE_1: 'Fase I', PHASE_2: 'Fase II', ENRAGE: '⚠ Furia',
+          };
+          hud.showMessage(
+            `${bossTpl.name} — ${phaseNames[evt.newPhase] ?? evt.newPhase}`,
+            3000,
+          );
+          audio.play({ name: 'player_death', volume: 0.3 });
+        });
+        activeBossRuntime.onDefeated(() => {
+          hud.updateBossBar(null);
+          hud.showMessage(`☥ ${bossTpl.name} sconfitto! Il passaggio è libero.`, 4000);
+          audio.play({ name: 'fragment_pickup', volume: 0.8 });
+          if (saveData) {
+            const rewardKa = bossTpl.defeatRewards.length * 10;
+            saveData = {
+              ...saveData,
+              payload: { ...saveData.payload, fragments: saveData.payload.fragments + rewardKa },
+            };
+            runStats = { ...runStats, kaEarnedThisRun: runStats.kaEarnedThisRun + rewardKa * kaMultiplier };
+            void persistProfile(`boss sconfitto: ${bossTpl.type}`);
+            hud.showMessage(`☥ +${rewardKa} Ka (ricompensa boss)`, 2800);
+          }
+        });
+        hud.showMessage(`☥ ${bossTpl.name} — ${bossTpl.loreQuote}`, 4500);
+        const snap = activeBossRuntime.snapshot();
+        hud.updateBossBar({ name: snap.bossName, hp: snap.hp, maxHp: snap.maxHp, phase: snap.phase });
+        log.info('Boss encounter avviato', { bossType: bossTpl.type, floorIndex: nextIndex });
+      }
+    }
+
     return true;
   }
 
@@ -2096,6 +2373,13 @@ export function createGameApplication(
         guardianHitFlashUntilMs = performance.now() + 140;
         connected = true;
 
+        // G-02: propaga il danno al boss runtime (piani 5/10).
+        if (activeBossRuntime && !activeBossRuntime.isDefeated) {
+          activeBossRuntime.applyDamage(outcome.finalDamageHp);
+          const snap = activeBossRuntime.snapshot();
+          hud.updateBossBar({ name: snap.bossName, hp: snap.hp, maxHp: snap.maxHp, phase: snap.phase });
+        }
+
         if (resolution.killed) {
           simulation.events.emit({
             kind: 'ENEMY_DIED',
@@ -2109,9 +2393,14 @@ export function createGameApplication(
             },
           });
           runStats = { ...runStats, enemiesDefeated: runStats.enemiesDefeated + 1 };
-          hud.showMessage('☥ Guardiana abbattuta. Il sigillo cede.', 3200);
+          analytics.track('ENEMY_KILLED', Date.now(), { enemy: sliceState.target.name, archetype: 'MUMMY', floor: currentFloorIndex });
+          const bossKillMsg = activeBossRuntime
+            ? `☥ ${activeBossRuntime.snapshot().bossName} sconfitto! La piramide trema.`
+            : '☥ Guardiana abbattuta. Il sigillo cede.';
+          hud.showMessage(bossKillMsg, 3200);
         } else {
-          hud.showMessage(`Colpo a segno: -${resolution.damageHp} HP`);
+          const bossHp = activeBossRuntime ? ` (${activeBossRuntime.hp}/${activeBossRuntime.maxHp})` : '';
+          hud.showMessage(`Colpo a segno: -${resolution.damageHp} HP${bossHp}`);
         }
       } else if (targetId === scarabState?.entityId) {
         const resolution = applyDamageToScarab(scarabState, outcome.finalDamageHp);
@@ -2132,6 +2421,7 @@ export function createGameApplication(
             },
           });
           runStats = { ...runStats, enemiesDefeated: runStats.enemiesDefeated + 1 };
+          analytics.track('ENEMY_KILLED', Date.now(), { enemy: scarabState.name, archetype: 'SCARAB', floor: currentFloorIndex });
           hud.showMessage('Scarabeo spezzato.', 1800);
         } else {
           hud.showMessage(`Carapace infranto: -${resolution.damageHp} HP`, 1200);
@@ -2155,6 +2445,7 @@ export function createGameApplication(
             },
           });
           runStats = { ...runStats, enemiesDefeated: runStats.enemiesDefeated + 1 };
+          analytics.track('ENEMY_KILLED', Date.now(), { enemy: mummyState.name, archetype: 'MUMMY', floor: currentFloorIndex });
           hud.showMessage('Le bende cedono: mummia dissolta.', 1800);
         } else {
           hud.showMessage(`Bende lacerate: -${outcome.finalDamageHp} HP`, 1200);
@@ -2177,6 +2468,7 @@ export function createGameApplication(
             },
           });
           runStats = { ...runStats, enemiesDefeated: runStats.enemiesDefeated + 1 };
+          analytics.track('ENEMY_KILLED', Date.now(), { enemy: genericEnemyState.def.name, archetype: genericEnemyState.archetype, floor: currentFloorIndex });
           hud.showMessage(`${genericEnemyState.def.name} soccombe.`, 1800);
         } else {
           hud.showMessage(`Colpo a segno: -${outcome.finalDamageHp} HP`, 1200);
@@ -2302,17 +2594,30 @@ export function createGameApplication(
         _frame.consume(ActionKind.Interact);
       } else if (tryHandleBrazierInteract()) {
         _frame.consume(ActionKind.Interact);
+      } else if (tryPickUpShovel(playerPosition)) {
+        _frame.consume(ActionKind.Interact);
       } else if (playerPosition && isNearDigSite(playerPosition)) {
-        hud.showContextualHint({
-          id: 'hint-dig',
-          text: 'Tieni premuto E per scavare: la sabbia può nascondere tesori e mappe.',
-        });
-        hud.showMessage(
-          torchRuntime.state === 'OFF'
-            ? 'Serve una torcia accesa per scavare.'
-            : 'Mantieni E per scavare il tesoro sepolto.',
-          1600,
-        );
+        if (shovelDigs <= 0) {
+          hud.showMessage('Serve una Pala per scavare. Cercane una nella cripta.', 2200);
+          hud.showContextualHint({
+            id: 'hint-need-shovel',
+            text: 'La pala è raccoglibile (E) nelle stanze. Una volta raccolta, equipaggiala con il tasto 4.',
+          });
+        } else if (currentWeaponIndex !== 3) {
+          hud.showMessage(`Equipaggia la Pala con [4] per scavare (${String(shovelDigs)} usi rimasti).`, 2000);
+          _frame.consume(ActionKind.Interact);
+        } else {
+          hud.showContextualHint({
+            id: 'hint-dig',
+            text: 'Tieni premuto E per scavare: la sabbia può nascondere tesori e mappe.',
+          });
+          hud.showMessage(
+            torchRuntime.state === 'OFF'
+              ? 'Serve una torcia accesa per scavare.'
+              : `Mantieni E per scavare (${String(shovelDigs)} usi rimasti).`,
+            1600,
+          );
+        }
         _frame.consume(ActionKind.Interact);
       } else {
         const opened = renderer?.interactDoor();
@@ -2442,24 +2747,56 @@ export function createGameApplication(
       _frame.consume(ActionKind.DebugOverlay);
     }
 
-    // Weapon switching
+    // Weapon switching — slot 1/2 sincronizzati con WeaponSlotManager.
     if (_frame.wasPressed(ActionKind.WeaponSlot1)) {
       currentWeaponIndex = 0;
-      weaponName = currentWeapon().name;
+      weaponName = WEAPON_FISTS.name;
       renderer?.setWeaponViewmodelVisible(false);
       _frame.consume(ActionKind.WeaponSlot1);
     }
     if (_frame.wasPressed(ActionKind.WeaponSlot2)) {
       currentWeaponIndex = 1;
-      weaponName = currentWeapon().name;
+      weaponMgr.setActiveSlot('PRIMARY');
+      weaponName = weaponMgr.activeWeapon?.definition.name ?? WEAPON_KHOPESH.name;
       renderer?.setWeaponViewmodelVisible(true);
       _frame.consume(ActionKind.WeaponSlot2);
     }
     if (_frame.wasPressed(ActionKind.WeaponSlot3) && isWeaponUnlocked(2)) {
+      // Prima volta che lo slot 3 viene premuto: equipa il bastone al SECONDARY.
+      if (weaponMgr.getWeaponInSlot('SECONDARY') === null) {
+        weaponMgr.equip('SECONDARY', WEAPON_STAFF);
+      }
       currentWeaponIndex = 2;
-      weaponName = currentWeapon().name;
+      weaponMgr.setActiveSlot('SECONDARY');
+      weaponName = weaponMgr.activeWeapon?.definition.name ?? WEAPON_STAFF.name;
       renderer?.setWeaponViewmodelVisible(false);
       _frame.consume(ActionKind.WeaponSlot3);
+    }
+    if (_frame.wasPressed(ActionKind.WeaponSlot4)) {
+      if (isWeaponUnlocked(3)) {
+        currentWeaponIndex = 3;
+        weaponName = `Pala (${String(shovelDigs)} usi)`;
+        renderer?.setWeaponViewmodelVisible(false);
+        hud.showContextualHint({
+          id: 'hint-shovel-equipped',
+          text: 'Pala equipaggiata: avvicinati al marcatore sul pavimento e tieni E per scavare.',
+        });
+      } else {
+        hud.showMessage('Nessuna pala nell\'inventario. Cercane una nella cripta.', 1800);
+      }
+      _frame.consume(ActionKind.WeaponSlot4);
+    }
+    // G-06: quick-swap tra PRIMARY/SECONDARY con scroll mouse (solo slot 1/2 attivo).
+    if (_frame.wasPressed(ActionKind.WeaponScrollUp) || _frame.wasPressed(ActionKind.WeaponScrollDown)) {
+      if (currentWeaponIndex === 1 || currentWeaponIndex === 2) {
+        if (weaponMgr.swapWeapons()) {
+          currentWeaponIndex = weaponMgr.activeSlot === 'PRIMARY' ? 1 : 2;
+          weaponName = weaponMgr.activeWeapon?.definition.name ?? '';
+          renderer?.setWeaponViewmodelVisible(currentWeaponIndex === 1);
+        }
+      }
+      _frame.consume(ActionKind.WeaponScrollUp);
+      _frame.consume(ActionKind.WeaponScrollDown);
     }
 
   }
@@ -2467,6 +2804,17 @@ export function createGameApplication(
   function updateHUD(): void {
     const playerHealth = currentPlayerHealth();
     const playerPosition = currentPlayerPosition();
+
+    // Traccia la stanza corrente come visitata (per la minimap progressione)
+    if (playerPosition && sliceState) {
+      const currentRoom = sliceState.sceneLayout.rooms.find(
+        (r) =>
+          playerPosition.x >= r.bounds.minX && playerPosition.x <= r.bounds.maxX &&
+          playerPosition.z >= r.bounds.minZ && playerPosition.z <= r.bounds.maxZ,
+      );
+      if (currentRoom) visitedRoomIds.add(Number(currentRoom.roomId));
+    }
+
     const digProgressSuffix =
       digSite && !digSite.completed
         ? ` · scavo ${Math.round(getDigProgress(digSite) * 100)}%`
@@ -2494,6 +2842,7 @@ export function createGameApplication(
         ? buildRuntimeMinimap({
           layout: sliceState.sceneLayout,
           revealedRoomIds: runtimeGameplayState.revealedRoomIds,
+          visitedRoomIds: [...visitedRoomIds],
           playerPosition: playerPosition
             ? { x: playerPosition.x, z: playerPosition.z }
             : null,
@@ -2530,11 +2879,12 @@ export function createGameApplication(
     frameTimeAccum += deltaMs;
     frameCount++;
     if (frameCount >= 60) {
+      const prevTier = quality.profile.tier;
       quality.adaptTo(frameTimeAccum / frameCount);
       frameTimeAccum = 0;
       frameCount = 0;
-      // QC-1: se il tier è cambiato, riapplica il profilo al renderer
-      if (renderer) {
+      // QC-1: riapplica il profilo solo se il tier è effettivamente cambiato
+      if (renderer && quality.profile.tier !== prevTier) {
         renderer.applyQualityProfile(quality.profile);
       }
     }
@@ -2581,6 +2931,7 @@ export function createGameApplication(
         syncScarabEntityState();
       }
       simulation.step(stepPlan.tickStart + i, clock.tickDurationMs);
+      weaponMgr.step();
       const previousPhase = playerCombatState.phase;
       const currentPhase = tickCombatState(playerCombatState, stepPlan.tickStart + i);
       if (
@@ -2639,7 +2990,7 @@ export function createGameApplication(
             footstepCooldownMs = 450;
           }
         }
-        if (digSite && !digSite.completed && input.frame.isDown(ActionKind.Interact) && isNearDigSite(playerState.position)) {
+        if (digSite && !digSite.completed && currentWeaponIndex === 3 && shovelDigs > 0 && input.frame.isDown(ActionKind.Interact) && isNearDigSite(playerState.position)) {
           const digEvent = tickDig(digSite, torchRuntime.state !== 'OFF');
           if (digEvent) {
             emitDigEvents(simulation.events, digEvent, {
@@ -2704,7 +3055,9 @@ export function createGameApplication(
             playerYaw: cameraYaw,
             deltaSeconds: 1 / TICK_HZ,
             hasLineOfSight: hasRuntimeLineOfSight(mummyState.position, playerState.position),
-            torchLitNearby: torchRuntime.state === 'HIGH' || torchRuntime.state === 'LOW',
+            torchLitNearby: dailyMods.has('CURSED_FLOOR')
+              ? torchRuntime.state !== 'HIGH' && torchRuntime.state !== 'LOW'
+              : torchRuntime.state === 'HIGH' || torchRuntime.state === 'LOW',
             tick: clock.currentTick,
             parryWindowActive: parryWindowActive(parryWindowUntilMs, performance.now()),
           });
@@ -2743,7 +3096,9 @@ export function createGameApplication(
             tick: clock.currentTick,
             hasLineOfSight: () =>
               hasRuntimeLineOfSight(genericPosition, playerState.position),
-            torchLit: torchRuntime.state === 'HIGH' || torchRuntime.state === 'LOW',
+            torchLit: dailyMods.has('CURSED_FLOOR')
+              ? torchRuntime.state !== 'HIGH' && torchRuntime.state !== 'LOW'
+              : torchRuntime.state === 'HIGH' || torchRuntime.state === 'LOW',
             parryWindowActive: parryWindowActive(parryWindowUntilMs, performance.now()),
             // A-01: consumatore AI generalizzato del rumore — NOISE_PULSE e
             // KA_ECHO_PULSE svegliano/attirano QUALSIASI archetipo (non solo
@@ -2784,6 +3139,13 @@ export function createGameApplication(
             }
           }
           syncGenericEnemyEntityState();
+        }
+
+        // G-02: tick del boss encounter runtime (fasi, pattern d'attacco).
+        if (activeBossRuntime && !activeBossRuntime.isDefeated) {
+          activeBossRuntime.step();
+          const snap = activeBossRuntime.snapshot();
+          hud.updateBossBar({ name: snap.bossName, hp: snap.hp, maxHp: snap.maxHp, phase: snap.phase });
         }
 
         // G-19: musica adattiva — lo stato deriva dai nemici vivi.
@@ -2827,6 +3189,9 @@ export function createGameApplication(
               followUp.enemyType as import('@/content/enemies.js').EnemyArchetype,
               followUp.position,
             );
+            if (dailyMods.has('FAST_ENEMIES') && genericEnemyState) {
+              genericEnemyState = { ...genericEnemyState, def: { ...genericEnemyState.def, speedMps: genericEnemyState.def.speedMps * 1.5 } };
+            }
             log.info('Director: follow-up archetipo materializzato', {
               enemyType: followUp.enemyType,
               roomId: followUp.roomId,
@@ -2903,6 +3268,28 @@ export function createGameApplication(
 
     syncVerticalSlicePresentation(timestampMs);
     handleFrameEvents(frameEvents);
+
+    // G-02 SPEED_RUN: controlla il countdown per piano (5 min).
+    // Usa Date.now() perché speedRunFloorStartMs è impostato con Date.now(),
+    // non performance.now() (che è relativo al caricamento della pagina).
+    // `state === 'running'` è già garantito dalla guardia in testa a loop().
+    if (dailyMods.has('SPEED_RUN') && speedRunFloorStartMs > 0) {
+      const elapsed = Date.now() - speedRunFloorStartMs;
+      const remaining = SPEED_RUN_LIMIT_MS - elapsed;
+      const remainingSec = Math.ceil(remaining / 1000);
+      for (const threshold of [60, 30, 10]) {
+        if (remainingSec <= threshold && !speedRunWarnedSeconds.has(threshold)) {
+          speedRunWarnedSeconds.add(threshold);
+          hud.showMessage(`⏱ ${threshold} secondi rimasti!`, 2500);
+          audio.play({ name: 'torch_low_warning', volume: 0.6 });
+        }
+      }
+      if (remaining <= 0 && playerEntityId !== null) {
+        speedRunFloorStartMs = 0;
+        deathCause = 'tempo scaduto — la cripta si è chiusa';
+        simulation.world.health.damage(playerEntityId, 9999);
+      }
+    }
 
     // Update HUD ogni frame
     updateHUD();
@@ -3020,6 +3407,9 @@ export function createGameApplication(
           sliceState.sceneLayout.digSite.position.z,
         )
         : null;
+      shovelPickupPos = sliceState.sceneLayout.shovelPickup
+        ? { x: sliceState.sceneLayout.shovelPickup.x, z: sliceState.sceneLayout.shovelPickup.z }
+        : null;
 
       // Fisica (Rapier WASM) — caricata dopo la generazione del floor per
       // spostare il costo pesante più vicino al momento in cui serve davvero.
@@ -3047,6 +3437,7 @@ export function createGameApplication(
         await renderer.init();
         installPointerLockListeners();
         renderer.setFloorLayout(sliceState.sceneLayout);
+        renderer.setShovelPickup(shovelPickupPos);
         // QC-1: applica subito il profilo di qualità iniziale
         renderer.applyQualityProfile(quality.profile);
         syncWorldInteractables();
@@ -3064,6 +3455,7 @@ export function createGameApplication(
       // Player: entità ECS + character controller Rapier + sistemi schedulati.
       onStatus?.('Spawn del giocatore...');
       playerEntityId = simulation.world.createEntity();
+      if (dailyMods.has('ONE_HIT_KILL')) { playerMaxHp = 1; }
       simulation.world.health.set(playerEntityId, playerMaxHp, playerMaxHp);
       const startY = PLAYER.capsuleHeightM / 2 + 0.05;
       const [
@@ -3137,6 +3529,15 @@ export function createGameApplication(
         debugOverlay.mount(parent);
         mainMenu = createMainMenu();
         mainMenu.mount(parent);
+        // G-01: meta-progressione permanente (inizializzata qui, async).
+        void createMetaProgressionStore().then((store) => {
+          metaProgressionScreen = createMetaProgressionScreen(store);
+          metaProgressionScreen.mount(parent);
+          metaProgressionScreen.onClose = () => {
+            metaProgressionScreen?.hide();
+            localResume('menu');
+          };
+        });
       }
       applyRuntimeSettings(buildRuntimeSettings());
       persistRuntimeSettings();
@@ -3230,7 +3631,14 @@ export function createGameApplication(
         };
         mainMenu.onOpenProgression = () => {
           audio.play({ name: 'ui_click', volume: 0.4 });
-          progressionOverlay.show(buildProgressionOverlayData());
+          if (metaProgressionScreen) {
+            // G-01: apre la schermata permanente se il metaStore è pronto.
+            localPause('menu');
+            void metaProgressionScreen.show();
+          } else {
+            // Fallback: overlay run-corrente finché il metaStore non è inizializzato.
+            progressionOverlay.show(buildProgressionOverlayData());
+          }
         };
       }
 
@@ -3246,6 +3654,7 @@ export function createGameApplication(
 
       state = 'running';
       onStatus?.('Pronto');
+      analytics.track('SESSION_START', Date.now(), { daily: dailyContext !== null && dailyContext !== undefined ? 1 : 0 });
 
       // Il gioco parte in pausa con il menu principale visibile (G-09):
       // l'utente sceglie "INIZIA LA DISCESA" prima che il loop parta.
@@ -3274,6 +3683,7 @@ export function createGameApplication(
 
     dispose(): void {
       if (state === 'disposed') return;
+      analytics.track('SESSION_END', Date.now(), { floorsCleared: runStats.floorsCleared, kills: runStats.enemiesDefeated });
       cancelAnimationFrame(rafId);
       detachViewportListeners?.();
       detachViewportListeners = null;
@@ -3289,6 +3699,10 @@ export function createGameApplication(
       deathOverlay.dispose();
       mainMenu?.dispose();
       mainMenu = null;
+      metaProgressionScreen?.dispose();
+      metaProgressionScreen = null;
+      musicMachine?.dispose();
+      musicMachine = null;
       audio.dispose();
       renderer?.dispose();
       simulation.dispose();
@@ -3305,6 +3719,7 @@ export function createGameApplication(
       scarabState = null;
       mummyState = null;
       genericEnemyState = null;
+      activeBossRuntime = null;
       enemySpawnDirector = null;
       if (playerController && physicsWorld) {
         playerController.dispose(physicsWorld.raw);

@@ -1,0 +1,33 @@
+name: Daily Seed
+
+on:
+  schedule:
+    # Ogni giorno a mezzanotte UTC
+    - cron: '0 0 * * *'
+  # Esegui anche manualmente per test
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate-seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Genera il seed giornaliero
+        run: node scripts/generate-daily-seed.mjs
+
+      - name: Commit del nuovo seed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/daily-seed.json
+          # Commit solo se il file è cambiato
+          git diff --cached --quiet || git commit -m "chore: seed giornaliero $(date -u +%Y-%m-%d)"
+          git push

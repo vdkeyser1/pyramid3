@@ -40,8 +40,10 @@ describe('SettingsMenu — controlli mouse (G-18 V3)', () => {
     expect(smoothing?.min).toBe('0');
     expect(smoothing?.max).toBe('0.95');
     expect(smoothing?.step).toBe('0.05');
-    // Display percentuale del valore iniziale (0.55 → "55%")
-    expect(smoothingDisplay?.textContent).toBe('55%');
+    // Display percentuale del valore iniziale: derivato da DEFAULT_CONFIG per non
+    // andare in deriva se il default cambia (era hardcoded a '55%').
+    const expectedPct = `${String(Math.round(DEFAULT_CONFIG.controls.mouseSmoothing * 100))}%`;
+    expect(smoothingDisplay?.textContent).toBe(expectedPct);
 
     menu.dispose();
   });

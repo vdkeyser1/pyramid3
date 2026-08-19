@@ -59,6 +59,7 @@ function createLayout(): FloorSceneLayout {
     braziers: [],
     doorways: [],
     digSite: null,
+    shovelPickup: null,
   };
 }
 

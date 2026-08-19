@@ -243,6 +243,8 @@ export function createParticleBurst(): ParticleBurst {
     }
     points.visible = anyAlive;
     points.material.opacity = anyAlive ? 0.95 : 0;
+    (geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
+    (geometry.getAttribute('color') as THREE.BufferAttribute).needsUpdate = true;
   }
 
   return {

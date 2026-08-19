@@ -3,9 +3,14 @@
  * Ownership: RendererService.
  *
  * Profili:
- *   - low:  30 FPS target, 1280×720, 1 shadow, 4 lights, 20 enemies
+ *   - low:    30 FPS target, 1280×720, 1 shadow, 4 lights, 20 enemies
  *   - medium: 60 FPS target, 1920×1080, 1 shadow, 8 lights, 40 enemies
- *   - high: 120 FPS target, 1440p, 2 shadows, 16+ lights, 60 enemies
+ *   - high:  120 FPS target, 1440p, 2 shadows, 16+ lights, 60 enemies
+ *
+ * M-03 — Thermal Throttling Detection:
+ *   Se la media mobile degli ultimi THERMAL_WINDOW frame supera
+ *   il budget target × THERMAL_RATIO, il tier viene abbassato
+ *   d'emergenza a "low" e il giocatore viene notificato via evento.
  */
 
 import type { QualityTier } from '@/config/GameConfig.js';
@@ -58,8 +63,31 @@ export function getQualityProfile(tier: QualityTier): QualityProfile {
   return PROFILES[tier];
 }
 
+// ── M-03: Thermal throttling ────────────────────────────────────────────────
+
+/**
+ * Numero di frame nella finestra di rilevamento thermal.
+ * A 60 FPS = ~1 secondo di osservazione.
+ */
+const THERMAL_WINDOW = 60;
+
+/**
+ * Rapporto budget/target oltre il quale si considera thermal throttling.
+ * 1.5 = frame time medio 50% oltre il target → hardware in difficoltà.
+ */
+const THERMAL_RATIO = 1.5;
+
+// ── QualityController ────────────────────────────────────────────────────────
+
 export class QualityController {
   private current: QualityProfile;
+
+  // Finestra mobile per thermal detection (M-03)
+  private readonly frameTimes: number[] = [];
+  private _thermalThrottled = false;
+
+  /** Listener opzionale notificato al rilevamento thermal. */
+  onThermalThrottle?: (newTier: QualityTier) => void;
 
   constructor(tier: QualityTier) {
     this.current = getQualityProfile(tier);
@@ -69,16 +97,51 @@ export class QualityController {
     return this.current;
   }
 
-  setTier(tier: QualityTier): void {
-    this.current = getQualityProfile(tier);
+  /** True se è stato rilevato thermal throttling nell'ultima finestra. */
+  get thermalThrottled(): boolean {
+    return this._thermalThrottled;
   }
 
-  /** Propone un tier basato sul frame time medio. */
+  setTier(tier: QualityTier): void {
+    this.current = getQualityProfile(tier);
+    this.frameTimes.length = 0; // reset finestra al cambio manuale
+    this._thermalThrottled = false;
+  }
+
+  /**
+   * Aggiorna il tier basandosi sul frame time.
+   * Integra rilevamento thermal (M-03): abbassa a "low" in caso di
+   * frame time sostenuto oltre la soglia per THERMAL_WINDOW frame.
+   *
+   * @param frameTimeMs Frame time dell'ultimo frame (ms).
+   */
   adaptTo(frameTimeMs: number): void {
-    const grace = 0.8; // 20% margine
-    if (frameTimeMs * grace > 1000 / this.current.targetFps) {
-      if (this.current.tier === 'high') this.current = getQualityProfile('medium');
+    const targetMs = 1000 / this.current.targetFps;
+    const grace    = 0.8; // 20% di margine prima di abbassare tier
+
+    // Downscale reattivo (un singolo frame lento)
+    if (frameTimeMs * grace > targetMs) {
+      if (this.current.tier === 'high')   this.current = getQualityProfile('medium');
       else if (this.current.tier === 'medium') this.current = getQualityProfile('low');
+    }
+
+    // M-03: finestra mobile per thermal detection
+    this.frameTimes.push(frameTimeMs);
+    if (this.frameTimes.length > THERMAL_WINDOW) {
+      this.frameTimes.shift();
+    }
+
+    if (this.frameTimes.length === THERMAL_WINDOW) {
+      const avg        = this.frameTimes.reduce((a, b) => a + b, 0) / THERMAL_WINDOW;
+      const currentTarget = 1000 / this.current.targetFps;
+      const isThermal  = avg > currentTarget * THERMAL_RATIO;
+      this._thermalThrottled = isThermal;
+
+      if (isThermal && this.current.tier !== 'low') {
+        this.current = getQualityProfile('low');
+        this.frameTimes.length = 0; // reset per non retriggere subito
+        this.onThermalThrottle?.('low');
+      }
     }
   }
 }

@@ -13,6 +13,7 @@
 
 import * as THREE from 'three';
 import { createLogger } from '@/core/Logger.js';
+import { loadKTX2TextureSync } from '@/rendering/KTX2TextureLoader.js';
 
 const log = createLogger('Materials');
 
@@ -104,6 +105,246 @@ export function createHieroglyphTexture(
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
   return texture;
+}
+
+// ── Texture procedurale pannello geroglifici da parete ──────────────────────
+
+/**
+ * Genera una texture 512×256 con l'aspetto di una stele di pietra scolpita:
+ * sfondo scuro + bordo cartoccio + 3–4 righe di simboli egizi stilizzati.
+ * Seed = floorIndex → ogni piano ha una variante leggermente diversa.
+ */
+export function createHieroglyphPanelTexture(
+  seed = 0,
+): THREE.CanvasTexture | null {
+  const W = 512;
+  const H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  // Sfondo pietra scura
+  ctx.fillStyle = '#1C1408';
+  ctx.fillRect(0, 0, W, H);
+
+  // Granulazione pietra (deterministica)
+  const img = ctx.getImageData(0, 0, W, H);
+  let s = (seed * 0x9e3779b9 + 0x12345678) >>> 0;
+  for (let i = 0; i < img.data.length; i += 4) {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    const n = ((s >>> 16) % 18) - 9;
+    img.data[i] = Math.max(0, Math.min(255, (img.data[i] ?? 0) + n));
+    img.data[i + 1] = Math.max(0, Math.min(255, (img.data[i + 1] ?? 0) + Math.round(n * 0.7)));
+    img.data[i + 2] = Math.max(0, Math.min(255, (img.data[i + 2] ?? 0) + Math.round(n * 0.4)));
+    img.data[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+
+  // Bordo cartoccio (cornice scolpita)
+  const brd = 14;
+  ctx.strokeStyle = '#7A5820';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(brd, brd, W - brd * 2, H - brd * 2);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = '#4A3010';
+  ctx.strokeRect(brd + 5, brd + 5, W - (brd + 5) * 2, H - (brd + 5) * 2);
+
+  // Linee di registro (separatori orizzontali tra righe di geroglifici)
+  const rows = 4;
+  const rowH = (H - brd * 2 - 10) / rows;
+  ctx.strokeStyle = '#5A3C14';
+  ctx.lineWidth = 1;
+  for (let r = 1; r < rows; r++) {
+    const y = brd + 5 + r * rowH;
+    ctx.beginPath();
+    ctx.moveTo(brd + 8, y);
+    ctx.lineTo(W - brd - 8, y);
+    ctx.stroke();
+  }
+
+  // Simboli scolpiti (color oro chiaro su pietra scura)
+  ctx.strokeStyle = '#C8A030';
+  ctx.fillStyle = '#C8A030';
+  ctx.lineWidth = 1.5;
+
+  // Sequenze di glifo per riga — deterministica via seed
+  const GLYPHS = [
+    drawAnkh, drawEye, drawBird, drawWater, drawSun, drawSnake,
+    drawFeather, drawOwl, drawScarab, drawNileLotus,
+  ];
+
+  for (let r = 0; r < rows; r++) {
+    const rowSeed = (seed * 31 + r * 7 + 1) >>> 0;
+    const cy = brd + 5 + r * rowH + rowH / 2;
+    const cols = 10;
+    const colW = (W - brd * 2 - 20) / cols;
+    for (let c = 0; c < cols; c++) {
+      const glyphSeed = (rowSeed * 17 + c * 3 + 1) >>> 0;
+      const glyphIdx = glyphSeed % GLYPHS.length;
+      const fn = GLYPHS[glyphIdx];
+      if (!fn) continue;
+      const cx = brd + 10 + c * colW + colW / 2;
+      ctx.save();
+      ctx.translate(cx, cy);
+      const cellR = Math.min(colW, rowH) * 0.36;
+      fn(ctx, cellR);
+      ctx.restore();
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function drawAnkh(ctx: CanvasRenderingContext2D, r: number): void {
+  // Croce + anello in cima
+  ctx.beginPath();
+  ctx.arc(0, -r * 0.42, r * 0.22, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0, -r * 0.18);
+  ctx.lineTo(0, r * 0.55);
+  ctx.moveTo(-r * 0.3, r * 0.08);
+  ctx.lineTo(r * 0.3, r * 0.08);
+  ctx.stroke();
+}
+function drawEye(ctx: CanvasRenderingContext2D, r: number): void {
+  ctx.beginPath();
+  ctx.ellipse(0, 0, r * 0.48, r * 0.22, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.10, 0, Math.PI * 2);
+  ctx.fill();
+  // coda occhio di Horus
+  ctx.beginPath();
+  ctx.moveTo(r * 0.38, r * 0.12);
+  ctx.lineTo(r * 0.55, r * 0.42);
+  ctx.lineTo(r * 0.32, r * 0.35);
+  ctx.stroke();
+}
+function drawBird(ctx: CanvasRenderingContext2D, r: number): void {
+  // Ibis stilizzato
+  ctx.beginPath();
+  ctx.ellipse(0, r * 0.05, r * 0.30, r * 0.18, -0.3, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(r * 0.28, -r * 0.08);
+  ctx.quadraticCurveTo(r * 0.55, -r * 0.30, r * 0.48, -r * 0.52);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.28, r * 0.20);
+  ctx.lineTo(-r * 0.10, r * 0.55);
+  ctx.moveTo(-r * 0.08, r * 0.20);
+  ctx.lineTo(r * 0.10, r * 0.55);
+  ctx.stroke();
+}
+function drawWater(ctx: CanvasRenderingContext2D, r: number): void {
+  for (let i = -1; i <= 1; i++) {
+    const y = i * r * 0.28;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.50, y);
+    for (let x = -r * 0.50; x <= r * 0.50; x += r * 0.20) {
+      ctx.quadraticCurveTo(x + r * 0.10, y - r * 0.14, x + r * 0.20, y);
+    }
+    ctx.stroke();
+  }
+}
+function drawSun(ctx: CanvasRenderingContext2D, r: number): void {
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.25, 0, Math.PI * 2);
+  ctx.stroke();
+  for (let a = 0; a < 8; a++) {
+    const angle = (a / 8) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(angle) * r * 0.32, Math.sin(angle) * r * 0.32);
+    ctx.lineTo(Math.cos(angle) * r * 0.52, Math.sin(angle) * r * 0.52);
+    ctx.stroke();
+  }
+}
+function drawSnake(ctx: CanvasRenderingContext2D, r: number): void {
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.42, r * 0.45);
+  ctx.bezierCurveTo(-r * 0.42, -r * 0.10, r * 0.42, r * 0.10, r * 0.42, -r * 0.45);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(r * 0.42, -r * 0.45, r * 0.10, 0, Math.PI * 2);
+  ctx.stroke();
+}
+function drawFeather(ctx: CanvasRenderingContext2D, r: number): void {
+  ctx.beginPath();
+  ctx.moveTo(0, r * 0.52);
+  ctx.lineTo(0, -r * 0.52);
+  ctx.stroke();
+  for (let i = -4; i <= 4; i++) {
+    const y = i * r * 0.12;
+    const len = r * 0.36 * (1 - Math.abs(i) * 0.08);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(len, y - r * 0.06);
+    ctx.moveTo(0, y);
+    ctx.lineTo(-len, y - r * 0.06);
+    ctx.stroke();
+  }
+}
+function drawOwl(ctx: CanvasRenderingContext2D, r: number): void {
+  ctx.beginPath();
+  ctx.ellipse(0, r * 0.08, r * 0.28, r * 0.40, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(-r * 0.12, -r * 0.14, r * 0.10, 0, Math.PI * 2);
+  ctx.arc(r * 0.12, -r * 0.14, r * 0.10, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.28, -r * 0.30);
+  ctx.lineTo(-r * 0.12, -r * 0.18);
+  ctx.moveTo(r * 0.28, -r * 0.30);
+  ctx.lineTo(r * 0.12, -r * 0.18);
+  ctx.stroke();
+}
+function drawScarab(ctx: CanvasRenderingContext2D, r: number): void {
+  ctx.beginPath();
+  ctx.ellipse(0, r * 0.10, r * 0.22, r * 0.32, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, -r * 0.25, r * 0.14, 0, Math.PI * 2);
+  ctx.stroke();
+  for (let s = -1; s <= 1; s += 2) {
+    ctx.beginPath();
+    ctx.moveTo(s * r * 0.22, -r * 0.08);
+    ctx.lineTo(s * r * 0.48, -r * 0.28);
+    ctx.moveTo(s * r * 0.22, r * 0.10);
+    ctx.lineTo(s * r * 0.50, r * 0.08);
+    ctx.moveTo(s * r * 0.22, r * 0.28);
+    ctx.lineTo(s * r * 0.48, r * 0.38);
+    ctx.stroke();
+  }
+}
+function drawNileLotus(ctx: CanvasRenderingContext2D, r: number): void {
+  ctx.beginPath();
+  ctx.moveTo(0, r * 0.50);
+  ctx.lineTo(0, -r * 0.12);
+  ctx.stroke();
+  for (let i = -1; i <= 1; i++) {
+    const angle = i * 0.48;
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 0.12);
+    ctx.bezierCurveTo(
+      Math.sin(angle) * r * 0.32, -r * 0.32,
+      Math.sin(angle) * r * 0.38, -r * 0.52,
+      Math.sin(angle) * r * 0.22, -r * 0.58,
+    );
+    ctx.bezierCurveTo(
+      Math.sin(angle) * r * 0.08, -r * 0.52,
+      Math.sin(angle) * r * 0.04, -r * 0.28,
+      0, -r * 0.12,
+    );
+    ctx.stroke();
+  }
 }
 
 // ── Texture procedurale sabbia ──────────────────────────────────────────────
@@ -207,6 +448,52 @@ export function createDissolveMaterial(
   };
 }
 
+// ── W-7: Materiali metallici PBR (oro, bronzo, lapislazzuli) ─────────────────
+
+/**
+ * Materiale oro egiziano: alta riflessione metallica, usufruisce dell'HDRI
+ * impostato in W-1 (scene.environment) per riflessioni accurate.
+ * Roughness bassa = superficie lucidata come oro da tesoro faraonico.
+ */
+export function createGoldMaterial(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color:     0xC49A28,   // oro egiziano — non troppo saturo
+    metalness: 0.95,
+    roughness: 0.12,
+    emissive:  0x3A2800,   // alone caldo subsurface per leggibilità in scena buia
+    emissiveIntensity: 0.18,
+  });
+}
+
+/**
+ * Materiale bronzo: lega opaca con patina verde chiaro—marrone.
+ * Tipico degli oggetti cerimoniali: statue, coperchi di canopi, armi rituali.
+ */
+export function createBronzeMaterial(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color:     0x7A5228,   // bronzo ossidato
+    metalness: 0.80,
+    roughness: 0.40,
+    emissive:  0x1A0A00,
+    emissiveIntensity: 0.08,
+  });
+}
+
+/**
+ * Materiale lapislazzuli: pietra semi-preziosa blu cobalto con vene dorate.
+ * Non metallico (metalness 0) ma con emissive dorata per simulare le vene di pirite.
+ */
+export function createLapisMaterial(): THREE.MeshStandardMaterial {
+  const mat = new THREE.MeshStandardMaterial({
+    color:     0x1F4080,   // blu lapislazzuli intenso
+    metalness: 0.0,
+    roughness: 0.38,
+    emissive:  0x604A10,   // vene pirite (oro) — flebile alone dorato
+    emissiveIntensity: 0.14,
+  });
+  return mat;
+}
+
 // ── Texture PBR da file (ambientCG, CC0) con fallback procedurale ──────────
 
 export interface PbrTextureSet {
@@ -221,6 +508,14 @@ export interface PbrTextureSet {
 const textureLoader = new THREE.TextureLoader();
 textureLoader.setCrossOrigin('anonymous');
 
+/**
+ * Percorso dei file `basis_transcoder.js`/`.wasm`, copiati da
+ * `three/examples/jsm/libs/basis/` in `public/basis/`.
+ * NON è `/draco/`: quella cartella contiene il decoder Draco per le mesh,
+ * che non ha nulla a che vedere con la transcodifica Basis delle texture.
+ */
+const BASIS_TRANSCODER_PATH = '/basis/';
+
 function configureRepeat(texture: THREE.Texture, repeatX: number, repeatY: number): THREE.Texture {
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
@@ -230,10 +525,37 @@ function configureRepeat(texture: THREE.Texture, repeatX: number, repeatY: numbe
 }
 
 /**
- * Carica colore + normal (+ roughness/AO opzionali) da /textures
- * (ambientCG CC0). Se un file manca (sviluppo offline o asset rimossi),
- * ritorna null per quel canale e il chiamante usa il fallback procedurale —
- * nessun crash.
+ * Prepara un placeholder e vi transcodifica dentro il file KTX2 in modo
+ * asincrono. Il chiamante riceve subito una Texture utilizzabile: i dati
+ * compressi arrivano poco dopo e il materiale si aggiorna da solo.
+ *
+ * @param srgb - true per le mappe colore, false per normal/roughness/AO
+ *               (dati lineari: interpretarli come sRGB falserebbe il PBR).
+ */
+function loadKtxChannel(
+  path: string,
+  repeatX: number,
+  repeatY: number,
+  srgb: boolean,
+  renderer: THREE.WebGLRenderer,
+): THREE.Texture {
+  const placeholder = configureRepeat(new THREE.Texture(), repeatX, repeatY);
+  placeholder.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  loadKTX2TextureSync(path, renderer, () => placeholder, {
+    transcoderPath: BASIS_TRANSCODER_PATH,
+  });
+  return placeholder;
+}
+
+/**
+ * Carica un set PBR (colore + normal + roughness/AO opzionali) da /textures.
+ *
+ * I path sono `.ktx2` (Basis ETC1S): le texture restano compresse in VRAM.
+ * Senza un WebGLRenderer non è possibile transcodificare — in quel caso
+ * ritorna tutti null e il chiamante usa il fallback procedurale.
+ *
+ * Storia: prima questa funzione scaricava il `.jpg` e POI ci sovrascriveva
+ * il `.ktx2`, pagando due volte la banda. Ora carica solo il KTX2.
  */
 export function loadPbrTextureSet(
   colorPath: string,
@@ -242,28 +564,25 @@ export function loadPbrTextureSet(
   repeatY = 1,
   roughnessPath: string | null = null,
   aoPath: string | null = null,
+  renderer?: THREE.WebGLRenderer,
 ): PbrTextureSet {
-  const set: PbrTextureSet = { color: null, normal: null, roughness: null, ao: null };
+  const empty: PbrTextureSet = { color: null, normal: null, roughness: null, ao: null };
+
+  // Il transcoder Basis richiede un contesto WebGL per scegliere il formato
+  // GPU (ASTC/BC7/ETC2). Senza renderer restiamo sui materiali procedurali.
+  if (!renderer) {
+    return empty;
+  }
+
   try {
-    set.color = configureRepeat(textureLoader.load(colorPath), repeatX, repeatY);
-    if (normalPath) {
-      const normal = configureRepeat(textureLoader.load(normalPath), repeatX, repeatY);
-      normal.colorSpace = THREE.NoColorSpace;
-      set.normal = normal;
-    }
-    if (roughnessPath) {
-      const roughness = configureRepeat(textureLoader.load(roughnessPath), repeatX, repeatY);
-      roughness.colorSpace = THREE.NoColorSpace;
-      set.roughness = roughness;
-    }
-    if (aoPath) {
-      const ao = configureRepeat(textureLoader.load(aoPath), repeatX, repeatY);
-      ao.colorSpace = THREE.NoColorSpace;
-      set.ao = ao;
-    }
+    return {
+      color:     loadKtxChannel(colorPath, repeatX, repeatY, true, renderer),
+      normal:    normalPath    ? loadKtxChannel(normalPath,    repeatX, repeatY, false, renderer) : null,
+      roughness: roughnessPath ? loadKtxChannel(roughnessPath, repeatX, repeatY, false, renderer) : null,
+      ao:        aoPath        ? loadKtxChannel(aoPath,        repeatX, repeatY, false, renderer) : null,
+    };
   } catch (error) {
     log.warn('Texture PBR non caricata, fallback procedurale', { colorPath, error: String(error) });
-    return { color: null, normal: null, roughness: null, ao: null };
+    return empty;
   }
-  return set;
 }

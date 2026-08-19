@@ -9,6 +9,12 @@ export interface DeathOverlayData {
   readonly floorsCleared: number;
   readonly enemiesDefeated: number;
   readonly goldEarned: number;
+  /** Ka Fragments guadagnati IN QUESTA run (non il totale). */
+  readonly kaEarnedThisRun: number;
+  /** Durata della run in millisecondi. */
+  readonly runDurationMs: number;
+  /** True se questa run ha battuto il record personale (piani). */
+  readonly isPersonalRecord: boolean;
   /** C-01: classifica locale (top 3) per la schermata di morte. */
   readonly leaderboard?: readonly LeaderboardEntry[];
   /** C-01: URL condivisibile del seed di questa run. */
@@ -102,6 +108,7 @@ export function createDeathOverlay(): DeathOverlay {
       retryButtonEl = null;
       causeEl = null;
       fragmentsEl = null;
+      statsEl = null;
       leaderboardEl = null;
       shareEl = null;
       visible = false;
@@ -227,18 +234,47 @@ export function createDeathOverlay(): DeathOverlay {
     }, 2500);
   }
 
+  function formatDuration(ms: number): string {
+    const totalSec = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSec / 60);
+    const seconds = totalSec % 60;
+    return minutes > 0
+      ? `${minutes}m ${seconds.toString().padStart(2, '0')}s`
+      : `${seconds}s`;
+  }
+
   function render(data: DeathOverlayData): void {
     if (!causeEl || !fragmentsEl || !statsEl) return;
-    causeEl.textContent = `Causa probabile: ${data.cause}.`;
-    fragmentsEl.textContent =
-      data.fragments === null
-        ? 'Frammenti di Ka: profilo non disponibile.'
-        : `Frammenti di Ka custoditi: ${data.fragments}.`;
+
+    causeEl.textContent = `Causa: ${data.cause}.`;
+
+    if (data.isPersonalRecord) {
+      causeEl.innerHTML =
+        `<span style="background:#3A1A00; border:1px solid #D4A05A; color:#D4A05A;
+          padding:2px 8px; border-radius:2px; font-size:11px; margin-right:8px;">✦ RECORD PERSONALE</span>` +
+        `Causa: ${data.cause}.`;
+    }
+
+    if (data.fragments === null) {
+      fragmentsEl.textContent = 'Frammenti di Ka: profilo non disponibile.';
+    } else {
+      const kaThisRun = data.kaEarnedThisRun > 0
+        ? ` <span style="color:#D4A05A;">(+${data.kaEarnedThisRun} questa run)</span>`
+        : '';
+      fragmentsEl.innerHTML = `☥ Ka totale: <b>${data.fragments}</b>${kaThisRun}`;
+    }
+
+    const durationText = data.runDurationMs > 0
+      ? `<div>⏱ Durata: <b>${formatDuration(data.runDurationMs)}</b></div>`
+      : '';
+
     statsEl.innerHTML = `
       <div>🏺 Piani percorsi: <b>${data.floorsCleared}</b></div>
       <div>⚔️ Nemici abbattuti: <b>${data.enemiesDefeated}</b></div>
       <div>🪙 Oro raccolto: <b>${data.goldEarned}</b></div>
+      ${durationText}
     `;
+
     if (leaderboardEl) {
       const board = data.leaderboard ?? [];
       if (board.length === 0) {
@@ -248,13 +284,17 @@ export function createDeathOverlay(): DeathOverlay {
           '<div style="color:#D4A05A; margin-bottom:2px;">🏆 Classifica locale</div>' +
           board
             .slice(0, 3)
-            .map(
-              (entry, index) =>
-                `<div>${index + 1}. Piani <b>${entry.floorReached}</b> · 🪙 ${entry.goldEarned} · ⚔️ ${entry.enemiesDefeated}</div>`,
-            )
+            .map((entry, index) => {
+              const isCurrent = index === 0 && data.isPersonalRecord;
+              const style = isCurrent
+                ? ' style="color:#D4A05A; font-weight:bold;"'
+                : '';
+              return `<div${style}>${index + 1}. Piani <b>${entry.floorReached}</b> · 🪙 ${entry.goldEarned} · ⚔️ ${entry.enemiesDefeated}</div>`;
+            })
             .join('');
       }
     }
+
     if (shareEl) {
       if (data.shareUrl !== undefined && data.shareUrl.length > 0) {
         shareEl.style.display = '';

@@ -41,6 +41,7 @@ export const ActionKind = {
   WeaponSlot1: 'WeaponSlot1',
   WeaponSlot2: 'WeaponSlot2',
   WeaponSlot3: 'WeaponSlot3',
+  WeaponSlot4: 'WeaponSlot4',
   WeaponScrollUp: 'WeaponScrollUp',
   WeaponScrollDown: 'WeaponScrollDown',
 
@@ -75,6 +76,7 @@ export const KeyCode = {
   Digit1: 'Digit1',
   Digit2: 'Digit2',
   Digit3: 'Digit3',
+  Digit4: 'Digit4',
   Backquote: 'Backquote',
   ArrowUp: 'ArrowUp',
   ArrowDown: 'ArrowDown',
@@ -159,6 +161,7 @@ const DEFAULT_ENTRIES: readonly ActionEntry[] = [
   { action: ActionKind.WeaponSlot1,   label: 'Arma 1',         bindings: [key(KeyCode.Digit1)] },
   { action: ActionKind.WeaponSlot2,   label: 'Arma 2',         bindings: [key(KeyCode.Digit2)] },
   { action: ActionKind.WeaponSlot3,   label: 'Arma 3',         bindings: [key(KeyCode.Digit3)] },
+  { action: ActionKind.WeaponSlot4,   label: 'Pala (slot 4)',  bindings: [key(KeyCode.Digit4)] },
   { action: ActionKind.WeaponScrollUp, label: 'Arma Succ.',    bindings: [] }, // scroll, gestito a parte
   { action: ActionKind.WeaponScrollDown, label: 'Arma Prec.',  bindings: [] }, // scroll, gestito a parte
   { action: ActionKind.Map,           label: 'Mappa',          bindings: [key(KeyCode.Tab)] },
@@ -193,6 +196,7 @@ const KEY_CODE_LABELS: Record<KeyCode, string> = {
   Digit1: '1',
   Digit2: '2',
   Digit3: '3',
+  Digit4: '4',
   Backquote: '`',
   ArrowUp: 'Freccia Su',
   ArrowDown: 'Freccia Giu',

@@ -53,8 +53,8 @@ export const GameConfigSchema = z.object({
     showDarknessBar: z.boolean().default(false),
   }),
   controls: z.object({
-    mouseSensitivity: z.number().min(0.1).max(5.0).default(1.0),
-    mouseSmoothing: z.number().min(0.0).max(0.95).default(0.55),
+    mouseSensitivity: z.number().min(0.1).max(5.0).default(1.2),
+    mouseSmoothing: z.number().min(0.0).max(0.95).default(0.10),
     invertY: z.boolean().default(false),
     controllerDeadzone: z.number().min(0.01).max(0.5).default(0.15),
   }),

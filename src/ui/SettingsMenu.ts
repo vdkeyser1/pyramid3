@@ -172,7 +172,7 @@ export function createSettingsMenu(): SettingsMenu {
 
     const title = document.createElement('h2');
     title.id = 'settings-title';
-    title.textContent = '⚙ Accessibilità';
+    title.textContent = '⚙ Impostazioni';
     title.style.cssText = `
       margin: 0 0 24px; font-size: 24px; color: #D4A05A;
       border-bottom: 1px solid #4A2F1A; padding-bottom: 12px;
@@ -181,6 +181,44 @@ export function createSettingsMenu(): SettingsMenu {
 
     // ── Form fields ──
     const fields = content;
+
+    fields.appendChild(sectionTitle('Controlli'));
+    fields.appendChild(sliderRow(
+      'Sensibilità Mouse',
+      'mouseSensitivity',
+      0.1,
+      5.0,
+      0.1,
+      'Velocità del mouse look (0.1 = 10% · 1.0 = 100% · 5.0 = 500%)',
+      (value: number) => `${Math.round(value * 100)}%`,
+    ));
+    fields.appendChild(sliderRow(
+      'Smoothing Mouse',
+      'mouseSmoothing',
+      0.0,
+      0.95,
+      0.05,
+      'Morbidezza della rotazione: più alto = sguardo più lento e fluido',
+      (value: number) => `${Math.round(value * 100)}%`,
+    ));
+    fields.appendChild(toggleRow('Inverti Y', 'invertY', 'Inverte l asse verticale della visuale'));
+
+    fields.appendChild(sectionTitle('Tasti'));
+    bindingsContainerEl = document.createElement('div');
+    bindingsContainerEl.id = 'settings-bindings';
+    bindingsContainerEl.style.cssText = 'display: flex; flex-direction: column; gap: 10px;';
+    fields.appendChild(bindingsContainerEl);
+
+    fields.appendChild(sectionTitle('Video'));
+    fields.appendChild(sliderRow(
+      'FOV',
+      'fov',
+      75,
+      105,
+      1,
+      'Campo visivo della camera',
+    ));
+
     fields.appendChild(sectionTitle('Visione'));
     fields.appendChild(toggleRow('Luce Assistita', 'assistedLight', 'Aumenta la visibilità nelle zone buie'));
     fields.appendChild(toggleRow('Alto Contrasto', 'highContrast', 'Migliora la leggibilità di nemici e oggetti'));
@@ -205,8 +243,6 @@ export function createSettingsMenu(): SettingsMenu {
     fields.appendChild(toggleRow('Direzione Audio', 'subtitleDirections', 'Indica la direzione del suono'));
 
     fields.appendChild(sectionTitle('Gameplay'));
-    // torchToggle rimosso (2026-08-16): F è già un toggle nativo — il setting
-    // era ridondante e inerte (decisione A-02 formalizzata in PIANO_COMPLETAMENTO).
     fields.appendChild(toggleRow('Sprint Toggle', 'sprintToggle', 'Premi una volta per iniziare lo scatto'));
 
     fields.appendChild(sectionTitle('Comfort'));
@@ -222,43 +258,6 @@ export function createSettingsMenu(): SettingsMenu {
       1.6,
       0.1,
       'Dimensione relativa del testo HUD',
-    ));
-
-    fields.appendChild(sectionTitle('Controlli'));
-    fields.appendChild(sliderRow(
-      'Sensibilità Mouse',
-      'mouseSensitivity',
-      0.1,
-      5.0,
-      0.1,
-      'Velocità del mouse look (0.1 = 10% · 1.0 = 100% · 5.0 = 500%)',
-      (value: number) => `${Math.round(value * 100)}%`,
-    ));
-    fields.appendChild(sliderRow(
-      'Smoothing Mouse',
-      'mouseSmoothing',
-      0.0,
-      0.95,
-      0.05,
-      'Morbidezza della rotazione: più alto = sguardo più lento e fluido',
-      (value: number) => `${Math.round(value * 100)}%`,
-    ));
-    fields.appendChild(toggleRow('Inverti Y', 'invertY', 'Inverte l asse verticale della visuale'));
-
-    fields.appendChild(sectionTitle('Rebind Controlli'));
-    bindingsContainerEl = document.createElement('div');
-    bindingsContainerEl.id = 'settings-bindings';
-    bindingsContainerEl.style.cssText = 'display: flex; flex-direction: column; gap: 10px;';
-    fields.appendChild(bindingsContainerEl);
-
-    fields.appendChild(sectionTitle('Video'));
-    fields.appendChild(sliderRow(
-      'FOV',
-      'fov',
-      75,
-      105,
-      1,
-      'Campo visivo della camera',
     ));
 
     // ── Pulsanti ──

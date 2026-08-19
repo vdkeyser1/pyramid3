@@ -96,7 +96,7 @@ const AUTOSTEP_MIN_WIDTH = 0.1;
 /** G-18 V4: raggio entro cui il doorway snap assist attira verso la porta. */
 const DOORWAY_ASSIST_RADIUS = 1.6;
 /** G-18 V4: intensità massima della deviazione verso il centro della porta. */
-const DOORWAY_ASSIST_STRENGTH = 0.55;
+const DOORWAY_ASSIST_STRENGTH = 0.28;
 
 /**
  * G-18 V4: doorway snap assist (pura) — devia la direzione di movimento verso
@@ -471,7 +471,7 @@ export class PlayerCharacterController {
 
     return {
       x: nx * cosY - nz * sinY,
-      z: nx * sinY + nz * cosY,
+      z: -nx * sinY - nz * cosY,
     };
   }
 
