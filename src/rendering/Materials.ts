@@ -388,6 +388,222 @@ export function createSandTexture(size = 256, base = '#8a7350'): THREE.CanvasTex
   return texture;
 }
 
+// ── Soffitto astronomico (tomba di Senenmut, TT 353) ───────────────────────
+
+/**
+ * Genera il soffitto stellato delle camere funerarie.
+ *
+ * RIFERIMENTO: piramide di Unas (V dinastia, ~2350 a.C.), il primo faraone a
+ * far incidere testi nella propria piramide. Il soffitto della camera
+ * funeraria era a **stelle dorate su fondo nero**, per imitare il cielo
+ * notturno sotto cui venivano recitate le formule.
+ *
+ * Una versione precedente usava blu egizio con stelle ocra: quello è il
+ * cielo di Senenmut (TT 353), una TOMBA del Nuovo Regno — riferimento
+ * sbagliato per una piramide, e visivamente più piatto.
+ *
+ * Il repertorio decorativo alterna forme diverse invece di ripetere la stessa
+ * stella: stelle a cinque punte (la forma canonica del geroglifico `sba`),
+ * stelle a otto punte e rosette, separate da bande di motivi geometrici
+ * (zigzag e spirali) che nelle tombe reali scandiscono i registri.
+ *
+ * Deterministico: nessun Math.random, la disposizione dipende solo dal seed.
+ */
+export function createAstronomicalCeilingTexture(
+  seed = 0,
+  size = 512,
+): THREE.CanvasTexture | null {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  let s = (seed * 0x9e3779b9 + 0x51ed270b) >>> 0;
+  const rnd = (): number => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return (s >>> 8) / 0x01000000;
+  };
+
+  // Fondo nero pece, non nero puro: la pietra sotto il pigmento traspare.
+  ctx.fillStyle = '#0D0A07';
+  ctx.fillRect(0, 0, size, size);
+
+  // Venature calde: il nero uniforme legge come vuoto, non come soffitto.
+  for (let i = 0; i < 40; i++) {
+    const cx = rnd() * size;
+    const cy = rnd() * size;
+    const r = size * (0.08 + rnd() * 0.16);
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0, 'rgba(58, 40, 22, 0.22)');
+    grad.addColorStop(1, 'rgba(58, 40, 22, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Tavolozza policroma: i soffitti egizi non sono monocromi dorati. I
+  // pittori lavoravano con sei pigmenti e li usavano insieme — l'oro da solo
+  // legge come ottone, non come pittura murale.
+  const GOLD = '#E0AC48';       // ocra gialla
+  const GOLD_DIM = '#A87C2C';
+  const RED = '#B24A2A';        // ocra rossa
+  const BLUE = '#2E63B8';       // blu egizio
+  const GREEN = '#3F7D5C';      // malachite
+  const WHITE = '#E8DCC4';      // gesso
+
+  // ── Bande di registro: fasce orizzontali di motivi geometrici ──────────
+  // Nelle tombe le fasce separano i campi stellati e danno ritmo al soffitto.
+  // Ogni fascia ha il proprio colore: è la policromia a rendere il soffitto
+  // "acceso" invece che uniforme.
+  const bandY = [size * 0.22, size * 0.50, size * 0.78];
+  const bandColors = [RED, BLUE, GREEN];
+  ctx.lineWidth = Math.max(2, size / 220);
+  for (let b = 0; b < bandY.length; b++) {
+    const y = bandY[b] ?? 0;
+    ctx.strokeStyle = bandColors[b] ?? GOLD_DIM;
+    // Alterna zigzag (il motivo più antico, dal 4000 a.C.) e spirali
+    // (associate al vagare dell'anima).
+    if (b % 2 === 0) drawZigzagBand(ctx, y, size);
+    else drawSpiralBand(ctx, y, size);
+  }
+
+  // ── Campo stellato a quinconce con forme alternate ─────────────────────
+  const COLS = 6;
+  const ROWS = 6;
+  const cell = size / COLS;
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const offset = row % 2 === 0 ? 0 : cell / 2;
+      const cx = col * cell + cell / 2 + offset + (rnd() - 0.5) * cell * 0.18;
+      const cy = row * cell + cell / 2 + (rnd() - 0.5) * cell * 0.18;
+      if (cx < -cell || cx > size + cell) continue;
+
+      // Le fasce di registro non devono essere coperte dalle stelle.
+      if (bandY.some((by) => Math.abs(cy - by) < cell * 0.30)) continue;
+
+      const r = cell * (0.13 + rnd() * 0.07);
+      // Tre forme in rotazione, con pesi diversi: la stella a cinque punte
+      // resta dominante perché è quella canonica del geroglifico `sba`.
+      const pick = rnd();
+      // Colore per stella: l'oro domina, ma bianco gesso e ocra rossa
+      // compaiono a intervalli — è così che le tombe evitano la monotonia.
+      const tint = rnd();
+      ctx.fillStyle = tint > 0.88 ? WHITE : tint > 0.74 ? RED : tint > 0.62 ? GOLD_DIM : GOLD;
+      if (pick < 0.55) {
+        drawFivePointedStar(ctx, cx, cy, r, r * 0.42);
+      } else if (pick < 0.82) {
+        drawEightPointedStar(ctx, cx, cy, r, r * 0.45);
+      } else {
+        drawRosette(ctx, cx, cy, r * 0.85);
+      }
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/** Stella a otto punte: variante frequente accanto a quella a cinque. */
+function drawEightPointedStar(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  outerR: number,
+  innerR: number,
+): void {
+  ctx.beginPath();
+  for (let i = 0; i < 16; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    const angle = (i * Math.PI) / 8 - Math.PI / 2;
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** Rosetta a petali: motivo geometrico ricorrente nei soffitti dipinti. */
+function drawRosette(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+): void {
+  const PETALS = 8;
+  for (let i = 0; i < PETALS; i++) {
+    const angle = (i / PETALS) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.ellipse(
+      cx + Math.cos(angle) * r * 0.52,
+      cy + Math.sin(angle) * r * 0.52,
+      r * 0.34, r * 0.17, angle, 0, Math.PI * 2,
+    );
+    ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.22, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** Banda a zigzag: l'ornamento egizio più antico (acqua/nun). */
+function drawZigzagBand(ctx: CanvasRenderingContext2D, y: number, size: number): void {
+  const step = size / 26;
+  const amp = step * 0.62;
+  for (let k = -1; k <= 1; k += 2) {
+    ctx.beginPath();
+    ctx.moveTo(0, y + k * amp * 1.5);
+    for (let x = 0, up = true; x <= size; x += step, up = !up) {
+      ctx.lineTo(x, y + k * amp * 1.5 + (up ? -amp : amp));
+    }
+    ctx.stroke();
+  }
+}
+
+/** Banda a spirali continue: motivo del "vagare dell'anima". */
+function drawSpiralBand(ctx: CanvasRenderingContext2D, y: number, size: number): void {
+  const step = size / 9;
+  for (let x = step / 2; x < size; x += step) {
+    ctx.beginPath();
+    // Spirale aperta a due giri, disegnata per punti.
+    for (let a = 0; a < Math.PI * 4; a += 0.22) {
+      const r = (a / (Math.PI * 4)) * step * 0.36;
+      const px = x + Math.cos(a) * r;
+      const py = y + Math.sin(a) * r;
+      if (a === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+}
+
+/** Stella a cinque punte, orientata con una punta verso l'alto. */
+function drawFivePointedStar(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  outerR: number,
+  innerR: number,
+): void {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    const angle = (i * Math.PI) / 5 - Math.PI / 2;
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
 // ── Materiale dissolve (morte nemici) ──────────────────────────────────────
 
 /**

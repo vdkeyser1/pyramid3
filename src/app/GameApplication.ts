@@ -11,6 +11,7 @@ import { TICK_HZ, PLAYER, TORCH, WEAPONS } from '@/content/balance.js';
 import { createLogger, configureLogger, type Logger } from '@/core/Logger.js';
 import type {
   RendererBrazierState,
+  RendererEnemyState,
   RendererHandle,
   RendererPlacedTorchState,
 } from '@/rendering/RendererService.js';
@@ -83,7 +84,10 @@ import {
   createRuntimeStimulusState,
   tickRuntimeStimulusState,
 } from '@/app/RuntimeStimulusState.js';
-import { buildRuntimeMinimap } from '@/app/RuntimeMinimap.js';
+import {
+  buildRuntimeMinimap,
+  type RuntimeMinimapEnemyInput,
+} from '@/app/RuntimeMinimap.js';
 import {
   createEnemySpawnDirector,
   type EnemySpawnDirector,
@@ -754,6 +758,57 @@ export function createGameApplication(
     if (index === 2) return runtimeBonuses.startsWithStaff;
     if (index === 3) return shovelDigs > 0;
     return index >= 0 && index < weapons.length;
+  }
+
+  /**
+   * Raccoglie i nemici vivi del piano per la minimappa.
+   *
+   * Senza questo la minimappa non mostrava alcun nemico: con un obiettivo
+   * come "elimina la Mummia Dormiente" il giocatore non aveva modo di sapere
+   * dove cercare, e il combattimento risultava incomprensibile.
+   * Il filtro per stanza rivelata sta in buildRuntimeMinimap.
+   */
+  function buildMinimapEnemies(): RuntimeMinimapEnemyInput[] {
+    const result: RuntimeMinimapEnemyInput[] = [];
+
+    if (sliceState && sliceState.target.hp > 0) {
+      result.push({
+        x: sliceState.target.position.x,
+        z: sliceState.target.position.z,
+        awake: sliceState.target.awakened,
+        hpRatio: sliceState.target.maxHp <= 0
+          ? 0
+          : sliceState.target.hp / sliceState.target.maxHp,
+      });
+    }
+    if (mummyState && mummyState.hp > 0) {
+      result.push({
+        x: mummyState.position.x,
+        z: mummyState.position.z,
+        awake: mummyState.runtime.state !== 'SLEEPING',
+        hpRatio: mummyState.maxHp <= 0 ? 0 : mummyState.hp / mummyState.maxHp,
+      });
+    }
+    if (scarabState && scarabState.hp > 0) {
+      result.push({
+        x: scarabState.position.x,
+        z: scarabState.position.z,
+        awake: scarabState.awakened,
+        hpRatio: scarabState.maxHp <= 0 ? 0 : scarabState.hp / scarabState.maxHp,
+      });
+    }
+    if (genericEnemyState && genericEnemyState.hp > 0) {
+      result.push({
+        x: genericEnemyState.position.x,
+        z: genericEnemyState.position.z,
+        awake: genericEnemyState.runtime.state !== 'DORMANT',
+        hpRatio: genericEnemyState.def.baseHp <= 0
+          ? 0
+          : genericEnemyState.hp / genericEnemyState.def.baseHp,
+      });
+    }
+
+    return result;
   }
 
   function buildWeaponSlotLabels(): readonly (string | null)[] {
@@ -2036,8 +2091,12 @@ export function createGameApplication(
       return;
     }
 
-    const enemyStates = [
+    // Tipizzato esplicitamente: senza annotazione TypeScript inferirebbe il
+    // tipo dal primo elemento e rifiuterebbe i `kind` diversi degli altri.
+    const enemyStates: RendererEnemyState[] = [
       {
+        // Il guardiano del vertical slice è una mummia reale (non regale).
+        kind: 'MUMMY',
         x: sliceState.target.position.x,
         y: sliceState.target.position.y,
         z: sliceState.target.position.z,
@@ -2053,6 +2112,7 @@ export function createGameApplication(
 
     if (scarabState) {
       enemyStates.push({
+        kind: 'SCARAB',
         x: scarabState.position.x,
         y: scarabState.position.y,
         z: scarabState.position.z,
@@ -2067,6 +2127,7 @@ export function createGameApplication(
 
     if (mummyState) {
       enemyStates.push({
+        kind: 'MUMMY',
         x: mummyState.position.x,
         y: mummyState.position.y,
         z: mummyState.position.z,
@@ -2081,6 +2142,8 @@ export function createGameApplication(
 
     if (genericEnemyState) {
       enemyStates.push({
+        // L'archetipo del gameplay sceglie il modello 3D da mostrare.
+        kind: genericEnemyState.archetype,
         x: genericEnemyState.position.x,
         y: genericEnemyState.position.y,
         z: genericEnemyState.position.z,
@@ -2751,14 +2814,14 @@ export function createGameApplication(
     if (_frame.wasPressed(ActionKind.WeaponSlot1)) {
       currentWeaponIndex = 0;
       weaponName = WEAPON_FISTS.name;
-      renderer?.setWeaponViewmodelVisible(false);
+      renderer?.setActiveWeaponViewmodel?.("fists");
       _frame.consume(ActionKind.WeaponSlot1);
     }
     if (_frame.wasPressed(ActionKind.WeaponSlot2)) {
       currentWeaponIndex = 1;
       weaponMgr.setActiveSlot('PRIMARY');
       weaponName = weaponMgr.activeWeapon?.definition.name ?? WEAPON_KHOPESH.name;
-      renderer?.setWeaponViewmodelVisible(true);
+      renderer?.setActiveWeaponViewmodel?.("khopesh");
       _frame.consume(ActionKind.WeaponSlot2);
     }
     if (_frame.wasPressed(ActionKind.WeaponSlot3) && isWeaponUnlocked(2)) {
@@ -2769,14 +2832,14 @@ export function createGameApplication(
       currentWeaponIndex = 2;
       weaponMgr.setActiveSlot('SECONDARY');
       weaponName = weaponMgr.activeWeapon?.definition.name ?? WEAPON_STAFF.name;
-      renderer?.setWeaponViewmodelVisible(false);
+      renderer?.setActiveWeaponViewmodel?.("staff");
       _frame.consume(ActionKind.WeaponSlot3);
     }
     if (_frame.wasPressed(ActionKind.WeaponSlot4)) {
       if (isWeaponUnlocked(3)) {
         currentWeaponIndex = 3;
         weaponName = `Pala (${String(shovelDigs)} usi)`;
-        renderer?.setWeaponViewmodelVisible(false);
+        renderer?.setActiveWeaponViewmodel?.("shovel");
         hud.showContextualHint({
           id: 'hint-shovel-equipped',
           text: 'Pala equipaggiata: avvicinati al marcatore sul pavimento e tieni E per scavare.',
@@ -2792,7 +2855,7 @@ export function createGameApplication(
         if (weaponMgr.swapWeapons()) {
           currentWeaponIndex = weaponMgr.activeSlot === 'PRIMARY' ? 1 : 2;
           weaponName = weaponMgr.activeWeapon?.definition.name ?? '';
-          renderer?.setWeaponViewmodelVisible(currentWeaponIndex === 1);
+          renderer?.setActiveWeaponViewmodel?.(currentWeaponIndex === 1 ? "khopesh" : "staff");
         }
       }
       _frame.consume(ActionKind.WeaponScrollUp);
@@ -2847,6 +2910,7 @@ export function createGameApplication(
             ? { x: playerPosition.x, z: playerPosition.z }
             : null,
           mapRoomId: Number(sliceState.floor.mapRoomId),
+          enemies: buildMinimapEnemies(),
         })
         : null,
     });

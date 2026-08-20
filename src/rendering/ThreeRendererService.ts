@@ -18,6 +18,7 @@ import type {
 } from '@/rendering/RendererService.js';
 import { resolveWorldAccessibilityPalette } from '@/config/AccessibilityPalette.js';
 import {
+  createAstronomicalCeilingTexture,
   createDissolveMaterial,
   createHieroglyphTexture,
   createHieroglyphPanelTexture,
@@ -99,6 +100,14 @@ export function createThreeRenderer(
   let sparkBurst: ParticleBurst | null = null;
   // G-15 V2: trail a falce per i colpi corpo-a-corpo.
   let weaponTrail: { mesh: THREE.Mesh; slash(position: { readonly x: number; readonly y: number; readonly z: number }, yaw: number): void; update(deltaMs: number): boolean } | null = null;
+  /** Un viewmodel per tipo d'arma; solo quello attivo è visibile. */
+  const weaponViewmodels = new Map<string, {
+    readonly group: THREE.Group;
+    setVisible(visible: boolean): void;
+    playSwing(): void;
+    playParry(): void;
+    update(deltaMs: number): void;
+  }>();
   let weaponViewmodel: {
     group: THREE.Group;
     setVisible(visible: boolean): void;
@@ -116,7 +125,15 @@ export function createThreeRenderer(
   let exitBeaconMaterial: THREE.MeshStandardMaterial;
   let placedTorchMaterial: THREE.MeshStandardMaterial;
   let digSiteMaterial: THREE.MeshStandardMaterial;
-  let digSiteMarker: THREE.Mesh | null = null;
+  let digSiteMarker: THREE.Group | null = null;
+  /** Materiale del fascio verticale del sito di scavo (opacità = vicinanza). */
+  let digSiteBeamMaterial: THREE.MeshBasicMaterial | null = null;
+  /**
+   * Colonne procedurali del piano corrente. Ognuna possiede geometrie e
+   * materiali propri: vanno liberate al cambio piano, altrimenti si accumulano
+   * sulla GPU a ogni discesa.
+   */
+  const columnDisposables: { dispose(): void }[] = [];
   let brazierRoot: THREE.Group;
   // G-16 + B-06: texture geroglifica condivisa per i landmark glyph + color
   // map papiro reale (create/load in init, fallback procedurale).
@@ -134,7 +151,15 @@ export function createThreeRenderer(
     material: THREE.MeshStandardMaterial;
     /** B-03: fase di animazione idle (0-1, deterministica per indice). */
     phaseOffset: number;
+    /** Modello GLB agganciato alla capsula, se già caricato. */
+    model?: THREE.Group;
+    /** Tipo attualmente montato, per non ricaricare a ogni frame. */
+    kind?: string;
   }[] = [];
+  /** Cache dei GLB nemici: un solo fetch per tipo, poi si clona. */
+  const enemyModelCache = new Map<string, THREE.Group>();
+  /** yOffset per archetipo, letto da ENEMY_ASSETS al primo caricamento. */
+  const enemyModelOffsets = new Map<string, number>();
   let exitBeacon: THREE.Mesh | null = null;
   let exitBeaconLight: THREE.PointLight | null = null;
   /** Materiale dei glifi sul pavimento — animato nel render loop (pulsazione emissiva). */
@@ -181,6 +206,43 @@ export function createThreeRenderer(
   let shovelPickupGroup: THREE.Group | null = null;
   // KayKit: torcia posata (GLB) — sostituisce il cilindro placeholder se caricato.
   let placedTorchGlb: THREE.Group | null = null;
+  // Soffitto stellato: ricreato a ogni piano (seed = floorIndex), va rilasciato.
+  let ceilingMaterial: THREE.MeshStandardMaterial | null = null;
+
+  /**
+   * Costruisce il materiale del soffitto delle camere: stelle dorate su fondo
+   * nero, sul modello della camera funeraria di Unas (V dinastia).
+   *
+   * L'emissive è dorata e tenue: illumina solo le stelle (che nella texture
+   * sono le uniche zone chiare) e non la stanza. Con la torcia spenta il
+   * soffitto resta appena percettibile — il buio è una meccanica del gioco,
+   * non un difetto da compensare qui.
+   */
+  function buildCeilingMaterial(floorIndex: number): THREE.MeshStandardMaterial {
+    // map ed emissiveMap sono la stessa CanvasTexture: basta un dispose.
+    ceilingMaterial?.map?.dispose();
+    ceilingMaterial?.dispose();
+    const starMap = createAstronomicalCeilingTexture(floorIndex);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.95,
+      metalness: 0.0,
+    });
+    if (starMap) {
+      // Le camere sono grandi: ripetiamo il cielo per non stirare le stelle.
+      starMap.repeat.set(2, 2);
+      material.map = starMap;
+      material.emissiveMap = starMap;
+      // Oro caldo: le stelle brillano come pigmento illuminato, non come LED.
+      material.emissive = new THREE.Color(0xC79A45);
+      material.emissiveIntensity = 0.30;
+    } else {
+      // Canvas 2D non disponibile: soffitto in tinta unita, comunque chiuso.
+      material.color.setHex(0x0d0a07);
+    }
+    ceilingMaterial = material;
+    return material;
+  }
 
   async function init(): Promise<void> {
     let webgpuReady = false;
@@ -475,43 +537,55 @@ export function createThreeRenderer(
       roughness: 0.92,
       metalness: 0.08,
     });
-    // Pavimento: lastre di pietra egizia (Poly Haven stone_floor CC0, 512px).
-    // Fallback: sabbia procedurale se il file manca.
+    // Pavimento: SABBIA come materiale base. Una piramide sepolta nel deserto
+    // ha i pavimenti coperti di sabbia infiltrata da millenni — la pietra a
+    // vista resta l'eccezione delle camere cerimoniali, non la regola.
+    // (Prima la gerarchia era invertita: pietra ovunque, sabbia solo come
+    // fallback se il file mancava, e il suolo non leggeva come desertico.)
+    // repeat 8×8: grana più fitta della pietra, i granuli non devono stirarsi.
     const floorPbr = loadPbrTextureSet(
-      'textures/stone_floor_color.ktx2',
-      'textures/stone_floor_normal.ktx2',
-      5, 5,
-      'textures/stone_floor_roughness.ktx2',
-      'textures/stone_floor_ao.ktx2',
+      'textures/sand_color.ktx2',
+      'textures/sand_normalgl.ktx2',
+      8, 8,
+      'textures/sand_roughness.ktx2',
+      'textures/sand_ambientocclusion.ktx2',
       glRenderer,
     );
     if (floorPbr.color) {
       floorMaterial.map = floorPbr.color;
       if (floorPbr.normal) {
+        // Normal contenuta: a 0.85 la sabbia produceva chiazze irregolari
+        // che leggevano come "forme" senza significato invece che come grana.
+        // La compressione ETC1S accentua l'effetto sulle mappe non-colore.
         floorMaterial.normalMap = floorPbr.normal;
-        floorMaterial.normalScale.set(0.5, 0.5);
+        floorMaterial.normalScale.set(0.35, 0.35);
       }
       if (floorPbr.roughness) floorMaterial.roughnessMap = floorPbr.roughness;
       if (floorPbr.ao) {
+        // AO tenue: la sabbia è una superficie continua, non ha incavi
+        // profondi da scurire. A 0.7 creava macchie scure a chiazze.
         floorMaterial.aoMap = floorPbr.ao;
-        floorMaterial.aoMapIntensity = 0.65;
+        floorMaterial.aoMapIntensity = 0.25;
       }
-      floorMaterial.color.setHex(0xffffff);
-      floorMaterial.roughness = 0.88;
+      // Tinta calda: la sabbia illuminata dal fuoco tende all'ocra, non al grigio.
+      floorMaterial.color.setHex(0xd9c49a);
+      floorMaterial.roughness = 0.95;
+      floorMaterial.metalness = 0.02;
     } else {
-      // fallback sabbia procedurale
-      const sandPbr = loadPbrTextureSet(
-        'textures/sand_color.ktx2', 'textures/sand_normalgl.ktx2', 6, 6,
-        'textures/sand_roughness.ktx2', 'textures/sand_ambientocclusion.ktx2',
+      // Fallback 1: lastre di pietra (il set sabbia non ha transcodificato).
+      const stonePbr = loadPbrTextureSet(
+        'textures/stone_floor_color.ktx2', 'textures/stone_floor_normal.ktx2', 5, 5,
+        'textures/stone_floor_roughness.ktx2', 'textures/stone_floor_ao.ktx2',
         glRenderer,
       );
-      if (sandPbr.color) {
-        floorMaterial.map = sandPbr.color;
-        if (sandPbr.normal) { floorMaterial.normalMap = sandPbr.normal; floorMaterial.normalScale.set(0.6, 0.6); }
-        if (sandPbr.roughness) floorMaterial.roughnessMap = sandPbr.roughness;
-        if (sandPbr.ao) { floorMaterial.aoMap = sandPbr.ao; floorMaterial.aoMapIntensity = 0.7; }
+      if (stonePbr.color) {
+        floorMaterial.map = stonePbr.color;
+        if (stonePbr.normal) { floorMaterial.normalMap = stonePbr.normal; floorMaterial.normalScale.set(0.5, 0.5); }
+        if (stonePbr.roughness) floorMaterial.roughnessMap = stonePbr.roughness;
+        if (stonePbr.ao) { floorMaterial.aoMap = stonePbr.ao; floorMaterial.aoMapIntensity = 0.65; }
         floorMaterial.color.setHex(0xffffff);
       } else {
+        // Fallback 2: sabbia procedurale su canvas, senza alcun file.
         const sandTexture = createSandTexture(256, '#8a7350');
         if (sandTexture) { floorMaterial.map = sandTexture; floorMaterial.color.setHex(0xb09a70); }
       }
@@ -527,12 +601,17 @@ export function createThreeRenderer(
       roughness: 0.90,
       metalness: 0.04,
     });
-    // Muri: arenaria sabbiosa egizia (Poly Haven sandstone_brick_wall_01 CC0, 512px).
-    // Per i livelli profondi (floorIndex >= 5) si usa old_sandstone_02 (più scura).
+    // Muri: arenaria egizia (Poly Haven sandstone_brick_wall_01 CC0).
+    //
+    // repeat 1.6×1.1 invece di 4×3. La texture è a corsi di blocchi: ripetuta
+    // 4×3 su una parete alta 4,5 m ogni blocco risultava ~25 cm, la misura di
+    // un mattone moderno — e la parete leggeva come muratura di mattoni.
+    // A 1.6×1.1 ogni blocco è ~65 cm, la scala dei conci di calcare con cui
+    // sono costruite le piramidi.
     const wallPbr = loadPbrTextureSet(
       'textures/sandstone_wall_color.ktx2',
       'textures/sandstone_wall_normal.ktx2',
-      4, 3,
+      1.6, 1.1,
       'textures/sandstone_wall_roughness.ktx2',
       'textures/sandstone_wall_ao.ktx2',
       glRenderer,
@@ -541,13 +620,18 @@ export function createThreeRenderer(
       wallMaterial.map = wallPbr.color;
       if (wallPbr.normal) {
         wallMaterial.normalMap = wallPbr.normal;
-        wallMaterial.normalScale.set(0.85, 0.85);
+        // Con blocchi grandi il rilievo va contenuto: a 0.85 le fughe
+        // sembravano scavate col cemento invece che tagliate nella pietra.
+        wallMaterial.normalScale.set(0.45, 0.45);
       }
       if (wallPbr.roughness) wallMaterial.roughnessMap = wallPbr.roughness;
       if (wallPbr.ao) {
         wallMaterial.aoMap = wallPbr.ao;
-        wallMaterial.aoMapIntensity = 0.80;
+        wallMaterial.aoMapIntensity = 0.45;
       }
+      // Calcare di Tura: i corridoi delle piramidi sono in pietra chiara e
+      // calda, non nell'arenaria rossastra dei templi all'aperto.
+      wallMaterial.color.setHex(0xC9B48C);
     } else {
       // fallback: vecchia texture generica
       const fallbackPbr = loadPbrTextureSet(
@@ -648,11 +732,23 @@ export function createThreeRenderer(
     // Import dinamico (stesso pattern di Vfx) per non gonfiare il chunk
     // principale; in caso di errore il gioco continua senza viewmodel.
     try {
-      const { createKhopeshViewmodel } = await import('@/rendering/WeaponViewmodel.js');
-      const viewmodel = createKhopeshViewmodel();
-      viewmodel.setVisible(true);
-      camera.add(viewmodel.group);
-      weaponViewmodel = viewmodel;
+      const vm = await import('@/rendering/WeaponViewmodel.js');
+      // Un viewmodel per arma: prima esisteva solo il khopesh, e cambiando
+      // slot non si vedeva nulla in mano.
+      weaponViewmodels.set('fists', vm.createFistsViewmodel());
+      weaponViewmodels.set('khopesh', vm.createKhopeshViewmodel());
+      weaponViewmodels.set('staff', vm.createStaffViewmodel());
+      weaponViewmodels.set('shovel', vm.createShovelViewmodel());
+      for (const model of weaponViewmodels.values()) {
+        model.setVisible(false);
+        camera.add(model.group);
+      }
+      // Il khopesh è l'arma iniziale.
+      const initial = weaponViewmodels.get('khopesh');
+      if (initial) {
+        initial.setVisible(true);
+        weaponViewmodel = initial;
+      }
     } catch (err) {
       log.warn('Viewmodel arma non disponibile', { error: String(err) });
     }
@@ -843,31 +939,63 @@ export function createThreeRenderer(
     }
     if (!position || !initialized) return;
 
+    // Pala a terra: prima era due box tozze in oro emissivo, che a terra
+    // leggevano come un oggetto dorato astratto anziché come un attrezzo.
+    // Ora ha proporzioni da utensile vero — manico lungo e sottile, lama
+    // larga e piatta — e materiali coerenti: legno per l'asta, bronzo per
+    // la lama. Il bronzo è quello di Materials.createBronzeMaterial().
     const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0xc89030,
-      roughness: 0.4,
-      metalness: 0.7,
-      emissive: 0x6a3a00,
-      emissiveIntensity: 0.5,
-    });
-    // Manico orizzontale
-    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.55), mat);
-    handle.position.y = 0.04;
-    // Testa della pala
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, 0.18), mat);
-    blade.position.set(0, 0.04, 0.3);
-    group.add(handle, blade);
 
-    // Bagliore a terra
+    const woodMat = new THREE.MeshStandardMaterial({
+      color: 0x6B4A2A,
+      roughness: 0.85,
+      metalness: 0.0,
+    });
+    const bronzeMat = new THREE.MeshStandardMaterial({
+      color: 0x7A5228,
+      roughness: 0.40,
+      metalness: 0.80,
+      emissive: 0x1A0A00,
+      emissiveIntensity: 0.08,
+    });
+
+    // Asta: 1,05 m, sottile — la lunghezza è ciò che rende leggibile l'attrezzo.
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.028, 0.032, 1.05, 8),
+      woodMat,
+    );
+    shaft.rotation.x = Math.PI / 2;
+    shaft.position.set(0, 0.05, -0.1);
+    shaft.castShadow = true;
+
+    // Impugnatura a T in cima all'asta.
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.22, 6), woodMat);
+    grip.rotation.z = Math.PI / 2;
+    grip.position.set(0, 0.05, -0.62);
+
+    // Ghiera che unisce asta e lama: il dettaglio che dice "costruito".
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.09, 8), bronzeMat);
+    collar.rotation.x = Math.PI / 2;
+    collar.position.set(0, 0.05, 0.4);
+
+    // Lama larga e piatta, leggermente inclinata come appoggiata al suolo.
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.022, 0.34), bronzeMat);
+    blade.position.set(0, 0.035, 0.60);
+    blade.rotation.x = -0.12;
+    blade.castShadow = true;
+
+    group.add(shaft, grip, collar, blade);
+
+    // Bagliore a terra: tenue, serve solo a farla notare nel buio senza
+    // trasformarla in un oggetto magico luminoso.
     const glowMat = new THREE.MeshBasicMaterial({
-      color: 0xffd060,
+      color: 0xE8B451,
       transparent: true,
-      opacity: 0.28,
+      opacity: 0.18,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    const glow = new THREE.Mesh(new THREE.CircleGeometry(0.38, 16), glowMat);
+    const glow = new THREE.Mesh(new THREE.CircleGeometry(0.55, 16), glowMat);
     glow.rotation.x = -Math.PI / 2;
     glow.position.y = 0.01;
     group.add(glow);
@@ -880,47 +1008,71 @@ export function createThreeRenderer(
   // W-5 / task-9: posiziona props 3D CC0 nelle stanze.
   // Stanze ≥ 8×8: colonne/pilastri KayKit agli angoli.
   // Stanze più piccole: colonne Kenney Dungeon.
-  async function placeKayKitRoomProps(layout: FloorSceneLayout, root: THREE.Group): Promise<void> {
-    const { loadArtifact } = await import('@/rendering/ArtifactLoader.js');
-    const { getArtifactsBySource, getArtifactById } = await import('@/content/ArtifactRegistry.js');
-    const kayKitDefs = getArtifactsBySource('kaykit');
-    const columnDef = kayKitDefs.find((d) => d.id === 'column_kaykit');
-    const pillarDef = kayKitDefs.find((d) => d.id === 'pillar_decorated');
-    const ruinsColumnDef = getArtifactById('ruins_column');
-    if (!columnDef && !pillarDef && !ruinsColumnDef) return;
+  /**
+   * Dispone le colonne nelle camere secondo lo schema della sala ipostila
+   * egizia: due file parallele che fiancheggiano l'asse centrale, lasciando
+   * libero il passaggio in mezzo (Karnak, Luxor).
+   *
+   * Sostituisce il piazzamento precedente ai 4 angoli di ogni stanza, che era
+   * meccanico e usava i prop del pack KayKit Dungeon — colonne con armi e
+   * scudi, fantasy medievale fuori tema per una piramide egizia.
+   *
+   * Usa solo `ruins_column` (Kenney CC0), che è geometricamente neutra.
+   */
+  async function placeRoomColumns(layout: FloorSceneLayout, root: THREE.Group): Promise<void> {
+    // Colonne generate proceduralmente invece dell'asset `ruins_column`:
+    // quello era un cilindro bianco liscio con capitello classicheggiante,
+    // che in scena leggeva come colonna greco-romana. Queste hanno fusto
+    // scanalato, capitello papiriforme/lotiforme/palmiforme e bande dipinte.
+    const { createEgyptianColumn } = await import('@/rendering/EgyptianColumn.js');
+    if (disposed) return;
+
+    /** Larghezza libera al centro: il giocatore deve poterci passare. */
+    const AISLE_HALF_WIDTH_M = 2.2;
+    /** Distanza minima dalle pareti, per non compenetrare i bracieri. */
+    const WALL_MARGIN_M = 2.8;
+    /** Sotto questa dimensione la camera non regge una colonnata. */
+    const MIN_ROOM_M = 9;
 
     for (const room of layout.rooms) {
       const { minX, maxX, minZ, maxZ } = room.bounds;
       const w = maxX - minX;
       const d = maxZ - minZ;
-      if (w < 8 || d < 8) continue;
+      if (w < MIN_ROOM_M || d < MIN_ROOM_M) continue;
 
       const cx = (minX + maxX) / 2;
       const cz = (minZ + maxZ) / 2;
-      const halfW = w / 2 - 1.2;
-      const halfD = d / 2 - 1.2;
 
-      // 4 angoli della stanza — 1 colonna o pilastro per angolo.
-      // Stanze grandi: KayKit (più elaborate). Stanze medie: Kenney ruins.
-      const isLarge = w >= 10 && d >= 10;
-      const corners = [
-        { x: cx - halfW, z: cz - halfD },
-        { x: cx + halfW, z: cz - halfD },
-        { x: cx - halfW, z: cz + halfD },
-        { x: cx + halfW, z: cz + halfD },
-      ];
+      // La colonnata corre lungo il lato lungo della stanza.
+      const alongZ = d >= w;
+      const halfSpan = (alongZ ? d : w) / 2 - WALL_MARGIN_M;
+      if (halfSpan <= 0) continue;
 
-      for (let i = 0; i < corners.length; i++) {
-        const def = isLarge
-          ? (i % 2 === 0 ? (columnDef ?? pillarDef) : (pillarDef ?? columnDef))
-          : ruinsColumnDef;
-        if (!def) continue;
-        const prop = await loadArtifact(def);
-        if (!prop || disposed) return;
-        const corner = corners[i];
-        if (!corner) continue;
-        prop.position.set(corner.x, 0, corner.z);
-        root.add(prop);
+      // Camere più profonde reggono tre coppie invece di due: la densità
+      // cresce con la stanza, non è un numero fisso.
+      const pairs = halfSpan >= 5.5 ? 3 : 2;
+
+      for (let side = -1; side <= 1; side += 2) {
+        for (let i = 0; i < pairs; i++) {
+          // Coppie distribuite simmetricamente attorno al centro:
+          // t va da -1 (parete vicina) a +1 (parete opposta).
+          const t = (i / (pairs - 1)) * 2 - 1;
+          const offset = t * halfSpan;
+
+          const x = alongZ ? cx + side * AISLE_HALF_WIDTH_M : cx + offset;
+          const z = alongZ ? cz + offset : cz + side * AISLE_HALF_WIDTH_M;
+
+          // Il tipo di capitello deriva dalla stanza, non dalla posizione:
+          // una sala ha colonne coerenti fra loro, come nelle sale ipostile.
+          const roomSeed = Number(room.roomId) || 0;
+          const column = createEgyptianColumn(roomSeed);
+          columnDisposables.push(column);
+          column.group.position.set(x, 0, z);
+          // Rotazione alternata: file allineate al millimetro leggono come
+          // copia-incolla invece che come pietra scolpita a mano.
+          column.group.rotation.y = ((i + (side > 0 ? 1 : 0)) % 4) * (Math.PI / 4);
+          root.add(column.group);
+        }
       }
     }
   }
@@ -931,7 +1083,8 @@ export function createThreeRenderer(
     const wPbr = loadPbrTextureSet(
       useDeepWall ? 'textures/sandstone_dark_color.ktx2' : 'textures/sandstone_wall_color.ktx2',
       useDeepWall ? 'textures/sandstone_dark_normal.ktx2' : 'textures/sandstone_wall_normal.ktx2',
-      4, 3,
+      // Stessa scala dei conci usata in init: blocchi da ~65 cm, non mattoni.
+      1.6, 1.1,
       useDeepWall ? 'textures/sandstone_dark_roughness.ktx2' : 'textures/sandstone_wall_roughness.ktx2',
       useDeepWall ? 'textures/sandstone_dark_ao.ktx2' : 'textures/sandstone_wall_ao.ktx2',
       backend === 'webgl2' ? renderer as THREE.WebGLRenderer : undefined,
@@ -939,10 +1092,13 @@ export function createThreeRenderer(
     if (wPbr.color) {
       wallMaterial.map = wPbr.color;
       wallMaterial.normalMap = wPbr.normal ?? null;
-      if (wPbr.normal) wallMaterial.normalScale.set(0.85, 0.85);
+      if (wPbr.normal) wallMaterial.normalScale.set(0.45, 0.45);
       wallMaterial.roughnessMap = wPbr.roughness ?? null;
       wallMaterial.aoMap = wPbr.ao ?? null;
-      if (wPbr.ao) wallMaterial.aoMapIntensity = 0.80;
+      if (wPbr.ao) wallMaterial.aoMapIntensity = 0.45;
+      // Scendendo la pietra si scurisce: calcare chiaro in alto, granito
+      // rossastro nelle camere profonde (come nella camera del re di Cheope).
+      wallMaterial.color.setHex(useDeepWall ? 0xA8896A : 0xC9B48C);
       wallMaterial.needsUpdate = true;
     }
 
@@ -951,6 +1107,13 @@ export function createThreeRenderer(
     brazierLights.clear();
     brazierMaterials.clear();
     digSiteMarker = null;
+    // Il fascio del sito di scavo è ricreato a ogni piano: senza dispose il
+    // materiale del piano precedente resterebbe allocato sulla GPU.
+    digSiteBeamMaterial?.dispose();
+    digSiteBeamMaterial = null;
+    // Stesso discorso per le colonne procedurali del piano precedente.
+    for (const column of columnDisposables) column.dispose();
+    columnDisposables.length = 0;
     decorGlyphMaterial = null;
     if (lootReliquary) {
       brazierRoot.remove(lootReliquary);
@@ -973,6 +1136,7 @@ export function createThreeRenderer(
       createStaticBox,
       glyphEmissiveMap: glyphTexture,
       glyphColorMap,
+      ceilingMaterial: buildCeilingMaterial(layout.floorIndex),
     }) ?? [];
     for (const bounds of roomBounds) {
       frustumCuller.registerRoom(bounds);
@@ -1006,7 +1170,7 @@ export function createThreeRenderer(
     }
 
     // W-5 / task-9: piazza props GLB KayKit nelle stanze grandi.
-    void placeKayKitRoomProps(layout, dungeonRoot);
+    void placeRoomColumns(layout, dungeonRoot);
 
     _doorClosedPos.x = layout.exitDoorClosedPosition.x;
     _doorClosedPos.y = layout.exitDoorClosedPosition.y;
@@ -1045,18 +1209,74 @@ export function createThreeRenderer(
         roughness: 0.58,
         metalness: 0.2,
       });
-      const bowl = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.34, 0.52, 0.38, 12),
+      // Braciere procedurale: treppiede, coppa e carboni. Prima era un solo
+      // cilindro tronco-conico, che in scena leggeva come un cono nudo.
+      //
+      // Serve da STRUTTURA PORTANTE e da fallback: porta il materiale con
+      // l'emissive acceso/spento e la luce. Se `brazier.glb` si carica, viene
+      // innestato sopra e questa geometria diventa invisibile — così tutti i
+      // bracieri del piano hanno lo stesso aspetto, compreso quello del
+      // landmark 'braciere-eterno' che già usava il GLB.
+      const bowlGroup = new THREE.Group();
+      bowlGroup.position.set(brazier.position.x, brazier.position.y, brazier.position.z);
+
+      // Tre gambe divaricate.
+      const legGeo = new THREE.CylinderGeometry(0.045, 0.035, 0.62, 6);
+      for (let leg = 0; leg < 3; leg++) {
+        const a = (leg / 3) * Math.PI * 2;
+        const legMesh = new THREE.Mesh(legGeo, brazierMaterial);
+        legMesh.position.set(Math.cos(a) * 0.20, 0.29, Math.sin(a) * 0.20);
+        legMesh.rotation.set(Math.cos(a) * 0.22, 0, -Math.sin(a) * 0.22);
+        legMesh.castShadow = true;
+        bowlGroup.add(legMesh);
+      }
+
+      // Anello che lega le gambe: il dettaglio che dice "forgiato".
+      const ringMesh = new THREE.Mesh(
+        new THREE.TorusGeometry(0.21, 0.028, 6, 16),
         brazierMaterial,
       );
-      bowl.position.set(brazier.position.x, brazier.position.y + 0.18, brazier.position.z);
+      ringMesh.rotation.x = Math.PI / 2;
+      ringMesh.position.y = 0.22;
+      bowlGroup.add(ringMesh);
+
+      // Coppa svasata poggiata sul treppiede.
+      const bowl = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.44, 0.26, 0.30, 14),
+        brazierMaterial,
+      );
+      bowl.position.y = 0.72;
       bowl.castShadow = true;
       bowl.receiveShadow = true;
-      brazierRoot.add(bowl);
+      bowlGroup.add(bowl);
+
+      // Labbro superiore: spessore visibile invece di un bordo tagliato netto.
+      const lip = new THREE.Mesh(
+        new THREE.TorusGeometry(0.44, 0.035, 6, 18),
+        brazierMaterial,
+      );
+      lip.rotation.x = Math.PI / 2;
+      lip.position.y = 0.87;
+      bowlGroup.add(lip);
+
+      // Carboni: calotta scura che riempie la coppa. L'emissive viene gestito
+      // dal materiale condiviso, quindi si accende insieme al braciere.
+      const coals = new THREE.Mesh(
+        new THREE.SphereGeometry(0.30, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+        brazierMaterial,
+      );
+      coals.position.y = 0.84;
+      coals.scale.y = 0.45;
+      bowlGroup.add(coals);
+
+      brazierRoot.add(bowlGroup);
+      void attachBrazierModel(bowlGroup);
 
       const light = new THREE.PointLight(0xff9b3d, 18, 10, 2);
       light.visible = false;
-      light.position.set(brazier.position.x, brazier.position.y + 0.72, brazier.position.z);
+      // All'altezza dei carboni (0.84 + un po'), non a metà della vecchia
+      // coppa: la luce deve nascere dal fuoco, non dal piede del braciere.
+      light.position.set(brazier.position.x, brazier.position.y + 0.95, brazier.position.z);
       light.castShadow = true;
       light.shadow.mapSize.set(512, 512);
       light.shadow.bias = -0.0002;
@@ -1067,14 +1287,53 @@ export function createThreeRenderer(
     }
 
     if (layout.digSite) {
-      digSiteMarker = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.72, 0.92, 0.12, 18),
+      // Marker di scavo: prima era un disco piatto emissivo, identico a ogni
+      // distanza — un segnale binario in un compito di ricerca, che non
+      // diceva né "scava qui" né "sei vicino".
+      //
+      // Ora è composto da tre elementi leggibili a distanze diverse:
+      //  1. sabbia smossa a terra  — dice "qui si scava" da vicino;
+      //  2. anello inciso          — dà il centro esatto del punto;
+      //  3. fascio verticale       — visibile da lontano, oltre le colonne.
+      // L'intensità cresce avvicinandosi (vedi updateDigSiteProximity).
+      const marker = new THREE.Group();
+
+      const mound = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.95, 1.15, 0.1, 20),
         digSiteMaterial,
       );
-      digSiteMarker.position.set(layout.digSite.position.x, 0.06, layout.digSite.position.z);
-      digSiteMarker.castShadow = false;
-      digSiteMarker.receiveShadow = true;
-      brazierRoot.add(digSiteMarker);
+      mound.position.y = 0.05;
+      mound.receiveShadow = true;
+      marker.add(mound);
+
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.66, 0.055, 8, 24),
+        digSiteMaterial,
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.12;
+      marker.add(ring);
+
+      // Fascio: cono rovesciato additivo, non proietta luce (nessun costo
+      // di shadow map) ma buca il buio e si vede da tutta la stanza.
+      digSiteBeamMaterial = new THREE.MeshBasicMaterial({
+        color: 0xe8b451,
+        transparent: true,
+        opacity: 0.14,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const beam = new THREE.Mesh(
+        new THREE.ConeGeometry(0.55, 3.4, 12, 1, true),
+        digSiteBeamMaterial,
+      );
+      beam.position.y = 1.7;
+      marker.add(beam);
+
+      marker.position.set(layout.digSite.position.x, 0, layout.digSite.position.z);
+      digSiteMarker = marker;
+      brazierRoot.add(marker);
     }
 
     log.info('Layout floor applicato al renderer', {
@@ -1181,7 +1440,11 @@ export function createThreeRenderer(
       decorGlyphMaterial.emissiveIntensity = 0.95 + Math.sin(gt) * 0.45 + Math.sin(gt * 1.618) * 0.1;
     }
 
+    updateDigSiteProximity();
+
     // Occhio del Ladro: pulsazione del tell di pericolo sul sito di scavo.
+    // Ha la precedenza sul gradiente di vicinanza: il pericolo va comunicato
+    // sempre, anche da lontano.
     if (dangerTellActive && digSiteMarker) {
       const pulse = 1.4 + Math.sin(performance.now() * 0.006) * 0.6;
       digSiteMaterial.emissiveIntensity = pulse;
@@ -1226,6 +1489,41 @@ export function createThreeRenderer(
     cameraShakeAmount = Math.min(1, cameraShakeAmount + Math.max(0, intensity));
   }
 
+  /** Oltre questa distanza il sito di scavo è al minimo di intensità. */
+  const DIG_SITE_FAR_M = 18;
+  /** Sotto questa distanza è al massimo: il giocatore è praticamente sopra. */
+  const DIG_SITE_NEAR_M = 2.5;
+
+  /**
+   * Modula il marker di scavo in base alla distanza dal giocatore.
+   *
+   * Il vecchio marker era acceso in modo costante: comunicava "esisto", non
+   * "sei vicino". Con un gradiente il giocatore può orientarsi a vista mentre
+   * cerca, invece di dover incrociare il punto esatto.
+   */
+  function updateDigSiteProximity(): void {
+    if (!digSiteMarker) return;
+
+    const dx = camera.position.x - digSiteMarker.position.x;
+    const dz = camera.position.z - digSiteMarker.position.z;
+    const distance = Math.hypot(dx, dz);
+
+    // 0 = lontano, 1 = addosso.
+    const t = 1 - Math.min(1, Math.max(0,
+      (distance - DIG_SITE_NEAR_M) / (DIG_SITE_FAR_M - DIG_SITE_NEAR_M),
+    ));
+
+    if (!dangerTellActive) {
+      // Da 0.45 (appena percettibile) a 1.9 (inequivocabile).
+      digSiteMaterial.emissiveIntensity = 0.45 + t * 1.45;
+    }
+    if (digSiteBeamMaterial) {
+      // Il fascio si accende avvicinandosi ma non sparisce mai del tutto:
+      // deve restare un punto di riferimento anche da lontano.
+      digSiteBeamMaterial.opacity = 0.07 + t * 0.20;
+    }
+  }
+
   // Occhio del Ladro: tell di pericolo sul sito di scavo (emissive pulsante).
   let dangerTellActive = false;
 
@@ -1239,6 +1537,136 @@ export function createThreeRenderer(
       digSiteMaterial.emissive.setHex(0x7a4a10);
       digSiteMaterial.emissiveIntensity = 1.2;
     }
+  }
+
+  /**
+   * Aggancia il modello GLB corrispondente all'archetipo del nemico.
+   *
+   * I sette modelli in public/assets/enemies/ esistevano già ma non venivano
+   * mai caricati: ogni nemico era una CapsuleGeometry, e in scena non
+   * assomigliava a nulla di riconoscibile.
+   *
+   * Percorso, scala e offset vengono da `ENEMY_ASSETS` (content/assets.ts),
+   * che è l'unica fonte di verità: aggiungere o spostare un modello si fa lì,
+   * non qui. (Una prima versione di questa funzione aveva i valori hardcoded,
+   * duplicando un manifest che esisteva già.)
+   *
+   * La capsula resta come fallback: se il GLB manca il nemico è comunque
+   * visibile. Quando il modello arriva la capsula diventa invisibile ma
+   * continua a portare il materiale, così dissolve, hit flash e telegrafo
+   * restano funzionanti.
+   */
+  function attachEnemyModel(
+    visual: { mesh: THREE.Mesh; model?: THREE.Group; kind?: string },
+    kind: string,
+  ): void {
+    if (visual.kind === kind) return;
+    visual.kind = kind;
+
+    const cached = enemyModelCache.get(kind);
+    if (cached) { mountEnemyModel(visual, cached, enemyModelOffsets.get(kind) ?? 0); return; }
+
+    void (async (): Promise<void> => {
+      try {
+        const [{ loadArtifact }, { ENEMY_ASSETS }] = await Promise.all([
+          import('@/rendering/ArtifactLoader.js'),
+          import('@/content/assets.js'),
+        ]);
+        const entry = ENEMY_ASSETS.find((e) => e.archetype === kind);
+        // modelPath null è legittimo (es. WITNESS): resta la primitiva.
+        if (!entry?.modelPath || disposed) return;
+
+        const model = await loadArtifact({
+          id: `enemy_${kind}`,
+          url: `/${entry.modelPath}`,
+          displayName: kind,
+          loreName: null,
+          rarity: 'common',
+          interactable: false,
+          scale: entry.scale,
+          description: null,
+          source: 'procedural',
+        });
+        // `disposed` può diventare true durante l'await del GLB: TS non
+        // modella la mutazione attraverso il confine async e lo crede sempre
+        // false, ma senza questa guardia si aggiungerebbe un modello a una
+        // scena già rilasciata.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (!model || disposed) return;
+        enemyModelCache.set(kind, model);
+        enemyModelOffsets.set(kind, entry.yOffset);
+        mountEnemyModel(visual, model, entry.yOffset);
+      } catch {
+        // GLB assente o corrotto: resta la capsula, nessun crash.
+      }
+    })();
+  }
+
+  /** Modello del braciere, condiviso da tutti i bracieri del piano. */
+  let brazierModelPromise: Promise<THREE.Group | null> | null = null;
+
+  /**
+   * Innesta `brazier.glb` sulla struttura procedurale del braciere.
+   *
+   * Il GLB è l'asset dell'artista, già usato dal landmark 'braciere-eterno':
+   * usarlo anche per i bracieri distribuiti evita due stili diversi nello
+   * stesso piano. La geometria procedurale sotto resta come fallback e come
+   * portatrice del materiale che gestisce acceso/spento.
+   */
+  async function attachBrazierModel(host: THREE.Group): Promise<void> {
+    brazierModelPromise ??= (async (): Promise<THREE.Group | null> => {
+      try {
+        const [{ loadArtifact }, { LANDMARK_ASSETS }] = await Promise.all([
+          import('@/rendering/ArtifactLoader.js'),
+          import('@/content/assets.js'),
+        ]);
+        const entry = LANDMARK_ASSETS.find((l) => l.kind === 'brazier');
+        if (!entry?.modelPath) return null;
+        return await loadArtifact({
+          id: 'brazier_shared',
+          url: `/${entry.modelPath}`,
+          displayName: 'Braciere',
+          loreName: null,
+          rarity: 'common',
+          interactable: false,
+          scale: entry.scale,
+          description: null,
+          source: 'procedural',
+        });
+      } catch {
+        return null;
+      }
+    })();
+
+    const model = await brazierModelPromise;
+    // Nessun GLB disponibile: resta la geometria procedurale, già in scena.
+    if (!model || disposed) return;
+
+    const clone = model.clone(true);
+    host.add(clone);
+    // Nasconde le parti procedurali ma NON il gruppo: il materiale condiviso
+    // continua a pilotare l'emissive di accensione.
+    for (const child of host.children) {
+      if (child !== clone) child.visible = false;
+    }
+  }
+
+  /** Innesta il modello sulla capsula portante, allineandolo a terra. */
+  function mountEnemyModel(
+    visual: { mesh: THREE.Mesh; model?: THREE.Group },
+    source: THREE.Group,
+    yOffset: number,
+  ): void {
+    if (disposed) return;
+    if (visual.model) visual.mesh.remove(visual.model);
+    const clone = source.clone(true);
+    // La capsula (raggio 0.45, altezza 1.2) ha origine al centro; i GLB hanno
+    // il pivot ai piedi. yOffset del manifest corregge i modelli fuori asse.
+    clone.position.y = -1.05 + yOffset;
+    visual.mesh.add(clone);
+    visual.model = clone;
+    visual.mesh.visible = true;
+    (visual.mesh.material as THREE.Material).visible = false;
   }
 
   function ensureEnemyVisualCount(count: number): void {
@@ -1377,6 +1805,9 @@ export function createThreeRenderer(
         continue;
       }
 
+      // Monta il modello GLB del tipo di nemico (no-op se già montato).
+      if (state.kind) attachEnemyModel(visual, state.kind);
+
       const telegraph = THREE.MathUtils.clamp(state.telegraphStrength, 0, 1);
       // G-07: amplifiedTelegraphs amplifica scala/emissive del telegrafo d'attacco
       // per rendere il pericolo leggibile anche a giocatori con ridotta acuità.
@@ -1487,6 +1918,9 @@ export function createThreeRenderer(
     weaponViewmodel = null;
     envMapTexture?.dispose();
     envMapTexture = null;
+    ceilingMaterial?.map?.dispose();
+    ceilingMaterial?.dispose();
+    ceilingMaterial = null;
     composer?.dispose();
     composer = null;
     bloomPass = null;
@@ -1587,6 +2021,18 @@ export function createThreeRenderer(
     /** Viewmodel arma 3D: mostra/nascondi (cambio arma). */
     setWeaponViewmodelVisible(visible: boolean): void {
       weaponViewmodel?.setVisible(visible);
+    },
+    /**
+     * Mostra il viewmodel dell'arma indicata e nasconde gli altri.
+     * Sostituisce l'uso di setWeaponViewmodelVisible(false) per le armi
+     * diverse dal khopesh, che lasciava le mani vuote.
+     */
+    setActiveWeaponViewmodel(weaponId: string): void {
+      const next = weaponViewmodels.get(weaponId);
+      for (const [id, model] of weaponViewmodels) {
+        model.setVisible(id === weaponId);
+      }
+      if (next) weaponViewmodel = next;
     },
     setEnemyStates,
     setEnemyState,

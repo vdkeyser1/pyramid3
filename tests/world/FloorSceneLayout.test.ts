@@ -70,31 +70,49 @@ describe('buildFloorSceneLayout', () => {
     expect(layout.rooms.find((room) => room.roomId === 4)?.openings).toContain('south');
     expect(layout.corridors).toHaveLength(3);
     expect(layout.landmarks).toHaveLength(4);
-    expect(layout.braziers).toHaveLength(0);
+    // I bracieri non dipendono più dai landmark: ogni stanza abbastanza
+    // grande ne ha uno, quindi qui non sono più zero (vedi test dedicati).
+    expect(layout.braziers.length).toBeGreaterThan(0);
     expect(layout.digSite).not.toBeNull();
     expect(layout.digSite?.roomId).toBe(3);
     expect(layout.digSite?.position.x).toBeGreaterThanOrEqual(41.7);
     expect(layout.digSite?.position.x).toBeLessThanOrEqual(50.3);
   });
 
-  it('espone i bracieri eterni come interagibili di scena', () => {
-    const baseFloor = createFloor(11);
-    const floor: FloorModel = {
-      ...baseFloor,
-      rooms: baseFloor.rooms.map((room, index) =>
-        index === 1
-          ? { ...room, landmarkId: 'braciere-eterno' }
-          : room,
-      ),
-    };
+  it('distribuisce i bracieri nelle stanze, non solo su un landmark', () => {
+    // I bracieri non dipendono più dal landmark 'braciere-eterno' (che ne
+    // produceva UNO per piano, di fatto invisibile): ora sono l'illuminazione
+    // fissa della piramide e stanno in ogni stanza abbastanza grande.
+    const layout = buildFloorSceneLayout(createFloor(11));
 
+    expect(layout.braziers.length).toBeGreaterThan(1);
+    for (const brazier of layout.braziers) {
+      expect(brazier.brazierId).toContain('layout-11:brazier:');
+      expect(brazier.position.y).toBeCloseTo(0.35, 2);
+    }
+  });
+
+  it('i bracieri stanno dentro la stanza a cui appartengono', () => {
+    const floor = createFloor(11);
     const layout = buildFloorSceneLayout(floor);
+    const roomsById = new Map(layout.rooms.map((r) => [r.roomId, r]));
 
-    expect(layout.braziers).toHaveLength(1);
-    expect(layout.braziers[0]).toMatchObject({
-      brazierId: 'layout-11:brazier:2',
-      roomId: 2,
-    });
-    expect(layout.braziers[0]?.position.y).toBeCloseTo(0.35, 2);
+    for (const brazier of layout.braziers) {
+      const room = roomsById.get(brazier.roomId);
+      expect(room).toBeDefined();
+      if (!room) continue;
+      // Addossati alle pareti ma mai fuori dalla stanza né dentro il muro.
+      expect(brazier.position.x).toBeGreaterThan(room.bounds.minX);
+      expect(brazier.position.x).toBeLessThan(room.bounds.maxX);
+      expect(brazier.position.z).toBeGreaterThan(room.bounds.minZ);
+      expect(brazier.position.z).toBeLessThan(room.bounds.maxZ);
+    }
+  });
+
+  it('la distribuzione dei bracieri è deterministica', () => {
+    // Stesso piano ⇒ stesse posizioni: nessun Math.random nella derivazione.
+    const a = buildFloorSceneLayout(createFloor(11)).braziers;
+    const b = buildFloorSceneLayout(createFloor(11)).braziers;
+    expect(a).toEqual(b);
   });
 });

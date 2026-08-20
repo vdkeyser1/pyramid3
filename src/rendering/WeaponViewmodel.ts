@@ -122,7 +122,24 @@ export function createKhopeshViewmodel(): WeaponViewmodel {
 
   group.add(blade, edge, handle, guard, pommel);
 
-  // ── Animazioni (tempo interno) ──
+  return attachViewmodelBehavior(group, REST_POSITION, REST_ROTATION);
+}
+
+/**
+ * Aggiunge a un gruppo già costruito il comportamento comune dei viewmodel:
+ * clock interno, fendente, parata e ritorno elastico alla posa di riposo.
+ *
+ * Estratto da createKhopeshViewmodel perché ogni arma ha bisogno delle stesse
+ * animazioni con geometria diversa. Prima esisteva solo il khopesh: bastone,
+ * pala e pugni non mostravano nulla in mano.
+ *
+ * @param restPosition - Posa di riposo; ogni arma ha il proprio ingombro.
+ */
+function attachViewmodelBehavior(
+  group: THREE.Group,
+  restPosition: THREE.Vector3,
+  restRotation: THREE.Euler,
+): WeaponViewmodel {
   let clockMs = 0;
   let swingStartMs = Number.NEGATIVE_INFINITY;
   let parryStartMs = Number.NEGATIVE_INFINITY;
@@ -158,19 +175,152 @@ export function createKhopeshViewmodel(): WeaponViewmodel {
         const t = easeOutCubic(sinceSwing / KHOPESH_SWING_MS);
         group.rotation.z = THREE.MathUtils.lerp(-1.15, 0.5, t);
         group.rotation.x = THREE.MathUtils.lerp(0.1, -0.45, t);
-        group.position.x = THREE.MathUtils.lerp(0.38, 0.3, t);
+        group.position.x = THREE.MathUtils.lerp(restPosition.x, restPosition.x - 0.08, t);
       } else if (parrying) {
         const t = easeOutBack(sinceParry / KHOPESH_PARRY_MS);
-        group.rotation.x = THREE.MathUtils.lerp(0.12, -1.3, t);
-        group.rotation.z = THREE.MathUtils.lerp(0.06, 0.0, t);
-        group.position.y = THREE.MathUtils.lerp(-0.36, -0.18, t);
+        group.rotation.x = THREE.MathUtils.lerp(restRotation.x, -1.3, t);
+        group.rotation.z = THREE.MathUtils.lerp(restRotation.z, 0.0, t);
+        group.position.y = THREE.MathUtils.lerp(restPosition.y, restPosition.y + 0.18, t);
       } else {
         // Ritorno elastico alla posa di riposo.
-        group.position.lerp(REST_POSITION, 0.25);
-        group.rotation.x += (REST_ROTATION.x - group.rotation.x) * 0.25;
-        group.rotation.y += (REST_ROTATION.y - group.rotation.y) * 0.25;
-        group.rotation.z += (REST_ROTATION.z - group.rotation.z) * 0.25;
+        group.position.lerp(restPosition, 0.25);
+        group.rotation.x += (restRotation.x - group.rotation.x) * 0.25;
+        group.rotation.y += (restRotation.y - group.rotation.y) * 0.25;
+        group.rotation.z += (restRotation.z - group.rotation.z) * 0.25;
       }
     },
   };
+}
+
+// ── Altre armi ─────────────────────────────────────────────────────────────
+
+/** Legno scuro comune a bastone e pala. */
+function woodMaterial(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color: 0x5C3F26, roughness: 0.88, metalness: 0.0 });
+}
+
+/** Bronzo comune alle parti metalliche. */
+function bronzeMaterial(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color: 0x7A5228, roughness: 0.42, metalness: 0.78 });
+}
+
+/**
+ * Bastone di Ra: asta lunga con puntale a disco solare.
+ * Tenuto più al centro del khopesh perché è un'arma a due mani.
+ */
+export function createStaffViewmodel(): WeaponViewmodel {
+  const group = new THREE.Group();
+  const rest = new THREE.Vector3(0.30, -0.40, -0.70);
+  const restRot = new THREE.Euler(0.22, -0.10, 0.30);
+  group.position.copy(rest);
+  group.rotation.copy(restRot);
+
+  const wood = woodMaterial();
+  const bronze = bronzeMaterial();
+
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.95, 8), wood);
+  shaft.position.y = -0.05;
+  group.add(shaft);
+
+  // Disco solare di Ra in cima, con due corna laterali.
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.018, 14), bronze);
+  disc.rotation.x = Math.PI / 2;
+  disc.position.y = 0.46;
+  group.add(disc);
+
+  const horn = new THREE.TorusGeometry(0.055, 0.010, 6, 12, Math.PI);
+  for (const side of [-1, 1]) {
+    const h = new THREE.Mesh(horn, bronze);
+    h.rotation.set(Math.PI / 2, 0, side > 0 ? 0 : Math.PI);
+    h.position.set(side * 0.05, 0.50, 0);
+    group.add(h);
+  }
+
+  // Ghiere lungo l'asta: danno scala e leggibilità in movimento.
+  const ferrule = new THREE.CylinderGeometry(0.026, 0.026, 0.022, 8);
+  for (const y of [0.30, 0.02, -0.28]) {
+    const f = new THREE.Mesh(ferrule, bronze);
+    f.position.y = y;
+    group.add(f);
+  }
+
+  return attachViewmodelBehavior(group, rest, restRot);
+}
+
+/**
+ * Pala: stessa forma dell'oggetto a terra, così l'attrezzo raccolto e quello
+ * in mano sono riconoscibilmente la stessa cosa.
+ */
+export function createShovelViewmodel(): WeaponViewmodel {
+  const group = new THREE.Group();
+  const rest = new THREE.Vector3(0.34, -0.42, -0.62);
+  const restRot = new THREE.Euler(0.30, -0.20, 0.42);
+  group.position.copy(rest);
+  group.rotation.copy(restRot);
+
+  const wood = woodMaterial();
+  const bronze = bronzeMaterial();
+
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.024, 0.72, 8), wood);
+  shaft.position.y = 0.06;
+  group.add(shaft);
+
+  // Impugnatura a T in cima.
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.15, 6), wood);
+  grip.rotation.z = Math.PI / 2;
+  grip.position.y = 0.42;
+  group.add(grip);
+
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.030, 0.030, 0.05, 8), bronze);
+  collar.position.y = -0.27;
+  group.add(collar);
+
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.016, 0.24), bronze);
+  blade.position.set(0, -0.36, 0.02);
+  blade.rotation.x = 0.16;
+  group.add(blade);
+
+  return attachViewmodelBehavior(group, rest, restRot);
+}
+
+/**
+ * Mani nude: un pugno chiuso in basso a destra. Serve a non lasciare lo
+ * schermo vuoto quando si passa allo slot 1 — senza nulla in mano il
+ * giocatore non capisce di aver cambiato arma.
+ */
+export function createFistsViewmodel(): WeaponViewmodel {
+  const group = new THREE.Group();
+  const rest = new THREE.Vector3(0.42, -0.46, -0.55);
+  const restRot = new THREE.Euler(-0.25, -0.30, 0.10);
+  group.position.copy(rest);
+  group.rotation.copy(restRot);
+
+  const skin = new THREE.MeshStandardMaterial({
+    color: 0x8A5A3B, roughness: 0.75, metalness: 0.0,
+  });
+  const linen = new THREE.MeshStandardMaterial({
+    color: 0xC9B48C, roughness: 0.92, metalness: 0.0,
+  });
+
+  // Pugno: una sfera schiacciata basta a leggere come mano chiusa.
+  const fist = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), skin);
+  fist.scale.set(1.0, 0.85, 1.15);
+  group.add(fist);
+
+  // Avambraccio che esce dal bordo dello schermo.
+  const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.065, 0.30, 8), skin);
+  forearm.rotation.x = Math.PI / 2;
+  forearm.position.z = 0.17;
+  group.add(forearm);
+
+  // Bende di lino sulle nocche: dettaglio egizio, non guantoni da boxe.
+  const wrap = new THREE.TorusGeometry(0.072, 0.012, 6, 14);
+  for (const z of [-0.02, 0.03]) {
+    const w = new THREE.Mesh(wrap, linen);
+    w.rotation.y = Math.PI / 2;
+    w.position.z = z;
+    group.add(w);
+  }
+
+  return attachViewmodelBehavior(group, rest, restRot);
 }

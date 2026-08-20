@@ -12,6 +12,18 @@ const FLOOR_THICKNESS_M = 0.2;
 const WALL_HEIGHT_M = 4.5;
 const WALL_THICKNESS_M = 0.45;
 const DOOR_WIDTH_M = 2.8;
+/**
+ * Spessore del soffitto. La piramide è un volume di pietra piena: le camere
+ * sono cavità scavate, non stanze a cielo aperto — senza soffitto si vede il
+ * vuoto sopra le pareti e l'illusione di essere sottoterra sparisce.
+ */
+const CEILING_THICKNESS_M = 0.35;
+/**
+ * I corridoi hanno soffitto più basso delle camere: la compressione dei
+ * passaggi stretti che si aprono nelle sale è il ritmo spaziale tipico
+ * dell'architettura funeraria egizia.
+ */
+const CORRIDOR_CEILING_HEIGHT_M = 3.2;
 
 function createPortalGeometry(): THREE.BufferGeometry {
   const shape = new THREE.Shape();
@@ -48,10 +60,17 @@ export interface BuildDungeonLayoutOptions {
   readonly glyphEmissiveMap?: THREE.Texture | null;
   /** B-06: color map papiro reale per i landmark glyph (fallback: nessuna). */
   readonly glyphColorMap?: THREE.Texture | null;
+  /**
+   * Soffitto stellato delle camere (blu egizio + stelle ocra).
+   * Se assente si usa wallMaterial: il soffitto c'è comunque, ma in pietra.
+   */
+  readonly ceilingMaterial?: THREE.Material | null;
 }
 
 export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBounds[] {
   const { layout, dungeonRoot, floorMaterial, wallMaterial, createStaticBox, glyphEmissiveMap } = options;
+  // Senza soffitto stellato le camere restano chiuse comunque, in pietra.
+  const ceilingMaterial = options.ceilingMaterial ?? wallMaterial;
 
   // R-03: active room group — geometry goes here instead of dungeonRoot during
   // addRoom / addCorridor so the FrustumCuller can cull per-room.
@@ -152,6 +171,18 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
     addDirectionalWall('south', room.center.x, room.center.z, halfWidth, halfDepth, wallY, openings.has('south'));
     addDirectionalWall('east', room.center.x, room.center.z, halfWidth, halfDepth, wallY, openings.has('east'));
     addDirectionalWall('west', room.center.x, room.center.z, halfWidth, halfDepth, wallY, openings.has('west'));
+
+    // Soffitto stellato: copre l'intera camera comprese le pareti, così dal
+    // basso non si vede alcuna fessura verso il vuoto esterno.
+    addDungeonBox(
+      width + WALL_THICKNESS_M * 2,
+      CEILING_THICKNESS_M,
+      depth + WALL_THICKNESS_M * 2,
+      room.center.x,
+      WALL_HEIGHT_M + CEILING_THICKNESS_M / 2,
+      room.center.z,
+      ceilingMaterial,
+    );
   }
 
   function addCorridor(corridor: FloorSceneCorridor): void {
@@ -163,6 +194,19 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
 
     addDungeonBox(width, FLOOR_THICKNESS_M, depth, centerX, -FLOOR_THICKNESS_M / 2, centerZ, floorMaterial);
     createStaticBox(centerX, -FLOOR_THICKNESS_M / 2, centerZ, width / 2, FLOOR_THICKNESS_M / 2, depth / 2);
+
+    // Soffitto del corridoio: più basso di quello delle camere, e in pietra
+    // (mai stellato — il cielo dipinto è riservato alle sale funerarie).
+    // La compressione del passaggio rende più ampia la sala che si apre dopo.
+    addDungeonBox(
+      width + WALL_THICKNESS_M * 2,
+      CEILING_THICKNESS_M,
+      depth + WALL_THICKNESS_M * 2,
+      centerX,
+      CORRIDOR_CEILING_HEIGHT_M + CEILING_THICKNESS_M / 2,
+      centerZ,
+      wallMaterial,
+    );
 
     if (corridor.axis === 'x') {
       addWallSegment(width, WALL_HEIGHT_M, WALL_THICKNESS_M, centerX, wallY, corridor.bounds.minZ - WALL_THICKNESS_M / 2);

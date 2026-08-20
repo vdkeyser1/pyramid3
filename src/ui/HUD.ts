@@ -779,6 +779,26 @@ export function createHUD(): HUD {
       `
       : '';
 
+    // Nemici: rombo rosso se svegli (ti stanno cercando), contorno smorzato
+    // se dormienti (puoi ancora sorprenderli). La forma li distingue dal
+    // cerchio del giocatore anche per chi non separa bene i colori.
+    const enemyMarkers = minimap.enemies.map((enemy) => {
+      const x = enemy.x.toFixed(2);
+      const y = enemy.y.toFixed(2);
+      const fill = enemy.awake ? '#D0452A' : 'rgba(140, 70, 50, 0.55)';
+      const stroke = enemy.awake ? '#FFD9A0' : '#6B4A3A';
+      return `
+        <g transform="translate(${x} ${y}) rotate(45)">
+          <rect
+            x="-1.9" y="-1.9" width="3.8" height="3.8"
+            fill="${fill}"
+            stroke="${stroke}"
+            stroke-width="0.8"
+          />
+        </g>
+      `;
+    }).join('');
+
     // Contatore esplorazione in basso
     const exploredLabel = `
       <text
@@ -796,6 +816,7 @@ export function createHUD(): HUD {
         <rect x="0" y="0" width="100" height="100" fill="rgba(11, 9, 8, 0.88)" />
         ${corridorRects}
         ${roomRects}
+        ${enemyMarkers}
         ${playerMarker}
         ${exploredLabel}
       </svg>

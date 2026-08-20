@@ -23,6 +23,23 @@ export interface RendererPresentationSettings {
   readonly disableMotionBlur: boolean;
 }
 
+/**
+ * Archetipo del nemico, usato per risolvere il modello 3D.
+ *
+ * Sono gli stessi identificatori di `ENEMY_ASSETS` in content/assets.ts, che
+ * è l'unica fonte di verità per percorso, scala e offset di ogni modello.
+ * Il renderer non deve conoscere i path: li chiede al manifest.
+ */
+export type RendererEnemyKind =
+  | 'MUMMY'
+  | 'ROYAL_MUMMY'
+  | 'COBRA'
+  | 'SCARAB'
+  | 'SHABTI'
+  | 'PRIEST'
+  | 'SOBEK_SPAWN'
+  | 'WITNESS';
+
 export interface RendererEnemyState {
   readonly x: number;
   readonly y: number;
@@ -33,6 +50,8 @@ export interface RendererEnemyState {
   readonly awakened: boolean;
   readonly hitFlash: boolean;
   readonly telegraphStrength: number;
+  /** Modello da mostrare. Se assente resta la capsula di fallback. */
+  readonly kind?: RendererEnemyKind;
 }
 
 export interface RendererObjectiveState {
@@ -110,6 +129,12 @@ export interface RendererHandle {
 
   /** Viewmodel arma 3D: mostra/nascondi (cambio arma). */
   setWeaponViewmodelVisible(visible: boolean): void;
+
+  /**
+   * Seleziona quale arma mostrare in mano: 'fists' | 'khopesh' | 'staff' | 'shovel'.
+   * Un id sconosciuto nasconde tutti i viewmodel.
+   */
+  setActiveWeaponViewmodel?(weaponId: string): void;
 
   /** C-02: aggancia una sessione WebXR al renderer (probe sperimentale). */
   enableXr?(session: unknown): void;

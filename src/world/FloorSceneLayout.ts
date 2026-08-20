@@ -90,6 +90,75 @@ const CORRIDOR_WIDTH_M = 4;
 const TARGET_OFFSET_OPTIONS = [-2.2, 0, 2.2] as const;
 const DIG_SITE_OFFSET_OPTIONS = [-1.6, 0, 1.6] as const;
 
+/** Altezza della coppa del braciere sul pavimento. */
+const BRAZIER_Y = 0.35;
+/** Distanza dei bracieri dalle pareti: addossati, non in mezzo al passaggio. */
+const BRAZIER_WALL_INSET_M = 1.6;
+/** Sotto questa dimensione la stanza è troppo stretta per un braciere. */
+const BRAZIER_MIN_ROOM_M = 6;
+/** Da questa dimensione in su la stanza ne merita due, su lati opposti. */
+const BRAZIER_LARGE_ROOM_M = 11;
+
+/**
+ * Distribuisce i bracieri nelle stanze del piano.
+ *
+ * In una piramide i bracieri sono l'unica fonte di luce fissa: devono essere
+ * ricorrenti e leggibili da lontano. Prima ne esisteva UNO per piano, legato
+ * al landmark 'braciere-eterno' assegnato a una sola stanza — di fatto
+ * invisibili durante l'esplorazione.
+ *
+ * Deterministico: la posizione dipende solo da roomId, nessun Math.random,
+ * quindi lo stesso seed produce sempre lo stesso piano.
+ *
+ * Nota di bilanciamento: i bracieri ricaricano la torcia
+ * (TORCH.brazierIgnitionCostSeconds / brazierRefillCapSeconds). Aumentandone
+ * il numero si allenta la pressione della gestione carburante — un braciere
+ * ogni stanza media è il compromesso scelto fra leggibilità e tensione.
+ */
+function deriveBraziers(
+  floorId: string,
+  rooms: readonly FloorSceneRoom[],
+): FloorSceneBrazier[] {
+  const result: FloorSceneBrazier[] = [];
+
+  for (const room of rooms) {
+    const width = room.bounds.maxX - room.bounds.minX;
+    const depth = room.bounds.maxZ - room.bounds.minZ;
+    if (width < BRAZIER_MIN_ROOM_M || depth < BRAZIER_MIN_ROOM_M) continue;
+
+    // Le stanze sicure restano volutamente illuminate: sono punti di sosta.
+    const isLarge = width >= BRAZIER_LARGE_ROOM_M && depth >= BRAZIER_LARGE_ROOM_M;
+    const count = isLarge ? 2 : 1;
+
+    // Angolo di partenza derivato dall'id: stanze diverse hanno bracieri su
+    // lati diversi, senza che serva un generatore casuale.
+    const roomNumber = Number(room.roomId) || 0;
+    const startCorner = roomNumber % 4;
+
+    for (let i = 0; i < count; i++) {
+      // Con due bracieri si usano angoli opposti (offset di 2 su 4).
+      const corner = (startCorner + i * 2) % 4;
+      const westSide = corner === 0 || corner === 3;
+      const northSide = corner === 0 || corner === 1;
+
+      const x = westSide
+        ? room.bounds.minX + BRAZIER_WALL_INSET_M
+        : room.bounds.maxX - BRAZIER_WALL_INSET_M;
+      const z = northSide
+        ? room.bounds.minZ + BRAZIER_WALL_INSET_M
+        : room.bounds.maxZ - BRAZIER_WALL_INSET_M;
+
+      result.push({
+        brazierId: `${floorId}:brazier:${String(room.roomId)}:${String(i)}`,
+        roomId: room.roomId,
+        position: { x, y: BRAZIER_Y, z },
+      });
+    }
+  }
+
+  return result;
+}
+
 function centerOfBounds(bounds: RoomBounds, y: number): SceneVector3 {
   return {
     x: (bounds.minX + bounds.maxX) / 2,
@@ -305,17 +374,7 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
       position: centerOfBounds(room.bounds, LANDMARK_Y),
     }));
 
-  const braziers = landmarks
-    .filter((landmark) => landmark.landmarkId === 'braciere-eterno')
-    .map((landmark) => ({
-      brazierId: `${floor.floorId}:brazier:${String(landmark.roomId)}`,
-      roomId: landmark.roomId,
-      position: {
-        x: landmark.position.x,
-        y: 0.35,
-        z: landmark.position.z,
-      },
-    }));
+  const braziers = deriveBraziers(floor.floorId, rooms);
 
   const treasureRoom = roomIndex.get(floor.treasureRoomId);
   const digSite = treasureRoom

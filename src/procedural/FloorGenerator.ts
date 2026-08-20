@@ -19,9 +19,52 @@ const log = createLogger('FloorGenerator');
 const ROOM_SIZE_M = 12;
 const CORRIDOR_LENGTH_M = 8;
 const MIN_PLAYER_CLEARANCE = 3.0;
-const GRID_COLS = 8;
-const GRID_ROWS = 6;
-const MIN_ROOMS = 14;
+
+// ─── Geometria piramidale ───
+//
+// La piramide si percorre dall'apice verso la base: il piano 1 è la camera
+// più alta e stretta, il piano MAX_FLOORS è la più ampia. Ogni livello deve
+// quindi essere più largo e più ricco di stanze del precedente — è l'unica
+// promessa spaziale che una piramide fa, e va mantenuta nella generazione,
+// non solo nel tema.
+//
+// Prima queste erano tre costanti fisse (8×6, 14 stanze) e `floorIndex`
+// serviva solo da etichetta: tutti i piani avevano forma identica.
+
+/** Griglia dell'apice (piano 1): poche celle, percorso breve. */
+const APEX_COLS = 4;
+const APEX_ROWS = 3;
+const APEX_MIN_ROOMS = 5;
+
+/** Griglia della base (piano MAX_FLOORS): ampia e ramificata. */
+const BASE_COLS = 10;
+const BASE_ROWS = 8;
+const BASE_MIN_ROOMS = 28;
+
+/** Dimensioni della griglia per un dato piano. */
+export interface PyramidGrid {
+  readonly cols: number;
+  readonly rows: number;
+  readonly minRooms: number;
+}
+
+/**
+ * Interpola le dimensioni della griglia fra apice e base.
+ * Monotòna non decrescente in `floorIndex`: è la proprietà che
+ * FloorValidator verifica e su cui poggia la leggibilità della discesa.
+ */
+export function pyramidGridFor(floorIndex: number): PyramidGrid {
+  const clamped = Math.max(1, Math.min(MAX_FLOORS, Math.floor(floorIndex)));
+  // t = 0 all'apice, 1 alla base. Con MAX_FLOORS = 1 il denominatore
+  // degenererebbe: in quel caso il piano unico è la base.
+  const span = MAX_FLOORS - 1;
+  const t = span > 0 ? (clamped - 1) / span : 1;
+  return {
+    cols:     Math.round(APEX_COLS      + (BASE_COLS      - APEX_COLS)      * t),
+    rows:     Math.round(APEX_ROWS      + (BASE_ROWS      - APEX_ROWS)      * t),
+    minRooms: Math.round(APEX_MIN_ROOMS + (BASE_MIN_ROOMS - APEX_MIN_ROOMS) * t),
+  };
+}
 
 const DEFAULT_LIMITS: ValidationLimits = {
   minPlayerClearanceM: MIN_PLAYER_CLEARANCE,
@@ -51,13 +94,17 @@ function at<T>(arr: readonly T[], idx: number): T | undefined {
   return idx >= 0 && idx < arr.length ? arr[idx] : undefined;
 }
 
-function neighborsOf(cell: GridCell, grid: readonly (readonly GridCell[])[]): GridCell[] {
+function neighborsOf(
+  cell: GridCell,
+  grid: readonly (readonly GridCell[])[],
+  gridSize: PyramidGrid,
+): GridCell[] {
   const result: GridCell[] = [];
   const dirs: readonly (readonly [number, number])[] = [[0, -1], [1, 0], [0, 1], [-1, 0]] as const;
   for (const [dc, dr] of dirs) {
     const nc = cell.col + dc;
     const nr = cell.row + dr;
-    if (nc >= 0 && nc < GRID_COLS && nr >= 0 && nr < GRID_ROWS) {
+    if (nc >= 0 && nc < gridSize.cols && nr >= 0 && nr < gridSize.rows) {
       const n = grid[nr]?.[nc];
       if (n) result.push(n);
     }
@@ -84,18 +131,26 @@ const LANDMARKS: readonly string[] = [
 
 // ─── Fase 1: Growing Tree con braiding ───
 
-function generateMaze(rng: RandomSource, isTutorial: boolean): GeneratedRoom[] {
+function generateMaze(
+  rng: RandomSource,
+  isTutorial: boolean,
+  gridSize: PyramidGrid,
+): GeneratedRoom[] {
   const grid: GridCell[][] = [];
   let nextCellId = 1;
-  for (let row = 0; row < GRID_ROWS; row++) {
+  for (let row = 0; row < gridSize.rows; row++) {
     const gridRow: GridCell[] = [];
-    for (let col = 0; col < GRID_COLS; col++) {
+    for (let col = 0; col < gridSize.cols; col++) {
       gridRow.push({ col, row, visited: false, id: roomId(nextCellId++) });
     }
     grid.push(gridRow);
   }
 
-  const startRow = isTutorial ? 3 : rng.int(0, GRID_ROWS);
+  // Il tutorial parte da una riga fissa per essere riproducibile, ma la sua
+  // griglia può essere più bassa di 4 righe: va limitata all'altezza reale.
+  const startRow = isTutorial
+    ? Math.min(3, gridSize.rows - 1)
+    : rng.int(0, gridSize.rows);
   const startRowData = grid[startRow];
   if (!startRowData) return [];
   const startCell = startRowData[0];
@@ -120,7 +175,7 @@ function generateMaze(rng: RandomSource, isTutorial: boolean): GeneratedRoom[] {
     const current = at(activeList, idx);
     if (!current) { activeList.splice(idx, 1); continue; }
 
-    const unvisited = neighborsOf(current, grid).filter((n) => !n.visited);
+    const unvisited = neighborsOf(current, grid, gridSize).filter((n) => !n.visited);
     if (unvisited.length === 0) {
       activeList.splice(idx, 1);
       continue;
@@ -162,7 +217,7 @@ function generateMaze(rng: RandomSource, isTutorial: boolean): GeneratedRoom[] {
     const deCell = deRow[de.col];
     if (!deCell) continue;
 
-    const candidates = neighborsOf(deCell, grid).filter((n) => {
+    const candidates = neighborsOf(deCell, grid, gridSize).filter((n) => {
       if (!n.visited) return false;
       return !de.doors.includes(n.id);
     });
@@ -429,6 +484,9 @@ function assembleFloor(
 // ─── Entry point ───
 
 export function generateFloor(input: FloorGenerationInput): FloorModel {
+  // La forma del piano dipende dalla profondità: apice stretto, base ampia.
+  const gridSize = pyramidGridFor(input.floorIndex);
+
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     const salt = attempt * 0x9e3779b9;
     const saltedSeed = (input.seed ^ salt) >>> 0;
@@ -437,8 +495,8 @@ export function generateFloor(input: FloorGenerationInput): FloorModel {
     const topologyRng = attemptFactory.forChannel('topology');
     const rolesRng = attemptFactory.forChannel('roles');
 
-    const rooms = generateMaze(topologyRng, input.isTutorial);
-    if (rooms.length < MIN_ROOMS) {
+    const rooms = generateMaze(topologyRng, input.isTutorial, gridSize);
+    if (rooms.length < gridSize.minRooms) {
       if (attempt === 0) log.warn(`Troppe poche stanze (${rooms.length}), retry`, { seed: input.seed });
       continue;
     }
@@ -472,7 +530,10 @@ export function generateFloor(input: FloorGenerationInput): FloorModel {
 }
 
 function createFallbackFloor(input: FloorGenerationInput): FloorModel {
-  const roomCount = MIN_ROOMS;
+  // Anche il piano di riserva rispetta la forma piramidale: se collassasse a
+  // una dimensione fissa, l'invariante di monotonia salterebbe proprio nel
+  // caso peggiore, quello in cui il giocatore ne ha più bisogno.
+  const roomCount = pyramidGridFor(input.floorIndex).minRooms;
   const genRooms: GeneratedRoom[] = [];
   for (let i = 0; i < roomCount; i++) {
     const doors: RoomId[] = [];

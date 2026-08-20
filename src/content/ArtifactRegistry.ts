@@ -135,28 +135,11 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     description: null,
     source: 'kaykit',
   },
-  {
-    id: 'column_kaykit',
-    url: '/assets/props/column.glb',
-    displayName: 'Colonna',
-    loreName: null,
-    rarity: 'common',
-    interactable: false,
-    scale: 1.0,
-    description: null,
-    source: 'kaykit',
-  },
-  {
-    id: 'pillar_decorated',
-    url: '/assets/props/pillar_decorated.glb',
-    displayName: 'Pilastro Decorato',
-    loreName: null,
-    rarity: 'uncommon',
-    interactable: false,
-    scale: 1.0,
-    description: null,
-    source: 'kaykit',
-  },
+  // NOTA: le colonne e i pilastri KayKit (`column.glb`, `pillar_decorated.glb`)
+  // sono stati rimossi da questo registro. Vengono dal pack KayKit Dungeon,
+  // decorato con armi e scudi di fantasy medievale: fuori tema in una piramide
+  // egizia. Le colonnate usano `ruins_column` (Kenney CC0), geometricamente
+  // neutra. I bauli restano perché non hanno marcatori stilistici evidenti.
 ] as const;
 
 /** Lookup veloce per id. */
@@ -164,7 +147,11 @@ export function getArtifactById(id: string): ArtifactDef | undefined {
   return ArtifactRegistry.find((a) => a.id === id);
 }
 
-/** Tutti gli artefatti di una certa sorgente. */
+/**
+ * Tutti gli artefatti di una certa sorgente.
+ * Usato per filtrare per provenienza quando si valuta la coerenza stilistica
+ * di un pack (es. verificare quali asset arrivano da una sorgente da dismettere).
+ */
 export function getArtifactsBySource(source: ArtifactSource): readonly ArtifactDef[] {
   return ArtifactRegistry.filter((a) => a.source === source);
 }

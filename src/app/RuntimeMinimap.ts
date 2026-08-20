@@ -29,12 +29,38 @@ export interface RuntimeMinimapPlayer {
   readonly y: number;
 }
 
+/**
+ * Nemico mostrato sulla minimappa.
+ *
+ * Prima la minimappa non aveva alcun layer nemici: si vedevano stanze,
+ * corridoi e giocatore, e nient'altro. Con un obiettivo del tipo "elimina la
+ * Mummia Dormiente" il giocatore non aveva alcun modo di sapere dove cercare.
+ */
+export interface RuntimeMinimapEnemy {
+  readonly x: number;
+  readonly y: number;
+  /** Sveglio = ti sta cercando. Dormiente = puoi ancora sorprenderlo. */
+  readonly awake: boolean;
+  /** 0-1: serve alla UI per mostrare quanto è già stato ferito. */
+  readonly hpRatio: number;
+}
+
 export interface RuntimeMinimapState {
   readonly rooms: readonly RuntimeMinimapRoom[];
   readonly corridors: readonly RuntimeMinimapCorridor[];
   readonly player: RuntimeMinimapPlayer | null;
+  /** Nemici la cui stanza è già stata rivelata o visitata. */
+  readonly enemies: readonly RuntimeMinimapEnemy[];
   /** Stanze visitate / stanze totali del piano. */
   readonly exploredFraction: { readonly visited: number; readonly total: number };
+}
+
+/** Posizione e stato di un nemico, come li conosce il gameplay. */
+export interface RuntimeMinimapEnemyInput {
+  readonly x: number;
+  readonly z: number;
+  readonly awake: boolean;
+  readonly hpRatio: number;
 }
 
 interface RuntimeMinimapInput {
@@ -43,6 +69,8 @@ interface RuntimeMinimapInput {
   readonly visitedRoomIds: readonly number[];
   readonly playerPosition: { readonly x: number; readonly z: number } | null;
   readonly mapRoomId: number | null;
+  /** Nemici vivi del piano. Omesso = nessun marker (compatibile all'indietro). */
+  readonly enemies?: readonly RuntimeMinimapEnemyInput[];
 }
 
 function pointInBounds(
@@ -60,7 +88,10 @@ function pointInBounds(
 export function buildRuntimeMinimap(input: RuntimeMinimapInput): RuntimeMinimapState {
   const { layout, playerPosition, mapRoomId } = input;
   if (layout.rooms.length === 0) {
-    return { rooms: [], corridors: [], player: null, exploredFraction: { visited: 0, total: 0 } };
+    return {
+      rooms: [], corridors: [], player: null, enemies: [],
+      exploredFraction: { visited: 0, total: 0 },
+    };
   }
 
   // Calcola i bounds dell'intera mappa per normalizzare le coordinate in 0-100
@@ -132,10 +163,31 @@ export function buildRuntimeMinimap(input: RuntimeMinimapInput): RuntimeMinimapS
 
   const visitedCount = rooms.filter((r) => r.visited).length;
 
+  // I nemici compaiono solo nelle stanze che il giocatore ha già rivelato o
+  // visitato: la minimappa non deve svelare l'intero piano in anticipo, ma
+  // deve dire dove si trova ciò che hai già incontrato o mappato.
+  const visibleRoomIds = new Set(
+    rooms.filter((r) => r.visible).map((r) => r.roomId),
+  );
+  const enemies = (input.enemies ?? [])
+    .filter((enemy) => {
+      const room = layout.rooms.find((r) =>
+        pointInBounds({ x: enemy.x, z: enemy.z }, r.bounds),
+      );
+      return room !== undefined && visibleRoomIds.has(Number(room.roomId));
+    })
+    .map((enemy) => ({
+      x: ((enemy.x - minX) / spanX) * 100,
+      y: ((enemy.z - minZ) / spanZ) * 100,
+      awake: enemy.awake,
+      hpRatio: enemy.hpRatio,
+    }));
+
   return {
     rooms,
     corridors,
     player,
+    enemies,
     exploredFraction: { visited: visitedCount, total: rooms.length },
   };
 }
