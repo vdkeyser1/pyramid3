@@ -695,20 +695,10 @@ export function createBronzeMaterial(): THREE.MeshStandardMaterial {
   });
 }
 
-/**
- * Materiale lapislazzuli: pietra semi-preziosa blu cobalto con vene dorate.
- * Non metallico (metalness 0) ma con emissive dorata per simulare le vene di pirite.
- */
-export function createLapisMaterial(): THREE.MeshStandardMaterial {
-  const mat = new THREE.MeshStandardMaterial({
-    color:     0x1F4080,   // blu lapislazzuli intenso
-    metalness: 0.0,
-    roughness: 0.38,
-    emissive:  0x604A10,   // vene pirite (oro) — flebile alone dorato
-    emissiveIntensity: 0.14,
-  });
-  return mat;
-}
+// NOTA: qui c'era createLapisMaterial(), rimossa perché senza consumatori.
+// Gli accenti del gioco sono turchese (geroglifici, faro d'uscita), non blu
+// lapislazzuli: non esisteva un punto in cui usarla senza forzarla. Se servirà
+// per sarcofagi o amuleti, il colore di riferimento è #1F4080 con vene #604A10.
 
 // ── Texture PBR da file (ambientCG, CC0) con fallback procedurale ──────────
 

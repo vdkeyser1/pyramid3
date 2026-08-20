@@ -19,7 +19,9 @@ import type {
 import { resolveWorldAccessibilityPalette } from '@/config/AccessibilityPalette.js';
 import {
   createAstronomicalCeilingTexture,
+  createBronzeMaterial,
   createDissolveMaterial,
+  createGoldMaterial,
   createHieroglyphTexture,
   createHieroglyphPanelTexture,
   createSandTexture,
@@ -880,13 +882,11 @@ export function createThreeRenderer(
 
     const group = new THREE.Group();
     // Cofanetto: base cubica + coperchio piramidale, oro con emissive
-    const goldMaterial = new THREE.MeshStandardMaterial({
-      color: 0xd4a05a,
-      roughness: 0.35,
-      metalness: 0.85,
-      emissive: 0x4a2f00,
-      emissiveIntensity: 0.6,
-    });
+    // Oro dalla libreria materiali. L'emissive va alzato rispetto al default:
+    // il reliquiario deve attirare l'occhio nel buio, non solo riflettere.
+    const goldMaterial = createGoldMaterial();
+    goldMaterial.emissive.setHex(0x4a2f00);
+    goldMaterial.emissiveIntensity = 0.6;
     const base = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.28, 0.5), goldMaterial);
     base.position.y = 0.14;
     base.castShadow = true;
@@ -951,13 +951,9 @@ export function createThreeRenderer(
       roughness: 0.85,
       metalness: 0.0,
     });
-    const bronzeMat = new THREE.MeshStandardMaterial({
-      color: 0x7A5228,
-      roughness: 0.40,
-      metalness: 0.80,
-      emissive: 0x1A0A00,
-      emissiveIntensity: 0.08,
-    });
+    // Bronzo dalla libreria materiali invece che riscritto a mano: era una
+    // terza copia degli stessi valori (pala a terra, viewmodel, Materials).
+    const bronzeMat = createBronzeMaterial();
 
     // Asta: 1,05 m, sottile — la lunghezza è ciò che rende leggibile l'attrezzo.
     const shaft = new THREE.Mesh(
@@ -1138,6 +1134,12 @@ export function createThreeRenderer(
       glyphColorMap,
       ceilingMaterial: buildCeilingMaterial(layout.floorIndex),
     }) ?? [];
+
+    // Pulviscolo in sospensione proporzionale alla profondità: l'aria si fa
+    // più densa scendendo verso la base della piramide. Prima l'intensità era
+    // bloccata a 0.12 e setSandStormIntensity non veniva mai chiamata.
+    const depth = Math.max(0, Math.min(1, (layout.floorIndex - 1) / 9));
+    sandStormController?.setIntensity(0.08 + depth * 0.30);
     for (const bounds of roomBounds) {
       frustumCuller.registerRoom(bounds);
     }
