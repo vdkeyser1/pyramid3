@@ -160,6 +160,8 @@ export function createThreeRenderer(
     model?: THREE.Group;
     /** Tipo attualmente montato, per non ricaricare a ogni frame. */
     kind?: string;
+    /** Animator del modello, se il GLB ha clip utilizzabili. */
+    animator?: import('@/rendering/EnemyAnimator.js').EnemyAnimator | null;
   }[] = [];
   /** Cache dei GLB nemici: un solo fetch per tipo, poi si clona. */
   const enemyModelCache = new Map<string, THREE.Group>();
@@ -1448,6 +1450,11 @@ export function createThreeRenderer(
     // e l'accensione parte proprio da lì.
     torchViewmodel?.update(deltaMs);
 
+    // Mixer dei nemici animati (i modelli statici non hanno animator).
+    for (const visual of enemyVisuals) {
+      visual.animator?.update(deltaMs);
+    }
+
     sparkBurst?.update(deltaMs);
     weaponTrail?.update(deltaMs);
 
@@ -1699,12 +1706,19 @@ export function createThreeRenderer(
 
   /** Innesta il modello sulla capsula portante, allineandolo a terra. */
   function mountEnemyModel(
-    visual: { mesh: THREE.Mesh; model?: THREE.Group },
+    visual: {
+      mesh: THREE.Mesh;
+      model?: THREE.Group;
+      kind?: string;
+      animator?: import('@/rendering/EnemyAnimator.js').EnemyAnimator | null;
+    },
     source: THREE.Group,
     yOffset: number,
   ): void {
     if (disposed) return;
     if (visual.model) visual.mesh.remove(visual.model);
+    visual.animator?.dispose();
+    visual.animator = null;
     const clone = source.clone(true);
     // La capsula (raggio 0.45, altezza 1.2) ha origine al centro; i GLB hanno
     // il pivot ai piedi. yOffset del manifest corregge i modelli fuori asse.
@@ -1713,6 +1727,21 @@ export function createThreeRenderer(
     visual.model = clone;
     visual.mesh.visible = true;
     (visual.mesh.material as THREE.Material).visible = false;
+
+    // Animator sul clone: quattro dei sette GLB sono statici, quindi
+    // createEnemyAnimator ritorna null e resta il respiro procedurale.
+    void (async (): Promise<void> => {
+      const [{ createEnemyAnimator }, { getArtifactClips }] = await Promise.all([
+        import('@/rendering/EnemyAnimator.js'),
+        import('@/rendering/ArtifactLoader.js'),
+      ]);
+      // `disposed` cambia durante l'await (TS non lo modella), e il modello
+      // può essere stato rimpiazzato nel frattempo da un cambio piano.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (disposed || visual.model !== clone) return;
+      const clips = getArtifactClips(`enemy_${visual.kind ?? ''}`);
+      visual.animator = createEnemyAnimator(clone, clips);
+    })();
   }
 
   function ensureEnemyVisualCount(count: number): void {
@@ -1847,12 +1876,28 @@ export function createThreeRenderer(
       }
       const state = states[i];
       if (!state?.alive) {
-        visual.mesh.visible = false;
+        // Se c'è un'animazione di morte la si lascia finire prima di
+        // nascondere il nemico: sparire di colpo annulla il dissolve.
+        if (visual.animator) {
+          visual.animator.setState('DEATH');
+        } else {
+          visual.mesh.visible = false;
+        }
         continue;
       }
 
       // Monta il modello GLB del tipo di nemico (no-op se già montato).
       if (state.kind) attachEnemyModel(visual, state.kind);
+
+      // Stato d'animazione derivato da quello che il gameplay già espone.
+      // Priorità: colpito → attacco in telegrafo → sveglio → quiescente.
+      if (visual.animator) {
+        const anim = state.hitFlash ? 'HIT'
+          : state.telegraphStrength > 0.35 ? 'ATTACK'
+            : state.awakened ? 'MOVE'
+              : 'IDLE';
+        visual.animator.setState(anim);
+      }
 
       const telegraph = THREE.MathUtils.clamp(state.telegraphStrength, 0, 1);
       // G-07: amplifiedTelegraphs amplifica scala/emissive del telegrafo d'attacco

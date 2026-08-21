@@ -52,12 +52,12 @@ export interface LandmarkAssetEntry {
  * quando un modello viene aggiunto in public/assets/, si aggiorna qui.
  */
 export const ENEMY_ASSETS: readonly EnemyAssetEntry[] = [
-  { archetype: 'SCARAB', modelPath: 'assets/enemies/scarab.glb', scale: 0.55, yOffset: 0.2, animated: true },
+  { archetype: 'SCARAB', modelPath: 'assets/enemies/scarab.glb', scale: 0.55, yOffset: 0.2, animated: false },
   { archetype: 'MUMMY', modelPath: 'assets/enemies/mummy.glb', scale: 1.0, yOffset: 0, animated: true },
-  { archetype: 'COBRA', modelPath: 'assets/enemies/cobra.glb', scale: 0.8, yOffset: 0.1, animated: true },
-  { archetype: 'SHABTI', modelPath: 'assets/enemies/shabti.glb', scale: 1.15, yOffset: 0, animated: true },
+  { archetype: 'COBRA', modelPath: 'assets/enemies/cobra.glb', scale: 0.8, yOffset: 0.1, animated: false },
+  { archetype: 'SHABTI', modelPath: 'assets/enemies/shabti.glb', scale: 1.15, yOffset: 0, animated: false },
   { archetype: 'PRIEST', modelPath: 'assets/enemies/priest.glb', scale: 1.05, yOffset: 0, animated: true },
-  { archetype: 'SOBEK_SPAWN', modelPath: 'assets/enemies/sobek.glb', scale: 1.3, yOffset: 0, animated: true },
+  { archetype: 'SOBEK_SPAWN', modelPath: 'assets/enemies/sobek.glb', scale: 1.3, yOffset: 0, animated: false },
   { archetype: 'ROYAL_MUMMY', modelPath: 'assets/enemies/royal_mummy.glb', scale: 1.2, yOffset: 0, animated: true },
   // WITNESS: non attaccabile, nessun asset dedicato — fallback alla primitiva.
   { archetype: 'WITNESS', modelPath: null, scale: 1.0, yOffset: 0, animated: false },

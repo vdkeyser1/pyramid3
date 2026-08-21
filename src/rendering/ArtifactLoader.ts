@@ -49,6 +49,12 @@ export async function loadArtifact(def: ArtifactDef): Promise<THREE.Group | null
       }
     });
 
+    // Le clip vanno conservate a parte: clonando la scena si perdono, e i
+    // nemici animati ne hanno bisogno per l'AnimationMixer.
+    if (gltf.animations.length > 0) {
+      _clips.set(def.id, gltf.animations);
+    }
+
     _cache.set(def.id, root);
     return root.clone(true);
   } catch {
@@ -56,7 +62,23 @@ export async function loadArtifact(def: ArtifactDef): Promise<THREE.Group | null
   }
 }
 
+/**
+ * Clip di animazione del GLB, indicizzate per id artefatto.
+ * `loadArtifact` restituisce solo `gltf.scene` e scartava `gltf.animations`:
+ * per i nemici animati le clip servono, quindi vengono conservate qui.
+ */
+const _clips = new Map<string, THREE.AnimationClip[]>();
+
+/**
+ * Clip di animazione di un artefatto già caricato.
+ * Array vuoto se il modello è statico o non ancora caricato.
+ */
+export function getArtifactClips(id: string): readonly THREE.AnimationClip[] {
+  return _clips.get(id) ?? [];
+}
+
 /** Svuota la cache (usato al dispose del renderer). */
 export function clearArtifactCache(): void {
   _cache.clear();
+  _clips.clear();
 }
