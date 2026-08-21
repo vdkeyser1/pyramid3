@@ -133,6 +133,8 @@ export function createThreeRenderer(
   let digSiteMarker: THREE.Group | null = null;
   /** Materiale del fascio verticale del sito di scavo (opacità = vicinanza). */
   let digSiteBeamMaterial: THREE.MeshBasicMaterial | null = null;
+  /** Segno blu dipinto dentro l'anello del sito di scavo. */
+  let digSiteGlyphMaterial: THREE.MeshBasicMaterial | null = null;
   /**
    * Colonne procedurali del piano corrente. Ognuna possiede geometrie e
    * materiali propri: vanno liberate al cambio piano, altrimenti si accumulano
@@ -1149,6 +1151,8 @@ export function createThreeRenderer(
     // materiale del piano precedente resterebbe allocato sulla GPU.
     digSiteBeamMaterial?.dispose();
     digSiteBeamMaterial = null;
+    digSiteGlyphMaterial?.dispose();
+    digSiteGlyphMaterial = null;
     // Stesso discorso per le colonne procedurali del piano precedente.
     for (const column of columnDisposables) column.dispose();
     columnDisposables.length = 0;
@@ -1383,6 +1387,35 @@ export function createThreeRenderer(
       ring.position.y = 0.12;
       marker.add(ring);
 
+      // Segno dipinto dentro l'anello: una croce a quattro bracci in blu
+      // egizio, il colore che nelle tombe segnala il sacro. Serve a rendere
+      // il punto RICONOSCIBILE, non solo luminoso: l'anello dorato da solo
+      // si confondeva con gli altri riflessi del pavimento.
+      const glyphMat = new THREE.MeshBasicMaterial({
+        color: 0x2E63B8,
+        transparent: true,
+        opacity: 0.92,
+        depthWrite: false,
+      });
+      digSiteGlyphMaterial = glyphMat;
+      for (let arm = 0; arm < 4; arm++) {
+        const bar = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.14), glyphMat);
+        bar.rotation.x = -Math.PI / 2;
+        bar.rotation.z = (arm * Math.PI) / 2;
+        // Sfalsata dal centro: i quattro bracci formano una croce aperta.
+        bar.position.set(
+          Math.cos((arm * Math.PI) / 2) * 0.30,
+          0.13,
+          Math.sin((arm * Math.PI) / 2) * 0.30,
+        );
+        marker.add(bar);
+      }
+      // Disco centrale, sempre in blu: il punto esatto dove scavare.
+      const center = new THREE.Mesh(new THREE.CircleGeometry(0.17, 16), glyphMat);
+      center.rotation.x = -Math.PI / 2;
+      center.position.y = 0.135;
+      marker.add(center);
+
       // Fascio: cono rovesciato additivo, non proietta luce (nessun costo
       // di shadow map) ma buca il buio e si vede da tutta la stanza.
       digSiteBeamMaterial = new THREE.MeshBasicMaterial({
@@ -1599,6 +1632,12 @@ export function createThreeRenderer(
       // Il fascio si accende avvicinandosi ma non sparisce mai del tutto:
       // deve restare un punto di riferimento anche da lontano.
       digSiteBeamMaterial.opacity = 0.07 + t * 0.20;
+    }
+    if (digSiteGlyphMaterial) {
+      // Il segno blu resta sempre leggibile: è ciò che identifica il punto,
+      // mentre l'oro attorno è solo richiamo. Da lontano si attenua un po'
+      // per non competere con il fascio.
+      digSiteGlyphMaterial.opacity = 0.55 + t * 0.40;
     }
   }
 

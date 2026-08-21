@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { resolveLandmarkPlaceholder } from '@/content/LandmarkPlaceholders.js';
 import { presetFor, type CeilingVariant, type RoomTheme } from '@/content/RoomThemes.js';
+import {
+  buildAltar, buildCanopicJar, buildSarcophagus, buildStatue, buildWell,
+} from '@/rendering/EgyptianLandmarks.js';
 import type { RoomBounds as CullBounds } from '@/rendering/FrustumCuller.js';
 import type {
   FloorSceneCorridor,
@@ -25,6 +28,25 @@ const CEILING_THICKNESS_M = 0.35;
  * dell'architettura funeraria egizia.
  */
 const CORRIDOR_CEILING_HEIGHT_M = 3.2;
+
+/**
+ * Landmark composito per i tipi che hanno una forma riconoscibile.
+ * null per i tipi che restano primitive (obelisco e portale sono già
+ * caratterizzati, il pannello glyph è per sua natura una lastra piatta).
+ */
+function buildCompositeLandmark(
+  kind: string,
+  material: THREE.Material,
+): THREE.Group | null {
+  switch (kind) {
+    case 'statue':      return buildStatue(material);
+    case 'sarcophagus': return buildSarcophagus(material);
+    case 'relic':       return buildCanopicJar(material);
+    case 'well':        return buildWell(material);
+    case 'altar':       return buildAltar(material);
+    default:            return null;
+  }
+}
 
 /** Variante di soffitto del tema, con fallback sicuro. */
 function ceilingVariantFor(theme: RoomTheme): CeilingVariant {
@@ -281,6 +303,19 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
       material.map = options.glyphColorMap;
       material.color.setHex(0xffffff);
     }
+    // ART-004b: forme composite riconoscibili al posto delle primitive.
+    // 13 landmark su 18 non hanno un GLB nel manifest e finivano in scena
+    // come coni e scatole: forme che non rappresentano nulla e non dicono
+    // al giocatore cosa sta guardando. Il GLB, quando c'è, viene comunque
+    // caricato sopra da loadLandmarkModels e copre questa geometria.
+    const composite = buildCompositeLandmark(placeholder.kind, material);
+    if (composite) {
+      composite.position.set(landmark.position.x, 0, landmark.position.z);
+      (_roomGroup ?? dungeonRoot).add(composite);
+      createStaticBox(landmark.position.x, 0.9, landmark.position.z, 0.8, 0.9, 0.8);
+      return;
+    }
+
     let geometry: THREE.BufferGeometry;
     let yOffset: number;
     switch (placeholder.kind) {
