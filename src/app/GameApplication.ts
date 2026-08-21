@@ -2547,7 +2547,18 @@ export function createGameApplication(
     }
 
     // G-18: cue di impatto — crit/hitstop solo su colpi a segno (juice).
-    audio.play({ name: 'attack_hit', volume: 0.5 });
+    // Il suono nasce dal bersaglio, non dall'ascoltatore: con più nemici
+    // attorno dice da che parte è arrivato il colpo. Il PannerNode HRTF è
+    // già configurato nel motore, mancava solo la posizione.
+    const firstHit = hitTargets[0];
+    const hitBox = firstHit !== undefined ? enemyHurtboxes.getByEntity(firstHit) : undefined;
+    audio.play(hitBox
+      ? {
+        name: 'attack_hit',
+        volume: 0.5,
+        position: { x: hitBox.centerX, y: hitBox.centerY, z: hitBox.centerZ },
+      }
+      : { name: 'attack_hit', volume: 0.5 });
     renderer?.addCameraShake(0.14);
     // v2: hitmarker differenziale — oro su colpo (critico = rosso)
     hud.showHitmarker(lastHitCritical ? 'crit' : 'hit');
@@ -2573,7 +2584,12 @@ export function createGameApplication(
         return true;
       case 'COMPLETE':
         renderer?.interactDoor();
-        audio.play({ name: 'door_creak', volume: 0.6 });
+        // Il cigolio viene dalla porta: al buio è il riferimento spaziale
+        // più utile che il gioco possa dare.
+        audio.play({
+          name: 'door_creak', volume: 0.6,
+          position: sliceState.sceneLayout.exitPosition,
+        });
         simulation.events.emit({
           kind: 'FLOOR_COMPLETE',
           data: {
@@ -3129,7 +3145,11 @@ export function createGameApplication(
             parryWindowActive: parryWindowActive(parryWindowUntilMs, performance.now()),
           });
           if (mummyTick.parried) {
-            audio.play({ name: 'parry_success', volume: 0.7 });
+            // Il clangore viene dal punto in cui hai bloccato il colpo.
+            audio.play({
+              name: 'parry_success', volume: 0.7,
+              position: mummyState.position,
+            });
             renderer?.addCameraShake(0.3);
             hud.showHitmarker('hit');
             hud.showMessage('Parata perfetta! La mummia è stordita — colpisci ora.', 1600);
@@ -3179,7 +3199,10 @@ export function createGameApplication(
               : null,
           });
           if (genericTick.parried) {
-            audio.play({ name: 'parry_success', volume: 0.7 });
+            audio.play({
+              name: 'parry_success', volume: 0.7,
+              position: genericEnemyState.position,
+            });
             renderer?.addCameraShake(0.3);
             hud.showHitmarker('hit');
             hud.showMessage(
