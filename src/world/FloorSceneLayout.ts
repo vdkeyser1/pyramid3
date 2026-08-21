@@ -73,6 +73,12 @@ export interface FloorSceneLayout {
   readonly exitDoorClosedPosition: SceneVector3;
   readonly exitDoorOpenPosition: SceneVector3;
   readonly exitDoorYawRad: number;
+  /**
+   * ART-005: l'uscita è una scala verso il piano successivo (true) o
+   * l'uscita finale della piramide (false, ultimo piano).
+   * Determina se costruire la tromba di scale percorribile.
+   */
+  readonly exitIsStair: boolean;
   readonly exitDirection: CardinalDirection;
   readonly rooms: readonly FloorSceneRoom[];
   readonly corridors: readonly FloorSceneCorridor[];
@@ -440,6 +446,7 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
     exitDoorClosedPosition,
     exitDoorOpenPosition,
     exitDoorYawRad: exitDirection === 'east' || exitDirection === 'west' ? Math.PI / 2 : 0,
+    exitIsStair: floor.exitIsStair,
     exitDirection,
     rooms,
     corridors,

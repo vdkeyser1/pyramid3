@@ -1152,6 +1152,9 @@ export function createThreeRenderer(
     // Stesso discorso per le colonne procedurali del piano precedente.
     for (const column of columnDisposables) column.dispose();
     columnDisposables.length = 0;
+    // La scala appartiene al piano: va rilasciata insieme a lui.
+    staircase?.dispose();
+    staircase = null;
     decorGlyphMaterial = null;
     if (lootReliquary) {
       brazierRoot.remove(lootReliquary);
@@ -1215,6 +1218,10 @@ export function createThreeRenderer(
 
     // W-5 / task-9: piazza props GLB KayKit nelle stanze grandi.
     void placeRoomColumns(layout, dungeonRoot);
+
+    // ART-005: tromba di scale sotto l'uscita, quando il piano ne ha una.
+    // L'ultimo piano ha un'uscita vera, non una scala: lì non va costruita.
+    void buildExitStaircase(layout);
 
     _doorClosedPos.x = layout.exitDoorClosedPosition.x;
     _doorClosedPos.y = layout.exitDoorClosedPosition.y;
@@ -1671,6 +1678,37 @@ export function createThreeRenderer(
         // GLB assente o corrotto: resta la capsula, nessun crash.
       }
     })();
+  }
+
+  /** Scala di discesa del piano corrente (ART-005). */
+  let staircase: import('@/rendering/Staircase.js').Staircase | null = null;
+
+  /**
+   * Costruisce la tromba di scale sotto l'uscita.
+   *
+   * Rende la discesa uno spazio percorribile: prima si interagiva con la
+   * porta e partiva una dissolvenza, quindi la piramide cresceva in pianta
+   * ma non si scendeva mai davvero.
+   *
+   * Solo sui piani che hanno una scala: l'ultimo ha un'uscita vera.
+   */
+  async function buildExitStaircase(layout: FloorSceneLayout): Promise<void> {
+    staircase?.dispose();
+    staircase = null;
+    if (!layout.exitIsStair) return;
+
+    const { createStaircase } = await import('@/rendering/Staircase.js');
+    if (disposed) return;
+
+    // Parte poco oltre la soglia, nella direzione in cui guarda la porta.
+    const origin = {
+      x: layout.exitPosition.x,
+      y: 0,
+      z: layout.exitPosition.z,
+    };
+    const built = createStaircase(origin, layout.exitDoorYawRad, wallMaterial, createStaticBox);
+    dungeonRoot.add(built.group);
+    staircase = built;
   }
 
   /** Modello del braciere, condiviso da tutti i bracieri del piano. */
