@@ -1,6 +1,7 @@
 import type { FloorModel } from '@/procedural/FloorModel.js';
 import type { RoomBounds, RoomId, RoomNode, RoomRole } from '@/procedural/FloorValidator.js';
 import { themeForRoom, type RoomTheme } from '@/content/RoomThemes.js';
+import { STAIRCASE } from '@/content/balance.js';
 
 export interface SceneVector3 {
   readonly x: number;
@@ -79,6 +80,14 @@ export interface FloorSceneLayout {
    * Determina se costruire la tromba di scale percorribile.
    */
   readonly exitIsStair: boolean;
+  /**
+   * ART-005: pianerottolo in fondo alla scala, dove scatta il cambio piano.
+   * null se l'uscita non è una scala (ultimo piano).
+   *
+   * Calcolato qui e non nel renderer perché serve anche alla simulazione:
+   * è la simulazione a decidere quando si scende, il renderer disegna solo.
+   */
+  readonly stairBottom: SceneVector3 | null;
   readonly exitDirection: CardinalDirection;
   readonly rooms: readonly FloorSceneRoom[];
   readonly corridors: readonly FloorSceneCorridor[];
@@ -101,6 +110,27 @@ const DOOR_SLIDE_M = 1.25;
 const CORRIDOR_WIDTH_M = 4;
 const TARGET_OFFSET_OPTIONS = [-2.2, 0, 2.2] as const;
 const DIG_SITE_OFFSET_OPTIONS = [-1.6, 0, 1.6] as const;
+
+/**
+ * ART-005: pianerottolo in fondo alla scala di discesa.
+ *
+ * Usa le stesse costanti del renderer (STAIRCASE in balance.ts): se le due
+ * formule divergessero, il trigger del cambio piano finirebbe a mezz'aria o
+ * dentro la parete. La geometria della scala è in Staircase.ts, ma il punto
+ * di arrivo va calcolato anche qui perché serve alla simulazione.
+ */
+function stairBottomFor(origin: SceneVector3, directionRad: number): SceneVector3 {
+  const totalRun = STAIRCASE.stepCount * STAIRCASE.stepRunM;
+  const totalDrop = STAIRCASE.stepCount * STAIRCASE.stepRiseM;
+  // +1.0 = metà pianerottolo oltre l'ultimo gradino, come in createStaircase.
+  const along = totalRun + 1.0;
+  return {
+    x: origin.x + Math.sin(directionRad) * along,
+    // Poco sopra la lastra: il giocatore ci sta in piedi, non dentro.
+    y: -totalDrop + 0.9,
+    z: origin.z + Math.cos(directionRad) * along,
+  };
+}
 
 /** Altezza della coppa del braciere sul pavimento. */
 const BRAZIER_Y = 0.35;
@@ -447,6 +477,12 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
     exitDoorOpenPosition,
     exitDoorYawRad: exitDirection === 'east' || exitDirection === 'west' ? Math.PI / 2 : 0,
     exitIsStair: floor.exitIsStair,
+    stairBottom: floor.exitIsStair
+      ? stairBottomFor(
+        positionInsideWall(exitRoom.bounds, exitDirection, ROOM_INSET_M, EXIT_Y),
+        exitDirection === 'east' || exitDirection === 'west' ? Math.PI / 2 : 0,
+      )
+      : null,
     exitDirection,
     rooms,
     corridors,

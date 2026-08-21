@@ -30,6 +30,7 @@ function makeLayout(): FloorSceneLayout {
     exitDoorOpenPosition: { x: 25, y: 0, z: 30 },
     exitDoorYawRad: 0,
     exitIsStair: true,
+    stairBottom: null,
     exitDirection: 'north',
     rooms: [
       makeRoom(1, 'ENTRY', 0, 0, 10, 10),

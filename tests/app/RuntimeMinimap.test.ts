@@ -14,6 +14,7 @@ function createLayout(): FloorSceneLayout {
     exitDoorOpenPosition: { x: 30, y: 1.75, z: 5 },
     exitDoorYawRad: 0,
     exitIsStair: true,
+    stairBottom: null,
     exitDirection: 'east',
     rooms: [
       {

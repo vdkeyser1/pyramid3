@@ -2599,6 +2599,20 @@ export function createGameApplication(
         hud.showMessage('Uscita raggiunta. Vertical slice completata.', 4000);
         syncVerticalSlicePresentation();
         return true;
+      case 'STAIR_OPEN':
+        // ART-005: la porta si apre ma la scala va ancora scesa. Prima
+        // bastava toccare l'uscita e partiva la dissolvenza: la tromba
+        // esisteva e non veniva mai percorsa.
+        renderer?.interactDoor();
+        audio.play({
+          name: 'door_creak', volume: 0.6,
+          position: sliceState.sceneLayout.exitPosition,
+        });
+        hud.showContextualHint({
+          id: 'hint-stair-open',
+          text: 'Il passaggio è aperto. Scendi la scala per raggiungere il piano inferiore.',
+        });
+        return true;
       case 'STAIR':
         // G-10: scala verso il piano successivo — discesa con fade.
         renderer?.interactDoor();

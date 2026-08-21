@@ -179,24 +179,50 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
     addDirectionalWall('west', room.center.x, room.center.z, halfWidth, halfDepth, wallY, openings.has('west'));
 
     // ART-004: il soffitto dipende dal tema della stanza.
-    //  - STARRY  → cielo dipinto (camere nobili e funerarie)
-    //  - COLLAPSED → nessun soffitto: la stanza è aperta verso l'alto, ed è
-    //    proprio la breccia a caratterizzarla
-    //  - gli altri → pietra piena, chiusa
+    //  - STARRY     → cielo dipinto (camere nobili e funerarie)
+    //  - HIGH_VAULT → pietra, ma molto più in alto (santuari)
+    //  - COLLAPSED  → pietra con una breccia al centro
+    //  - FLAT_STONE → pietra piena
+    //
+    // La stanza resta SEMPRE chiusa sopra. Una prima versione lasciava le
+    // camere crollate senza soffitto: si rivedeva il vuoto oltre le pareti,
+    // che è esattamente la rottura d'illusione che il soffitto doveva
+    // eliminare. Il crollo è una breccia, non un'assenza.
     const ceilingKind = ceilingVariantFor(room.theme);
-    if (ceilingKind !== 'COLLAPSED') {
+    const ceilingY = (ceilingKind === 'HIGH_VAULT' ? WALL_HEIGHT_M * 1.5 : WALL_HEIGHT_M)
+      + CEILING_THICKNESS_M / 2;
+    const ceilingMat = ceilingKind === 'STARRY' ? ceilingMaterial : wallMaterial;
+    const fullW = width + WALL_THICKNESS_M * 2;
+    const fullD = depth + WALL_THICKNESS_M * 2;
+
+    if (ceilingKind === 'COLLAPSED') {
+      // Quattro lastre attorno a un'apertura centrale: il buco lascia
+      // intravedere il buio della cavità superiore senza aprire la stanza.
+      const holeW = Math.min(fullW * 0.34, 4.2);
+      const holeD = Math.min(fullD * 0.34, 4.2);
+      const sideW = (fullW - holeW) / 2;
+      const sideD = (fullD - holeD) / 2;
+
+      // Fasce nord e sud, a tutta larghezza.
+      for (const sign of [-1, 1]) {
+        addDungeonBox(
+          fullW, CEILING_THICKNESS_M, sideD,
+          room.center.x, ceilingY, room.center.z + sign * (holeD + sideD) / 2,
+          ceilingMat,
+        );
+      }
+      // Fasce est e ovest, solo per l'altezza del buco.
+      for (const sign of [-1, 1]) {
+        addDungeonBox(
+          sideW, CEILING_THICKNESS_M, holeD,
+          room.center.x + sign * (holeW + sideW) / 2, ceilingY, room.center.z,
+          ceilingMat,
+        );
+      }
+    } else {
       // Copre anche lo spessore delle pareti: dal basso non si vede alcuna
       // fessura verso il vuoto esterno.
-      addDungeonBox(
-        width + WALL_THICKNESS_M * 2,
-        CEILING_THICKNESS_M,
-        depth + WALL_THICKNESS_M * 2,
-        room.center.x,
-        (ceilingKind === 'HIGH_VAULT' ? WALL_HEIGHT_M * 1.5 : WALL_HEIGHT_M)
-          + CEILING_THICKNESS_M / 2,
-        room.center.z,
-        ceilingKind === 'STARRY' ? ceilingMaterial : wallMaterial,
-      );
+      addDungeonBox(fullW, CEILING_THICKNESS_M, fullD, room.center.x, ceilingY, room.center.z, ceilingMat);
     }
   }
 

@@ -20,17 +20,15 @@
  */
 
 import * as THREE from 'three';
+import { STAIRCASE } from '@/content/balance.js';
 
-/** Numero di gradini. */
-const STEP_COUNT = 12;
-/** Alzata: sotto maxStepM (0,3 m) così i gradini sono risalibili. */
-const STEP_RISE_M = 0.24;
-/** Pedata. */
-const STEP_RUN_M = 0.46;
-/** Larghezza della tromba. */
-const STAIR_WIDTH_M = 2.6;
-/** Spessore della lastra di ogni gradino. */
-const STEP_THICKNESS_M = 0.22;
+// Geometria da balance.ts: rendering e simulazione devono leggere gli stessi
+// valori, altrimenti il trigger di discesa finisce fuori dal pianerottolo.
+const STEP_COUNT = STAIRCASE.stepCount;
+const STEP_RISE_M = STAIRCASE.stepRiseM;
+const STEP_RUN_M = STAIRCASE.stepRunM;
+const STAIR_WIDTH_M = STAIRCASE.widthM;
+const STEP_THICKNESS_M = STAIRCASE.stepThicknessM;
 
 export interface Staircase {
   readonly group: THREE.Group;
@@ -106,7 +104,7 @@ export function createStaircase(
   }
 
   // Pianerottolo in fondo: dà spazio per fermarsi prima della transizione.
-  const landingGeo = new THREE.BoxGeometry(STAIR_WIDTH_M, STEP_THICKNESS_M, 2.0);
+  const landingGeo = new THREE.BoxGeometry(STAIR_WIDTH_M, STEP_THICKNESS_M, STAIRCASE.landingDepthM);
   disposables.push(landingGeo);
   const landingAlong = totalRun + 1.0;
   const lx = origin.x + dx * landingAlong;
@@ -118,7 +116,7 @@ export function createStaircase(
   landing.rotation.y = directionRad;
   landing.receiveShadow = true;
   group.add(landing);
-  addCollider(lx, ly, lz, STAIR_WIDTH_M / 2, STEP_THICKNESS_M / 2, 1.0);
+  addCollider(lx, ly, lz, STAIR_WIDTH_M / 2, STEP_THICKNESS_M / 2, STAIRCASE.landingDepthM / 2);
 
   return {
     group,

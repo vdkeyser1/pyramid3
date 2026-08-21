@@ -215,6 +215,56 @@ describe('VerticalSliceRuntime', () => {
     expect(getObjectiveText(state)).toContain('Uscita confermata');
   });
 
+  it('con una scala la porta si apre ma non fa scendere (ART-005)', () => {
+    // Prima bastava toccare l'uscita e partiva la dissolvenza: la tromba di
+    // scale esisteva e non veniva mai percorsa.
+    const floor = { ...createFloor(11), exitIsStair: true };
+    const state = createVerticalSliceState(floor);
+    state.exitUnlocked = true;
+
+    // Alla porta in cima: si apre il passaggio, il piano NON cambia.
+    expect(tryCompleteSlice(state, state.exitPosition)).toBe('STAIR_OPEN');
+    expect(state.completed).toBe(false);
+  });
+
+  it('con una scala il cambio piano scatta sul pianerottolo', () => {
+    const floor = { ...createFloor(12), exitIsStair: true };
+    const state = createVerticalSliceState(floor);
+    state.exitUnlocked = true;
+
+    const bottom = state.sceneLayout.stairBottom;
+    expect(bottom).not.toBeNull();
+    if (!bottom) return;
+
+    expect(tryCompleteSlice(state, bottom)).toBe('STAIR');
+    expect(state.completed).toBe(true);
+  });
+
+  it('il pianerottolo resta bloccato se il sigillo e attivo', () => {
+    // Scendere la scala non deve aggirare la condizione di sblocco.
+    const floor = { ...createFloor(13), exitIsStair: true };
+    const state = createVerticalSliceState(floor);
+
+    const bottom = state.sceneLayout.stairBottom;
+    if (!bottom) return;
+
+    expect(tryCompleteSlice(state, bottom)).toBe('LOCKED');
+    expect(state.completed).toBe(false);
+  });
+
+  it('il pianerottolo e piu in basso e piu lontano della porta', () => {
+    const floor = { ...createFloor(14), exitIsStair: true };
+    const state = createVerticalSliceState(floor);
+    const bottom = state.sceneLayout.stairBottom;
+    if (!bottom) return;
+
+    // Se coincidessero, il trigger tornerebbe di fatto sulla porta.
+    expect(bottom.y).toBeLessThan(state.exitPosition.y);
+    const dx = bottom.x - state.exitPosition.x;
+    const dz = bottom.z - state.exitPosition.z;
+    expect(Math.hypot(dx, dz)).toBeGreaterThan(3);
+  });
+
   it('insegue lungo il grafo room-corridor invece di tagliare attraverso i muri', () => {
     const state = createVerticalSliceState(createLShapedFloor(4));
     state.target.awakened = true;

@@ -1,7 +1,7 @@
 import type { FloorGenerationInput, FloorModel } from '@/procedural/FloorModel.js';
 import type { AttackDefinition } from '@/gameplay/combat/AttackDefinition.js';
 import { ENEMIES } from '@/content/enemies.js';
-import { secondsToTicks } from '@/content/balance.js';
+import { secondsToTicks, STAIRCASE } from '@/content/balance.js';
 import { buildFloorSceneLayout, type FloorSceneLayout } from '@/world/FloorSceneLayout.js';
 
 export interface SliceVector3 {
@@ -50,7 +50,13 @@ export interface SliceDamageResolution {
   readonly killed: boolean;
 }
 
-export type ExitResolution = 'TOO_FAR' | 'LOCKED' | 'COMPLETE' | 'ALREADY_COMPLETE' | 'STAIR';
+export type ExitResolution =
+  | 'TOO_FAR' | 'LOCKED' | 'COMPLETE' | 'ALREADY_COMPLETE' | 'STAIR'
+  /**
+   * ART-005: sei alla porta e il sigillo è caduto, ma la scala va ancora
+   * scesa. La porta si apre; il cambio piano scatta sul pianerottolo.
+   */
+  | 'STAIR_OPEN';
 
 export interface SliceTickResolution {
   readonly playerDamageHp: number;
@@ -461,13 +467,29 @@ export function applyAttackToSlice(
 
 export function tryCompleteSlice(state: VerticalSliceState, playerPose: SliceVector3): ExitResolution {
   if (state.completed) return 'ALREADY_COMPLETE';
+
+  const stairBottom = state.sceneLayout.stairBottom;
+
+  // ART-005: con una scala il cambio piano scatta in FONDO, non alla porta.
+  // Prima bastava toccare l'uscita e partiva la dissolvenza: la scala
+  // esisteva ma non veniva mai percorsa.
+  if (state.floor.exitIsStair && stairBottom) {
+    if (distanceXZ(playerPose, stairBottom) <= STAIRCASE.triggerRadiusM) {
+      if (!state.exitUnlocked) return 'LOCKED';
+      state.completed = true;
+      return 'STAIR';
+    }
+    // Alla porta in cima: apre il passaggio senza far scendere.
+    if (distanceXZ(playerPose, state.exitPosition) <= EXIT_RADIUS_M) {
+      return state.exitUnlocked ? 'STAIR_OPEN' : 'LOCKED';
+    }
+    return 'TOO_FAR';
+  }
+
+  // Ultimo piano: l'uscita è una porta vera, si completa lì.
   if (distanceXZ(playerPose, state.exitPosition) > EXIT_RADIUS_M) return 'TOO_FAR';
   if (!state.exitUnlocked) return 'LOCKED';
   state.completed = true;
-  // G-10: i piani non-finali escono con una scala verso il basso
-  if (state.floor.exitIsStair) {
-    return 'STAIR';
-  }
   return 'COMPLETE';
 }
 

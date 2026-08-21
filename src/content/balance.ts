@@ -81,6 +81,27 @@ export const COMBAT = {
   weaponSwapCooldownTicks: secondsToTicks(0.35),
 } as const;
 
+/**
+ * ART-005: geometria della scala di discesa fra i piani.
+ *
+ * Sta qui e non nel renderer perché sono valori di gameplay: l'alzata
+ * determina se i gradini sono risalibili, e la corsa totale determina dove
+ * scatta il cambio piano. Il rendering e la simulazione devono leggerli
+ * dalla stessa fonte, altrimenti il trigger finisce a mezz'aria.
+ */
+export const STAIRCASE = {
+  stepCount: 12,
+  /** Alzata: deve restare sotto PLAYER.maxStepM o la scala non si risale. */
+  stepRiseM: 0.24,
+  stepRunM: 0.46,
+  widthM: 2.6,
+  stepThicknessM: 0.22,
+  /** Lunghezza del pianerottolo in fondo. */
+  landingDepthM: 2.0,
+  /** Raggio entro cui il pianerottolo attiva il cambio piano. */
+  triggerRadiusM: 1.8,
+} as const;
+
 export const WEAPONS = {
   fists:   { damageHp: 3,  intervalTicks: secondsToTicks(0.65), reachM: 1.1, durability: Number.POSITIVE_INFINITY },
   khopesh: { damageHp: 18, intervalTicks: secondsToTicks(0.78), reachM: 1.7, durability: 120 },
