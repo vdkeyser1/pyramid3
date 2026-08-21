@@ -1787,6 +1787,9 @@ export function createGameApplication(
         effects: [],
       }, nearby);
       emitBrazierEvents(simulation.events, ignition.effects, nearby);
+      // Il braccio china la torcia sui carboni: dà un corpo all'azione, che
+      // prima era solo un cambio di numeri nella HUD.
+      renderer?.playTorchIgnite?.();
       syncTorchPresentation();
       hud.showMessage('Braciere acceso. La stanza respira di nuovo.', 2200);
       hud.showContextualHint({

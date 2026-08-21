@@ -22,6 +22,7 @@ import {
   createBronzeMaterial,
   createDissolveMaterial,
   createGoldMaterial,
+  createTombWallTexture,
   createHieroglyphTexture,
   createHieroglyphPanelTexture,
   createSandTexture,
@@ -96,6 +97,8 @@ export function createThreeRenderer(
   let placedTorchMesh: THREE.Mesh;
   // G-15: fiamma procedurale della torcia (mano) e della torcia posata.
   let handFlame: { group: THREE.Group; update(deltaMs: number, intensity: number): void; setFlickerReduced(reduced: boolean): void } | null = null;
+  /** Braccio che regge la torcia (con la fiamma agganciata in cima). */
+  let torchViewmodel: import('@/rendering/TorchViewmodel.js').TorchViewmodel | null = null;
   let placedFlame: { group: THREE.Group; update(deltaMs: number, intensity: number): void; setFlickerReduced(reduced: boolean): void } | null = null;
   // V6: god ray della torcia accesa — cono additivo che segue la camera.
   let torchBeam: { mesh: THREE.Mesh; material: THREE.MeshBasicMaterial } | null = null;
@@ -618,7 +621,20 @@ export function createThreeRenderer(
       'textures/sandstone_wall_ao.ktx2',
       glRenderer,
     );
-    if (wallPbr.color) {
+    // Parete a registri generata: calcare chiaro con bordo colorato, righe di
+    // geroglifici incisi e zoccolo. È la struttura che accomuna tutte le
+    // camere funerarie reali, e che la texture di mattoni non aveva.
+    // Ha la precedenza sul PBR da file; il PBR resta come fallback.
+    const tombWall = createTombWallTexture(0);
+    if (tombWall) {
+      // repeat solo orizzontale: i registri devono restare uno per parete,
+      // non ripetersi in verticale (wrapT è ClampToEdge nella texture).
+      tombWall.repeat.set(3, 1);
+      wallMaterial.map = tombWall;
+      wallMaterial.color.setHex(0xffffff);
+      wallMaterial.roughness = 0.94;
+      wallMaterial.metalness = 0.0;
+    } else if (wallPbr.color) {
       wallMaterial.map = wallPbr.color;
       if (wallPbr.normal) {
         wallMaterial.normalMap = wallPbr.normal;
@@ -708,9 +724,23 @@ export function createThreeRenderer(
     const { createTorchFlame, createParticleBurst, createWeaponTrail } = await import('@/rendering/Vfx.js');
     const hand = createTorchFlame();
     hand.group.visible = false;
-    camera.add(hand.group);
-    hand.group.position.set(0.42, -0.34, -0.55);
     handFlame = hand;
+
+    // Braccio con la torcia: prima la fiamma fluttuava davanti alla camera
+    // senza nulla che la reggesse. Ora è agganciata in cima al bastone, così
+    // segue il braccio anche quando si china sul braciere per accendere.
+    try {
+      const { createTorchViewmodel } = await import('@/rendering/TorchViewmodel.js');
+      const torchVm = createTorchViewmodel();
+      camera.add(torchVm.group);
+      torchVm.flameAnchor.add(hand.group);
+      torchViewmodel = torchVm;
+    } catch (err) {
+      log.warn('Viewmodel torcia non disponibile', { error: String(err) });
+      // Senza braccio la fiamma resta comunque visibile, come prima.
+      camera.add(hand.group);
+      hand.group.position.set(0.42, -0.34, -0.55);
+    }
     const placed = createTorchFlame();
     placed.group.visible = false;
     scene.add(placed.group);
@@ -1064,6 +1094,10 @@ export function createThreeRenderer(
           const column = createEgyptianColumn(roomSeed);
           columnDisposables.push(column);
           column.group.position.set(x, 0, z);
+          // Collider: senza questo il giocatore attraversava le colonne.
+          // Box leggermente più stretto del fusto (0.34 di raggio) per non
+          // creare un ostacolo invisibile più largo di quello che si vede.
+          createStaticBox(x, 1.95, z, 0.40, 1.95, 0.40);
           // Rotazione alternata: file allineate al millimetro leggono come
           // copia-incolla invece che come pietra scolpita a mano.
           column.group.rotation.y = ((i + (side > 0 ? 1 : 0)) % 4) * (Math.PI / 4);
@@ -1273,6 +1307,12 @@ export function createThreeRenderer(
 
       brazierRoot.add(bowlGroup);
       void attachBrazierModel(bowlGroup);
+      // Collider del braciere: anche questo mancava, e ci si passava dentro.
+      // Copre treppiede e coppa (alta ~0.9 m), non la fiamma.
+      createStaticBox(
+        brazier.position.x, 0.45, brazier.position.z,
+        0.40, 0.45, 0.40,
+      );
 
       const light = new THREE.PointLight(0xff9b3d, 18, 10, 2);
       light.visible = false;
@@ -1403,6 +1443,10 @@ export function createThreeRenderer(
         torchBeam.mesh.visible = false;
       }
     }
+
+    // Il braccio si anima anche a torcia spenta: la porti comunque in mano,
+    // e l'accensione parte proprio da lì.
+    torchViewmodel?.update(deltaMs);
 
     sparkBurst?.update(deltaMs);
     weaponTrail?.update(deltaMs);
@@ -1914,6 +1958,8 @@ export function createThreeRenderer(
     _doorPhysics = null;
     assetLoader = null;
     handFlame = null;
+    torchViewmodel?.dispose();
+    torchViewmodel = null;
     placedFlame = null;
     sparkBurst = null;
     weaponTrail = null;
@@ -1944,6 +1990,16 @@ export function createThreeRenderer(
       if (handFlame) {
         handFlame.group.visible = lit;
       }
+      // Il braccio resta visibile anche a torcia spenta: chi la porta la
+      // tiene comunque in mano, solo senza fiamma.
+      torchViewmodel?.setVisible(true);
+    },
+    /**
+     * Anima l'accensione: il braccio china la torcia verso i carboni del
+     * braciere e risale. Da chiamare quando il giocatore accende al braciere.
+     */
+    playTorchIgnite(): void {
+      torchViewmodel?.playIgnite();
     },
     setPlacedTorchState(state: RendererPlacedTorchState | null): void {
       if (!state) {

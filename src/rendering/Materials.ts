@@ -604,6 +604,157 @@ function drawFivePointedStar(
   ctx.fill();
 }
 
+// ── Parete di tomba a registri ─────────────────────────────────────────────
+
+/**
+ * Genera una parete di tomba egizia divisa in REGISTRI orizzontali.
+ *
+ * È la struttura che accomuna tutte le camere funerarie reali: la parete non
+ * è una superficie uniforme ma una pila di fasce sovrapposte — bordo dipinto
+ * in alto, uno o più registri di figure e testi, uno zoccolo alla base.
+ *
+ * Sostituisce la texture `sandstone_brick_wall`, che leggeva come muratura di
+ * mattoni moderna: gli interni delle piramidi sono conci di calcare chiaro
+ * levigato, e quel che li caratterizza è la decorazione, non la fuga.
+ *
+ * Palette dai pigmenti reali, turchese incluso: è il colore che domina gli
+ * stipiti e i capitelli nelle ricostruzioni, e mancava del tutto.
+ *
+ * Deterministico: nessun Math.random, dipende solo dal seed.
+ */
+export function createTombWallTexture(
+  seed = 0,
+  width = 512,
+  height = 512,
+): THREE.CanvasTexture | null {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  let s = (seed * 0x9e3779b9 + 0x2545f491) >>> 0;
+  const rnd = (): number => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return (s >>> 8) / 0x01000000;
+  };
+
+  const LIMESTONE = '#D6C199';
+  const GOLD = '#C8952E';
+  const RED = '#9C4227';
+  const TURQUOISE = '#2E9B92';
+  const BLUE = '#1B4FA0';
+  const BLACK = '#2A2119';
+
+  // Fondo: calcare chiaro con venature, non intonaco piatto.
+  ctx.fillStyle = LIMESTONE;
+  ctx.fillRect(0, 0, width, height);
+  for (let i = 0; i < 90; i++) {
+    const cx = rnd() * width;
+    const cy = rnd() * height;
+    const r = width * (0.03 + rnd() * 0.10);
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    const dark = rnd() > 0.5;
+    g.addColorStop(0, dark ? 'rgba(150,120,80,0.20)' : 'rgba(240,225,195,0.22)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Giunti dei conci: orizzontali larghi, verticali sfalsati. Blocchi grandi
+  // (due corsi per texture) invece di file fitte di mattoni.
+  ctx.strokeStyle = 'rgba(150,124,86,0.45)';
+  ctx.lineWidth = Math.max(1, width / 380);
+  for (let row = 1; row < 2; row++) {
+    const y = (row / 2) * height;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+
+  // ── Bordo superiore: fascia a bande colorate (kheker stilizzato) ────────
+  const topH = height * 0.10;
+  ctx.fillStyle = TURQUOISE;
+  ctx.fillRect(0, 0, width, topH * 0.42);
+  ctx.fillStyle = RED;
+  ctx.fillRect(0, topH * 0.42, width, topH * 0.20);
+  ctx.fillStyle = GOLD;
+  ctx.fillRect(0, topH * 0.62, width, topH * 0.16);
+  ctx.fillStyle = BLACK;
+  ctx.fillRect(0, topH * 0.78, width, topH * 0.09);
+
+  // ── Zoccolo di base ────────────────────────────────────────────────────
+  const baseY = height * 0.88;
+  ctx.fillStyle = BLACK;
+  ctx.fillRect(0, baseY, width, height - baseY);
+  ctx.fillStyle = RED;
+  ctx.fillRect(0, baseY, width, height * 0.02);
+
+  // ── Registri centrali: righe di geroglifici incisi ──────────────────────
+  // Il testo è astratto (glifi geometrici), non una scrittura reale: a
+  // distanza di gioco conta il ritmo della riga, non la leggibilità.
+  const regTop = topH * 1.15;
+  const regBottom = baseY - height * 0.02;
+  const ROWS = 5;
+  const rowH = (regBottom - regTop) / ROWS;
+
+  for (let r = 0; r < ROWS; r++) {
+    const y0 = regTop + r * rowH;
+
+    // Linea di registro che separa le righe.
+    ctx.strokeStyle = 'rgba(120,86,44,0.55)';
+    ctx.lineWidth = Math.max(1, width / 460);
+    ctx.beginPath();
+    ctx.moveTo(0, y0);
+    ctx.lineTo(width, y0);
+    ctx.stroke();
+
+    // Glifi: piccole forme in rilievo incavato, riempite a colori alternati.
+    const glyphH = rowH * 0.60;
+    const cols = Math.max(6, Math.round(width / (glyphH * 1.5)));
+    for (let c = 0; c < cols; c++) {
+      const gx = (c + 0.5) * (width / cols);
+      const gy = y0 + rowH * 0.52;
+      const w = glyphH * (0.30 + rnd() * 0.36);
+      const h = glyphH * (0.34 + rnd() * 0.50);
+
+      // Ombra dell'incisione: il rilievo incavato ha il bordo in ombra.
+      ctx.fillStyle = 'rgba(90,66,34,0.42)';
+      ctx.fillRect(gx - w / 2 + 1.5, gy - h / 2 + 1.5, w, h);
+
+      const tint = rnd();
+      ctx.fillStyle = tint > 0.80 ? TURQUOISE
+        : tint > 0.62 ? RED
+          : tint > 0.46 ? BLUE
+            : tint > 0.22 ? GOLD
+              : BLACK;
+
+      // Tre famiglie di forma: barre, dischi, verticali. Bastano a dare il
+      // tessuto visivo di una riga di testo senza disegnare veri geroglifici.
+      const shape = rnd();
+      if (shape < 0.45) {
+        ctx.fillRect(gx - w / 2, gy - h / 2, w, h);
+      } else if (shape < 0.72) {
+        ctx.beginPath();
+        ctx.ellipse(gx, gy, w * 0.45, h * 0.40, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillRect(gx - w * 0.16, gy - h / 2, w * 0.32, h);
+        ctx.fillRect(gx - w / 2, gy - h * 0.10, w, h * 0.20);
+      }
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 // ── Materiale dissolve (morte nemici) ──────────────────────────────────────
 
 /**

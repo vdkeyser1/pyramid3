@@ -94,6 +94,12 @@ export interface RendererHandle {
   /** Accende/spegne la luce della torcia. */
   setTorchLit(lit: boolean): void;
 
+  /**
+   * Anima l'accensione al braciere: il braccio china la torcia verso i
+   * carboni e risale. Puramente visivo, non altera lo stato del carburante.
+   */
+  playTorchIgnite?(): void;
+
   /** Posiziona o rimuove la torcia posata nel mondo. */
   setPlacedTorchState(state: RendererPlacedTorchState | null): void;
 
