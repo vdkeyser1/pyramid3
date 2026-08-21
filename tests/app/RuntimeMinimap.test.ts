@@ -21,6 +21,7 @@ function createLayout(): FloorSceneLayout {
         bounds: { minX: 0, minZ: 0, maxX: 10, maxZ: 10 },
         center: { x: 5, y: 0, z: 5 },
         landmarkId: null,
+        theme: 'PLAIN' as const,
         openings: ['east'],
       },
       {
@@ -29,6 +30,7 @@ function createLayout(): FloorSceneLayout {
         bounds: { minX: 12, minZ: 0, maxX: 22, maxZ: 10 },
         center: { x: 17, y: 0, z: 5 },
         landmarkId: null,
+        theme: 'PLAIN' as const,
         openings: ['west', 'east'],
       },
       {
@@ -37,6 +39,7 @@ function createLayout(): FloorSceneLayout {
         bounds: { minX: 24, minZ: 0, maxX: 34, maxZ: 10 },
         center: { x: 29, y: 0, z: 5 },
         landmarkId: null,
+        theme: 'PLAIN' as const,
         openings: ['west'],
       },
     ],
@@ -72,6 +75,7 @@ describe('RuntimeMinimap', () => {
       bounds: { minX: 12, minZ: 12, maxX: 22, maxZ: 22 },
       center: { x: 17, y: 0, z: 17 },
       landmarkId: null,
+      theme: 'PLAIN' as const,
       openings: ['north'],
     };
 

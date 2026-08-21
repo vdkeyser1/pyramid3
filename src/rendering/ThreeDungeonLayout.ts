@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { resolveLandmarkPlaceholder } from '@/content/LandmarkPlaceholders.js';
+import { presetFor, type CeilingVariant, type RoomTheme } from '@/content/RoomThemes.js';
 import type { RoomBounds as CullBounds } from '@/rendering/FrustumCuller.js';
 import type {
   FloorSceneCorridor,
@@ -24,6 +25,11 @@ const CEILING_THICKNESS_M = 0.35;
  * dell'architettura funeraria egizia.
  */
 const CORRIDOR_CEILING_HEIGHT_M = 3.2;
+
+/** Variante di soffitto del tema, con fallback sicuro. */
+function ceilingVariantFor(theme: RoomTheme): CeilingVariant {
+  return presetFor(theme).ceiling;
+}
 
 function createPortalGeometry(): THREE.BufferGeometry {
   const shape = new THREE.Shape();
@@ -172,17 +178,26 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
     addDirectionalWall('east', room.center.x, room.center.z, halfWidth, halfDepth, wallY, openings.has('east'));
     addDirectionalWall('west', room.center.x, room.center.z, halfWidth, halfDepth, wallY, openings.has('west'));
 
-    // Soffitto stellato: copre l'intera camera comprese le pareti, così dal
-    // basso non si vede alcuna fessura verso il vuoto esterno.
-    addDungeonBox(
-      width + WALL_THICKNESS_M * 2,
-      CEILING_THICKNESS_M,
-      depth + WALL_THICKNESS_M * 2,
-      room.center.x,
-      WALL_HEIGHT_M + CEILING_THICKNESS_M / 2,
-      room.center.z,
-      ceilingMaterial,
-    );
+    // ART-004: il soffitto dipende dal tema della stanza.
+    //  - STARRY  → cielo dipinto (camere nobili e funerarie)
+    //  - COLLAPSED → nessun soffitto: la stanza è aperta verso l'alto, ed è
+    //    proprio la breccia a caratterizzarla
+    //  - gli altri → pietra piena, chiusa
+    const ceilingKind = ceilingVariantFor(room.theme);
+    if (ceilingKind !== 'COLLAPSED') {
+      // Copre anche lo spessore delle pareti: dal basso non si vede alcuna
+      // fessura verso il vuoto esterno.
+      addDungeonBox(
+        width + WALL_THICKNESS_M * 2,
+        CEILING_THICKNESS_M,
+        depth + WALL_THICKNESS_M * 2,
+        room.center.x,
+        (ceilingKind === 'HIGH_VAULT' ? WALL_HEIGHT_M * 1.5 : WALL_HEIGHT_M)
+          + CEILING_THICKNESS_M / 2,
+        room.center.z,
+        ceilingKind === 'STARRY' ? ceilingMaterial : wallMaterial,
+      );
+    }
   }
 
   function addCorridor(corridor: FloorSceneCorridor): void {

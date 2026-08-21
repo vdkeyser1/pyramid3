@@ -1,5 +1,6 @@
 import type { FloorModel } from '@/procedural/FloorModel.js';
 import type { RoomBounds, RoomId, RoomNode, RoomRole } from '@/procedural/FloorValidator.js';
+import { themeForRoom, type RoomTheme } from '@/content/RoomThemes.js';
 
 export interface SceneVector3 {
   readonly x: number;
@@ -16,6 +17,11 @@ export interface FloorSceneRoom {
   readonly center: SceneVector3;
   readonly landmarkId: string | null;
   readonly openings: readonly CardinalDirection[];
+  /**
+   * ART-004: stato narrativo della stanza, ortogonale al ruolo.
+   * Il ruolo dice cosa la stanza fa, il tema cosa le è successo.
+   */
+  readonly theme: RoomTheme;
 }
 
 export interface FloorSceneCorridor {
@@ -348,6 +354,9 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
       center: centerOfBounds(room.bounds, FLOOR_Y),
       landmarkId: room.landmarkId,
       openings,
+      // ART-004: tema deterministico da piano e stanza. Il vincolo per ruolo
+      // sta in RoomThemes: l'ingresso non può essere crollato o infestato.
+      theme: themeForRoom(floor.floorIndex, Number(room.id), room.role),
     };
   });
 

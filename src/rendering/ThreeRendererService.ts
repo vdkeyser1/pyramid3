@@ -1062,11 +1062,17 @@ export function createThreeRenderer(
     /** Sotto questa dimensione la camera non regge una colonnata. */
     const MIN_ROOM_M = 9;
 
+    const { presetFor } = await import('@/content/RoomThemes.js');
+
     for (const room of layout.rooms) {
       const { minX, maxX, minZ, maxZ } = room.bounds;
       const w = maxX - minX;
       const d = maxZ - minZ;
       if (w < MIN_ROOM_M || d < MIN_ROOM_M) continue;
+
+      // ART-004: le stanze crollate e insabbiate non hanno colonnate — sono
+      // proprio l'assenza di ordine architettonico a caratterizzarle.
+      if (!presetFor(room.theme).columns) continue;
 
       const cx = (minX + maxX) / 2;
       const cz = (minZ + maxZ) / 2;
@@ -1239,6 +1245,13 @@ export function createThreeRenderer(
       );
     }
 
+    // Preset dei temi presenti sul piano, risolti una volta sola: la ricerca
+    // per stanza dentro il loop dei bracieri sarebbe ripetuta inutilmente.
+    const { presetFor: resolvePreset } = await import('@/content/RoomThemes.js');
+    const themePresets = new Map(
+      layout.rooms.map((r) => [r.theme, resolvePreset(r.theme)] as const),
+    );
+
     for (const brazier of layout.braziers) {
       const brazierMaterial = new THREE.MeshStandardMaterial({
         color: 0x6a4726,
@@ -1316,7 +1329,12 @@ export function createThreeRenderer(
         0.40, 0.45, 0.40,
       );
 
-      const light = new THREE.PointLight(0xff9b3d, 18, 10, 2);
+      // ART-004: la luce del braciere scala col tema della stanza. Un
+      // santuario è dorato e ampio, una camera infestata è quasi cieca:
+      // è la differenza di luce, più della geometria, a renderle distinte.
+      const room = layout.rooms.find((r) => r.roomId === brazier.roomId);
+      const lightScale = room ? themePresets.get(room.theme)?.lightScale ?? 1 : 1;
+      const light = new THREE.PointLight(0xff9b3d, 18 * lightScale, 10, 2);
       light.visible = false;
       // All'altezza dei carboni (0.84 + un po'), non a metà della vecchia
       // coppa: la luce deve nascere dal fuoco, non dal piede del braciere.

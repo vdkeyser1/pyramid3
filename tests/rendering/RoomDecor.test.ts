@@ -13,6 +13,7 @@ function makeRoom(roomId: number, role: RoomRole, minX: number, minZ: number, ma
     bounds: { minX, minZ, maxX, maxZ },
     center: { x: (minX + maxX) / 2, y: 0, z: (minZ + maxZ) / 2 },
     landmarkId: null,
+    theme: 'PLAIN' as const,
     openings: [],
   };
 }
