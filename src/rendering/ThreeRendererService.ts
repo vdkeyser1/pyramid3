@@ -140,6 +140,7 @@ export function createThreeRenderer(
   let digSiteBeamMaterial: THREE.MeshBasicMaterial | null = null;
   /** Segno blu dipinto dentro l'anello del sito di scavo. */
   let digSiteGlyphMaterial: THREE.MeshBasicMaterial | null = null;
+  let doorwayGlowMaterial: THREE.MeshBasicMaterial | null = null;
   /**
    * Colonne procedurali del piano corrente. Ognuna possiede geometrie e
    * materiali propri: vanno liberate al cambio piano, altrimenti si accumulano
@@ -1183,6 +1184,8 @@ export function createThreeRenderer(
     digSiteBeamMaterial = null;
     digSiteGlyphMaterial?.dispose();
     digSiteGlyphMaterial = null;
+    doorwayGlowMaterial?.dispose();
+    doorwayGlowMaterial = null;
     // Stesso discorso per le colonne procedurali del piano precedente.
     for (const column of columnDisposables) column.dispose();
     columnDisposables.length = 0;
@@ -1527,10 +1530,32 @@ export function createThreeRenderer(
       brazierRoot.add(marker);
     }
 
+    // Hint corridoio raggiungibile: soglia dorata a pavimento sulle porte.
+    // Leggibile senza torcia, non invasivo (opacity bassa, no light cast).
+    if (layout.doorways.length > 0) {
+      doorwayGlowMaterial = new THREE.MeshBasicMaterial({
+        color: 0xc8900a,
+        transparent: true,
+        opacity: 0.18,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      for (const doorway of layout.doorways) {
+        const alongAxis = doorway.axis === 'x';
+        const w = alongAxis ? 0.55 : 1.35;
+        const d = alongAxis ? 1.35 : 0.55;
+        const pad = new THREE.Mesh(new THREE.PlaneGeometry(w, d), doorwayGlowMaterial);
+        pad.rotation.x = -Math.PI / 2;
+        pad.position.set(doorway.center.x, 0.04, doorway.center.z);
+        brazierRoot.add(pad);
+      }
+    }
+
     log.info('Layout floor applicato al renderer', {
       floorId: layout.floorId,
       rooms: layout.rooms.length,
       corridors: layout.corridors.length,
+      doorways: layout.doorways.length,
     });
   }
 

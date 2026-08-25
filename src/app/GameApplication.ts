@@ -1858,6 +1858,15 @@ export function createGameApplication(
               y: 0,
               z: event.position.z,
             });
+            renderer.emitSparks(
+              {
+                x: event.position.x,
+                y: event.position.y + 0.6,
+                z: event.position.z,
+              },
+              0xd4a05a,
+              36,
+            );
           }
           {
             const digPos = eventPosition(event);
