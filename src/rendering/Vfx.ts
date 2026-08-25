@@ -72,7 +72,7 @@ export function createTorchFlame(): TorchFlame {
     core.scale.setScalar(1.0 + flicker * 0.3 * flickerGain);
     flameMaterial.emissiveIntensity = 1.2 + flicker * 0.5 * flickerGain;
     coreMaterial.opacity = 0.85 + flicker * 0.12 * flickerGain;
-    light.intensity = 5.5 * intensity * (0.9 + flicker * 0.2 * flickerGain);
+    light.intensity = 3.2 * intensity * (0.9 + flicker * 0.2 * flickerGain);
   }
 
   return {

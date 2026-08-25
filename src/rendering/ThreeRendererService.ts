@@ -316,7 +316,7 @@ export function createThreeRenderer(
         if (hdri && !disposed) {
           envMapTexture?.dispose();
           scene.environment = hdri.envMap;
-          scene.environmentIntensity = 0.45;
+          scene.environmentIntensity = 0.2;
           envMapTexture = hdri.envMap;
           log.info('HDRI Poly Haven caricato');
         }
@@ -368,7 +368,8 @@ export function createThreeRenderer(
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.2;
+      // Exposure neutra: ambient bassa + torcia moderata (Egyptian Noir).
+      renderer.toneMappingExposure = 1.0;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
     }
 
@@ -381,7 +382,7 @@ export function createThreeRenderer(
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0b0908);
-    scene.fog = new THREE.FogExp2(0x0b0908, 0.0008);
+    scene.fog = new THREE.FogExp2(0x0b0908, 0.0011);
 
     dungeonRoot = new THREE.Group();
     scene.add(dungeonRoot);
@@ -429,7 +430,8 @@ export function createThreeRenderer(
         envScene.add(gold);
         const envMap = pmrem.fromScene(envScene, 0.04).texture;
         scene.environment = envMap;
-        scene.environmentIntensity = 0.55;
+        // IBL debole: riempie i metalli senza lavare l'oscurità delle stanze.
+        scene.environmentIntensity = 0.22;
         envMapTexture = envMap;
         pmrem.dispose();
         log.info('Env map procedurale attiva', { backend });
@@ -521,22 +523,20 @@ export function createThreeRenderer(
       }
     }
 
-    ambientLight = new THREE.AmbientLight(0xffddbb, 0.6);
+    ambientLight = new THREE.AmbientLight(0xffddbb, 0.07);
     scene.add(ambientLight);
 
-    hemiLight = new THREE.HemisphereLight(0x88ccff, 0x442200, 0.5);
+    hemiLight = new THREE.HemisphereLight(0x88ccff, 0x442200, 0.11);
     scene.add(hemiLight);
 
-    // G-18 V2: torcia con halo ampio da "vera fiamma" — SpotLight calda con
-    // penombra morbida + PointLight ambientale secondaria (l'alone che illumina
-    // la stanza intorno al giocatore).
-    torchLight = new THREE.SpotLight(0xffb45e, 100, 45, Math.PI / 3.2, 0.85, 0.6);
+    // G-18: torcia Egyptian Noir — cono stretto, alone vicino (non lava la stanza).
+    torchLight = new THREE.SpotLight(0xffb45e, 42, 28, Math.PI / 3.8, 0.72, 1.1);
     torchLight.visible = false;
     torchLight.position.copy(camera.position);
     torchLight.castShadow = true;
     torchLight.shadow.mapSize.set(1024, 1024);
     torchLight.shadow.camera.near = 0.3;
-    torchLight.shadow.camera.far = 45;
+    torchLight.shadow.camera.far = 28;
     torchLight.shadow.bias = -0.0002;
     scene.add(torchLight);
     scene.add(torchLight.target);
@@ -548,11 +548,11 @@ export function createThreeRenderer(
       shadowMapOptimizer.addSpotLight(torchLight, 256);
     }
 
-    torchAmbientLight = new THREE.PointLight(0xff9a3c, 0, 9, 1.7);
+    torchAmbientLight = new THREE.PointLight(0xff9a3c, 0, 6.5, 2.0);
     torchAmbientLight.visible = false;
     scene.add(torchAmbientLight);
 
-    placedTorchLight = new THREE.PointLight(0xd78e38, 16, 11, 2);
+    placedTorchLight = new THREE.PointLight(0xd78e38, 9, 9, 2);
     placedTorchLight.visible = false;
     placedTorchLight.castShadow = true;
     placedTorchLight.shadow.mapSize.set(512, 512);
@@ -872,7 +872,7 @@ export function createThreeRenderer(
     }
     // Accento: emissive dei landmark critici (usato da buildDungeonLayout)
     const darkness = Math.max(0, Math.min(1, palette.darknessFactor));
-    scene.fog = new THREE.FogExp2(0x0b0908, 0.0008 + darkness * 0.0016);
+    scene.fog = new THREE.FogExp2(0x0b0908, 0.0012 + darkness * 0.002);
     scene.background = new THREE.Color(0x0b0908);
     log.info('Palette piano applicata', { wallHex: palette.wallHex, darknessFactor: darkness });
   }
@@ -893,7 +893,7 @@ export function createThreeRenderer(
     // Shadow map: dimensione scalata per tier
     const shadowSize = Math.max(256, profile.shadowMapSize);
     torchLight.shadow.mapSize.set(shadowSize, shadowSize);
-    torchLight.shadow.camera.far = profile.tier === 'low' ? 30 : 45;
+    torchLight.shadow.camera.far = profile.tier === 'low' ? 20 : 28;
     placedTorchLight.shadow.mapSize.set(Math.min(512, shadowSize), Math.min(512, shadowSize));
 
     // Bloom (solo WebGL2): off su low, ridotto su medium
@@ -1431,7 +1431,7 @@ export function createThreeRenderer(
       // è la differenza di luce, più della geometria, a renderle distinte.
       const room = layout.rooms.find((r) => r.roomId === brazier.roomId);
       const lightScale = room ? themePresets.get(room.theme)?.lightScale ?? 1 : 1;
-      const light = new THREE.PointLight(0xff9b3d, 18 * lightScale, 10, 2);
+      const light = new THREE.PointLight(0xff9b3d, 12 * lightScale, 9, 2);
       light.visible = false;
       // All'altezza dei carboni (0.84 + un po'), non a metà della vecchia
       // coppa: la luce deve nascere dal fuoco, non dal piede del braciere.
@@ -1564,13 +1564,13 @@ export function createThreeRenderer(
         Math.sin(t * 3.1 * Math.PI * 2) * 0.06 * flickerFactor +
         Math.sin(t * 11.3 * Math.PI * 2) * 0.025 * flickerFactor +
         Math.sin(t * 0.13 * Math.PI * 2) * 0.03 * flickerFactor;
-      torchLight.intensity = 85 * flicker;
-      placedTorchLight.intensity = placedTorchLight.visible ? 14 * (0.92 + flicker * 0.16) : 0;
+      torchLight.intensity = 38 * flicker;
+      placedTorchLight.intensity = placedTorchLight.visible ? 8 * (0.92 + flicker * 0.16) : 0;
 
       // Alone caldo della fiamma: segue la camera, respira col flicker.
       torchAmbientLight.visible = true;
       torchAmbientLight.position.copy(camera.position);
-      torchAmbientLight.intensity = 7.5 * (0.85 + flicker * 0.3);
+      torchAmbientLight.intensity = 2.8 * (0.85 + flicker * 0.3);
 
       // G-15: animazione fiamme procedurali
       const litGain = presentation.reduceTorchFlicker ? 0.35 : 1.0;
@@ -1581,7 +1581,7 @@ export function createThreeRenderer(
       // V6: god ray della torcia accesa — visibile e pulsante col flicker
       if (torchBeam) {
         torchBeam.mesh.visible = true;
-        torchBeam.material.opacity = 0.05 + 0.05 * flicker;
+        torchBeam.material.opacity = 0.03 + 0.03 * flicker;
       }
     } else {
       torchAmbientLight.visible = false;
@@ -2023,9 +2023,10 @@ export function createThreeRenderer(
     );
     const backgroundColor = palette.backgroundColor;
     scene.background = new THREE.Color(backgroundColor);
-    scene.fog = new THREE.FogExp2(backgroundColor, settings.assistedLight ? 0.00022 : 0.00055);
-    ambientLight.intensity = settings.assistedLight ? 1.0 : 0.6;
-    hemiLight.intensity = settings.assistedLight ? 0.8 : 0.5;
+    scene.fog = new THREE.FogExp2(backgroundColor, settings.assistedLight ? 0.00045 : 0.0011);
+    // Senza torcia: penombra. Con assistedLight: leggibilità, non daylight.
+    ambientLight.intensity = settings.assistedLight ? 0.22 : 0.07;
+    hemiLight.intensity = settings.assistedLight ? 0.18 : 0.11;
     floorMaterial.color.setHex(palette.floorColor);
     wallMaterial.color.setHex(palette.wallColor);
     doorMaterial.color.setHex(palette.doorColor);
@@ -2327,7 +2328,7 @@ export function createThreeRenderer(
         if (light) {
           light.position.set(state.x, state.y + 0.72, state.z);
           light.visible = state.lit;
-          light.intensity = state.lit ? (state.refillUsed ? 10 : 18) : 0;
+          light.intensity = state.lit ? (state.refillUsed ? 7 : 12) : 0;
         }
         if (material) {
           material.emissiveIntensity = state.lit ? (state.refillUsed ? 0.7 : 1.05) : 0.22;
