@@ -56,18 +56,10 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     description: 'Simbolo del dio sole nascente. Concede rigenerazione HP +2/s per 30s.',
     source: 'smithsonian',
   },
-  // ── Kenney Mini Dungeon CC0 ───────────────────────────────────────────────
-  {
-    id: 'ruins_column',
-    url: '/models/ruins/column.glb',
-    displayName: 'Colonna di Pietra',
-    loreName: null,
-    rarity: 'common',
-    interactable: false,
-    scale: 1.0,
-    description: null,
-    source: 'kenney',
-  },
+  // ── Filler pietra neutro (Kenney Mini Dungeon CC0) ────────────────────────
+  // Solo silhouette accettabili in tomba: anfora / detriti / scala.
+  // RIMOSSI: barrel, gate, chest, banner, wood-* (leggono da taverna/dungeon).
+  // Colonnate in scena = EgyptianColumn procedurale, non `ruins_column`.
   {
     id: 'ruins_pot',
     url: '/models/ruins/pot.glb',
@@ -76,7 +68,7 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     rarity: 'common',
     interactable: false,
     scale: 0.7,
-    description: null,
+    description: 'Anfora funeraria — filler di corridoio.',
     source: 'kenney',
   },
   {
@@ -91,39 +83,6 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     source: 'kenney',
   },
   {
-    id: 'ruins_barrel',
-    url: '/models/ruins/barrel.glb',
-    displayName: 'Botte',
-    loreName: null,
-    rarity: 'common',
-    interactable: false,
-    scale: 0.6,
-    description: null,
-    source: 'kenney',
-  },
-  {
-    id: 'ruins_gate',
-    url: '/models/ruins/gate.glb',
-    displayName: 'Portale di Pietra',
-    loreName: null,
-    rarity: 'common',
-    interactable: false,
-    scale: 1.15,
-    description: 'Arco d\'ingresso delle gallerie funerarie.',
-    source: 'kenney',
-  },
-  {
-    id: 'ruins_trap',
-    url: '/models/ruins/trap.glb',
-    displayName: 'Trappola a Lame',
-    loreName: null,
-    rarity: 'uncommon',
-    interactable: false,
-    scale: 0.9,
-    description: null,
-    source: 'kenney',
-  },
-  {
     id: 'ruins_stairs',
     url: '/models/ruins/stairs.glb',
     displayName: 'Scala di Pietra',
@@ -134,40 +93,7 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     description: null,
     source: 'kenney',
   },
-  {
-    id: 'ruins_wall_opening',
-    url: '/models/ruins/wall-opening.glb',
-    displayName: 'Apertura Muraria',
-    loreName: null,
-    rarity: 'common',
-    interactable: false,
-    scale: 1.0,
-    description: 'Modulo muro con passaggio — soglia di corridoio.',
-    source: 'kenney',
-  },
-  {
-    id: 'ruins_wall',
-    url: '/models/ruins/wall.glb',
-    displayName: 'Modulo Muro',
-    loreName: null,
-    rarity: 'common',
-    interactable: false,
-    scale: 1.0,
-    description: null,
-    source: 'kenney',
-  },
-  {
-    id: 'ruins_chest',
-    url: '/models/ruins/chest.glb',
-    displayName: 'Cassa di Pietra',
-    loreName: null,
-    rarity: 'uncommon',
-    interactable: true,
-    scale: 0.85,
-    description: null,
-    source: 'kenney',
-  },
-  // ── KayKit CC0 ───────────────────────────────────────────────────────────
+  // ── KayKit CC0 (bauli loot — non moduli ambiente) ─────────────────────────
   {
     id: 'chest_gold',
     url: '/assets/props/chest_gold.glb',
@@ -190,11 +116,8 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     description: null,
     source: 'kaykit',
   },
-  // NOTA: le colonne e i pilastri KayKit (`column.glb`, `pillar_decorated.glb`)
-  // sono stati rimossi da questo registro. Vengono dal pack KayKit Dungeon,
-  // decorato con armi e scudi di fantasy medievale: fuori tema in una piramide
-  // egizia. Le colonnate usano `ruins_column` (Kenney CC0), geometricamente
-  // neutra. I bauli restano perché non hanno marcatori stilistici evidenti.
+  // NOTA: KayKit Dungeon (colonne/scudi) e Kenney barrel/gate/banner sono fuori
+  // tema — questa è una PIRAMIDE egizia, non un dungeon medievale.
 ] as const;
 
 /** Lookup veloce per id. */

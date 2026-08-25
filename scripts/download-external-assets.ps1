@@ -1,185 +1,160 @@
 <#
 .SYNOPSIS
-  Download asset esterni CC0 per La Piramide Perduta.
+  Asset esterni per La Piramide Perduta — PIRAMIDE egizia, non dungeon medievale.
 
 .DESCRIPTION
-  - AUTOMATICO: Kenney Mini Dungeon (ZIP diretto) → public/models/ruins/
-  - MANUALE: Quaternius Ultimate Modular Ruins (Drive/lightbox, nessun URL stabile)
-    → scarica dal browser, poi riesegui con -QuaterniusZip <path>
+  Identità: Egyptian Noir / piramide funeraria.
+  NON usare pack Quaternius "Modular Dungeons" / "Ultimate Modular Ruins"
+  (tag Medieval) né props Kenney da taverna (barrel, banner, wood, chest, gate).
+
+  Già in gioco (egizi):
+    public/assets/landmarks/  — Anubi, obelisco, sarcofago, geroglifici (ToxSam CC0)
+    public/assets/enemies/    — scarabeo, mummia, cobra, Sobek, …
+    Colonne procedurali papiriformi (EgyptianColumn.ts)
+    Soglie procedurali (stipiti + architrave dorato)
+
+  Questo script:
+    -Opzionale: -KenneyStoneOnly → solo pot/rocks/stones/stairs/dirt/floor
+    -Importa cartelle/zip EGIZIE se le fornisci (-EgyptianFolder / -EgyptianZip)
 
 .EXAMPLE
-  pwsh -File scripts/download-external-assets.ps1
+  pwsh -File scripts/download-external-assets.ps1 -KenneyStoneOnly
 
 .EXAMPLE
-  pwsh -File scripts/download-external-assets.ps1 -QuaterniusZip "$env:USERPROFILE\Downloads\Ultimate_Modular_Ruins.zip"
+  pwsh -File scripts/download-external-assets.ps1 -SkipKenney `
+    -EgyptianFolder "$env:USERPROFILE\Downloads\egyptian-glbs"
 #>
 [CmdletBinding()]
 param(
+  [string]$EgyptianZip = '',
+  [string]$EgyptianFolder = '',
+  # Alias legacy
   [string]$QuaterniusZip = '',
   [string]$QuaterniusFolder = '',
   [switch]$SkipKenney,
+  [switch]$KenneyStoneOnly,
   [switch]$Optimize
 )
 
 $ErrorActionPreference = 'Stop'
 $Root = Resolve-Path (Join-Path $PSScriptRoot '..')
 $RuinsDir = Join-Path $Root 'public\models\ruins'
+$EgyptianDest = Join-Path $Root 'public\models\egyptian'
 $Tmp = Join-Path $env:TEMP 'lpp-asset-dl'
-New-Item -ItemType Directory -Force -Path $RuinsDir, $Tmp | Out-Null
+New-Item -ItemType Directory -Force -Path $RuinsDir, $EgyptianDest, $Tmp | Out-Null
+
+if ($QuaterniusZip -and -not $EgyptianZip) { $EgyptianZip = $QuaterniusZip }
+if ($QuaterniusFolder -and -not $EgyptianFolder) { $EgyptianFolder = $QuaterniusFolder }
 
 function Write-Step([string]$msg) {
   Write-Host ""
   Write-Host "==> $msg" -ForegroundColor Cyan
 }
 
-# ── 1) Kenney Mini Dungeon (CC0) — URL diretto stabile ───────────────────────
-if (-not $SkipKenney) {
-  Write-Step 'Kenney Mini Dungeon (CC0) — download automatico'
+Write-Host @"
+
+  La Piramide Perduta — asset EGIZI
+  ─────────────────────────────────
+  NO:  Quaternius Modular Dungeons / Ultimate Modular Ruins (Medieval)
+  NO:  Kenney barrel, banner, wood, chest, gate (taverna/dungeon)
+  SI:  ToxSam landmarks già in public/assets/landmarks/
+  SI:  Poly Pizza / Sketchfab filtrati egyptian + CC0/CC-BY
+  SI:  colonne + soglie procedurali egizie
+
+"@ -ForegroundColor DarkYellow
+
+# ── 1) Kenney: solo pietra neutra (esplicito -KenneyStoneOnly) ───────────────
+if ($KenneyStoneOnly -and -not $SkipKenney) {
+  Write-Step 'Kenney Mini Dungeon — SOLO moduli pietra neutri (filler)'
   $kenneyUrl = 'https://kenney.nl/media/pages/assets/mini-dungeon/6cd72dc849-1785314274/kenney_mini-dungeon.zip'
   $kenneyZip = Join-Path $Tmp 'kenney_mini-dungeon.zip'
   $kenneyExtract = Join-Path $Tmp 'kenney_mini-dungeon'
-
   Write-Host "GET $kenneyUrl"
   Invoke-WebRequest -Uri $kenneyUrl -OutFile $kenneyZip -UseBasicParsing
   if (Test-Path $kenneyExtract) { Remove-Item $kenneyExtract -Recurse -Force }
   Expand-Archive -Path $kenneyZip -DestinationPath $kenneyExtract -Force
-
   $glbSrc = Join-Path $kenneyExtract 'Models\GLB format'
-  if (-not (Test-Path $glbSrc)) {
-    throw "GLB non trovati in $glbSrc — struttura pack cambiata?"
-  }
-
-  # Solo moduli architettonici / props neutri (niente armi/orc/shield fantasy).
-  $wanted = @(
-    'barrel.glb','column.glb','gate.glb','pot.glb','rocks.glb','stones.glb','trap.glb',
-    'stairs.glb','wall.glb','wall-opening.glb','wall-half.glb','wall-narrow.glb',
-    'floor.glb','floor-detail.glb','dirt.glb','wood-structure.glb','wood-support.glb',
-    'table.glb','banner.glb','key.glb','coin.glb','chest.glb'
-  )
-
+  $wanted = @('pot.glb','rocks.glb','stones.glb','column.glb','stairs.glb','dirt.glb','floor.glb','floor-detail.glb')
   $copied = 0
   foreach ($name in $wanted) {
     $from = Join-Path $glbSrc $name
-    if (-not (Test-Path $from)) {
-      Write-Host "  skip (assente): $name" -ForegroundColor DarkYellow
-      continue
-    }
+    if (-not (Test-Path $from)) { continue }
     Copy-Item -Force $from (Join-Path $RuinsDir $name)
     $copied++
     Write-Host "  + $name"
   }
-  Write-Host "Kenney: $copied file → $RuinsDir" -ForegroundColor Green
+  Write-Host "Kenney pietra: $copied file → $RuinsDir" -ForegroundColor Green
+} elseif ($SkipKenney) {
+  Write-Step 'Kenney — SKIP'
 } else {
-  Write-Step 'Kenney Mini Dungeon — SKIP'
+  Write-Step 'Kenney dungeon pack — non scaricato (fuori tema piramide)'
+  Write-Host "Per filler pietra neutro: -KenneyStoneOnly" -ForegroundColor DarkGray
 }
 
-# ── 2) Quaternius Ultimate Modular Ruins (CC0) — import se path valido ───────
-Write-Step 'Quaternius Ultimate Modular Ruins (CC0)'
+# ── 2) Import pack EGIZIO fornito dall'utente ────────────────────────────────
+Write-Step 'Import asset egizi (ToxSam / Poly Pizza egyptian / Sketchfab CC0)'
 
-$quaterniusDest = Join-Path $Root 'public\models\quaternius-ruins'
-New-Item -ItemType Directory -Force -Path $quaterniusDest | Out-Null
-
-if ($QuaterniusZip) {
-  if (-not (Test-Path -LiteralPath $QuaterniusZip)) {
-    throw @"
-QuaterniusZip non trovato:
-  $QuaterniusZip
-
-Devi prima scaricare il pack nel browser, poi passare il path REALE del file.
-Esempi tipici dopo il download:
-  Get-ChildItem `$env:USERPROFILE\Downloads -Filter *.zip | Sort-Object LastWriteTime -Descending | Select-Object -First 10
-
-Poi:
-  pwsh -File scripts\download-external-assets.ps1 -SkipKenney -QuaterniusZip "`$env:USERPROFILE\Downloads\<nome-reale>.zip"
-"@
+if ($EgyptianZip) {
+  if (-not (Test-Path -LiteralPath $EgyptianZip)) {
+    throw "EgyptianZip non trovato: $EgyptianZip"
   }
-  Write-Host "Import da ZIP: $QuaterniusZip"
-  $qx = Join-Path $Tmp 'quaternius-ruins-extract'
+  Write-Host "Import da ZIP: $EgyptianZip"
+  $qx = Join-Path $Tmp 'egyptian-extract'
   if (Test-Path $qx) { Remove-Item $qx -Recurse -Force }
-  Expand-Archive -LiteralPath $QuaterniusZip -DestinationPath $qx -Force
-  $models = @(Get-ChildItem $qx -Recurse -Include *.glb,*.gltf,*.fbx,*.obj -File)
-  Write-Host "Trovati $($models.Count) modelli (glb/gltf/fbx/obj)."
+  Expand-Archive -LiteralPath $EgyptianZip -DestinationPath $qx -Force
+  $models = @(Get-ChildItem $qx -Recurse -Include *.glb,*.gltf -File)
   $n = 0
   foreach ($m in $models) {
-    if ($m.Extension -in '.glb', '.gltf') {
-      Copy-Item -Force $m.FullName (Join-Path $quaterniusDest $m.Name)
-      $n++
-    }
-  }
-  if ($n -eq 0) {
-    $fbxCount = @($models | Where-Object { $_.Extension -in '.fbx', '.obj' }).Count
-    Write-Host @"
-
-ATTENZIONE: nessun .glb/.gltf nello ZIP ($fbxCount file FBX/OBJ).
-Ultimate Modular Ruins ufficiale è FBX/OBJ/Blend — serve conversione Blender:
-  Import FBX → Export glTF Binary (.glb) → cartella $quaterniusDest
-
-Alternativa già in GLB: Poly Pizza Modular Dungeons
-  https://poly.pizza/bundle/Modular-Dungeons-Pack-HaFPqhAp3w → Download GLTF
-  poi: -QuaterniusZip o -QuaterniusFolder sul pack scaricato
-
-"@ -ForegroundColor Yellow
-  } else {
-    Write-Host "Quaternius: $n GLB/GLTF → $quaterniusDest" -ForegroundColor Green
-  }
-} elseif ($QuaterniusFolder) {
-  if (-not (Test-Path -LiteralPath $QuaterniusFolder)) {
-    throw @"
-QuaterniusFolder non trovato:
-  $QuaterniusFolder
-
-Verifica il path (D:\Downloads non esiste su questa macchina).
-Elenca Downloads:
-  Get-ChildItem `$env:USERPROFILE\Downloads | Sort-Object LastWriteTime -Descending | Select-Object -First 20
-"@
-  }
-  Write-Host "Import da cartella: $QuaterniusFolder"
-  $models = @(Get-ChildItem -LiteralPath $QuaterniusFolder -Recurse -Include *.glb,*.gltf -File)
-  $n = 0
-  foreach ($m in $models) {
-    Copy-Item -Force $m.FullName (Join-Path $quaterniusDest $m.Name)
+    Copy-Item -Force $m.FullName (Join-Path $EgyptianDest $m.Name)
     $n++
   }
   if ($n -eq 0) {
-    Write-Host "Nessun .glb/.gltf in $QuaterniusFolder (solo FBX? converti in Blender)." -ForegroundColor Yellow
+    Write-Host "Nessun .glb/.gltf nello ZIP. Se è FBX (Quaternius Ruins medievale): pack SBAGLIATO per la piramide." -ForegroundColor Yellow
   } else {
-    Write-Host "Quaternius: $n file → $quaterniusDest" -ForegroundColor Green
+    Write-Host "Egizi: $n GLB/GLTF → $EgyptianDest" -ForegroundColor Green
+    Write-Host "Registra i path in ArtifactRegistry / content/assets.ts per usarli in scena." -ForegroundColor DarkGray
   }
+} elseif ($EgyptianFolder) {
+  if (-not (Test-Path -LiteralPath $EgyptianFolder)) {
+    throw "EgyptianFolder non trovato: $EgyptianFolder"
+  }
+  $models = @(Get-ChildItem -LiteralPath $EgyptianFolder -Recurse -Include *.glb,*.gltf -File)
+  $n = 0
+  foreach ($m in $models) {
+    Copy-Item -Force $m.FullName (Join-Path $EgyptianDest $m.Name)
+    $n++
+  }
+  Write-Host "Egizi: $n file → $EgyptianDest" -ForegroundColor Green
 } else {
   Write-Host @"
 
-MANUALE — scarica PRIMA, poi riesegui con il path reale:
+Fonti EGIZIE consigliate (non dungeon):
 
-  1) https://quaternius.com/packs/ultimatemodularruins.html → Download
-     (oppure Drive: https://drive.google.com/drive/folders/1ETp2ldaHaP0BkS4FBmkT-g9Yf88T_cIX)
+  • Già nel gioco: public/assets/landmarks/ (Anubi, obelisco, sarcofago, geroglifici)
+  • ToxSam Egyptian temples (CC0):
+    https://github.com/ToxSam/open-source-3D-assets
+  • Poly Pizza search "egyptian" / "anubis" / "obelisk" / "pyramid" (filtra CC0/CC-BY)
+  • OpenGameArt ancient-egypt texture/geroglifici (già usati in textures/)
 
-  2) Meglio per GLB pronti:
-     https://poly.pizza/bundle/Modular-Dungeons-Pack-HaFPqhAp3w → Download GLTF
+  NON scaricare:
+  • quaternius.com/.../modulardungeon.html
+  • quaternius.com/.../ultimatemodularruins.html  (tag: Medieval)
+  • poly.pizza Modular Dungeons Pack
 
-  3) Trova il file:
-     Get-ChildItem `$env:USERPROFILE\Downloads -Filter *.zip | Sort LastWriteTime -Descending
-
-  4) Importa (salta Kenney se già fatto):
-     pwsh -File scripts\download-external-assets.ps1 -SkipKenney -QuaterniusZip "`$env:USERPROFILE\Downloads\<nome>.zip"
+  Dopo aver scaricato GLB egizi:
+    pwsh -File scripts\download-external-assets.ps1 -SkipKenney `
+      -EgyptianFolder "`$env:USERPROFILE\Downloads\<cartella-egizia>"
 
 "@ -ForegroundColor Yellow
 }
 
-# ── 3) Ottimizzazione opzionale ──────────────────────────────────────────────
 if ($Optimize) {
   Write-Step 'Ottimizzazione meshopt (scripts/optimize-assets.mjs)'
   Push-Location $Root
-  try {
-    node scripts/optimize-assets.mjs
-  } finally {
-    Pop-Location
-  }
+  try { node scripts/optimize-assets.mjs } finally { Pop-Location }
 }
 
 Write-Step 'Fatto'
-Write-Host "Ruins attuali:"
-Get-ChildItem $RuinsDir -Filter *.glb | Sort-Object Name | ForEach-Object {
-  '{0,8:N0}  {1}' -f $_.Length, $_.Name
-}
-Write-Host ""
-Write-Host "Attribuzione: Kenney.nl (CC0). Quaternius CC0 se importato." -ForegroundColor DarkGray
+Write-Host "Landmarks egizi: public/assets/landmarks/"
+Write-Host "Import egizi:     $EgyptianDest"
+Write-Host "Filler pietra:    $RuinsDir (solo pot/rocks/… se -KenneyStoneOnly)"

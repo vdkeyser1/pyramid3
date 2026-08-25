@@ -1067,25 +1067,12 @@ export function createThreeRenderer(
     shovelPickupGroup = group;
   }
 
-  // W-5 / task-9: posiziona props 3D CC0 nelle stanze.
-  // Stanze ≥ 8×8: colonne/pilastri KayKit agli angoli.
-  // Stanze più piccole: colonne Kenney Dungeon.
   /**
-   * Dispone le colonne nelle camere secondo lo schema della sala ipostila
-   * egizia: due file parallele che fiancheggiano l'asse centrale, lasciando
-   * libero il passaggio in mezzo (Karnak, Luxor).
-   *
-   * Sostituisce il piazzamento precedente ai 4 angoli di ogni stanza, che era
-   * meccanico e usava i prop del pack KayKit Dungeon — colonne con armi e
-   * scudi, fantasy medievale fuori tema per una piramide egizia.
-   *
-   * Usa solo `ruins_column` (Kenney CC0), che è geometricamente neutra.
+   * Colonnata ipostila egizia (due file lungo l'asse, passaggio centrale).
+   * Mesh procedurali papiriformi — niente pack dungeon/Kenney.
    */
   async function placeRoomColumns(layout: FloorSceneLayout, root: THREE.Group): Promise<void> {
-    // Colonne generate proceduralmente invece dell'asset `ruins_column`:
-    // quello era un cilindro bianco liscio con capitello classicheggiante,
-    // che in scena leggeva come colonna greco-romana. Queste hanno fusto
-    // scanalato, capitello papiriforme/lotiforme/palmiforme e bande dipinte.
+    // Colonne generate proceduralmente (EgyptianColumn): fusto scanalato,
     const { createEgyptianColumn } = await import('@/rendering/EgyptianColumn.js');
     if (disposed) return;
 
@@ -1150,49 +1137,65 @@ export function createThreeRenderer(
   }
 
   /**
-   * A1: porta GLB CC0 (`ruins_gate`) sulle soglie — silhouette di arco
-   * funerario. Se il file manca, nessun crash (solo glow a pavimento).
+   * Soglie egizie procedurali (stipiti + architrave dorato) — niente gate
+   * Kenney Mini Dungeon (silhouette fantasy medievale, fuori tema piramide).
    */
-  async function placeDoorwayGates(
+  function placeEgyptianDoorways(
     layout: FloorSceneLayout,
     root: THREE.Group,
-  ): Promise<void> {
+  ): void {
     if (layout.doorways.length === 0) return;
-    const { loadArtifact } = await import('@/rendering/ArtifactLoader.js');
-    const { getArtifactById } = await import('@/content/ArtifactRegistry.js');
-    if (disposed) return;
 
-    const def = getArtifactById('ruins_gate');
-    if (!def) return;
+    const stone = new THREE.MeshStandardMaterial({
+      color: 0x8a7350,
+      roughness: 0.92,
+      metalness: 0.04,
+      emissive: 0x1a1006,
+      emissiveIntensity: 0.08,
+    });
+    const gold = new THREE.MeshStandardMaterial({
+      color: 0xc8900a,
+      roughness: 0.45,
+      metalness: 0.35,
+      emissive: 0x4a3010,
+      emissiveIntensity: 0.35,
+    });
 
-    const prototype = await loadArtifact(def);
-    if (!prototype) return;
-    // Re-check dopo await: `disposed` può cambiare durante il load GLB.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutazione async
-    if (disposed) return;
+    const jambGeo = new THREE.BoxGeometry(0.28, 2.4, 0.42);
+    const lintelGeo = new THREE.BoxGeometry(2.2, 0.28, 0.48);
+    const bandGeo = new THREE.BoxGeometry(2.05, 0.06, 0.5);
 
     for (const doorway of layout.doorways) {
-      const gate = prototype.clone(true);
-      gate.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
-      });
-      // Asse 'x' = passaggio lungo X → arco perpendicolare (ruota 90°).
+      const group = new THREE.Group();
       const yaw = doorway.axis === 'x' ? Math.PI / 2 : 0;
-      gate.position.set(doorway.center.x, 0, doorway.center.z);
-      gate.rotation.y = yaw;
-      root.add(gate);
+
+      const left = new THREE.Mesh(jambGeo, stone);
+      left.position.set(-0.95, 1.2, 0);
+      left.castShadow = true;
+      left.receiveShadow = true;
+      const right = new THREE.Mesh(jambGeo, stone);
+      right.position.set(0.95, 1.2, 0);
+      right.castShadow = true;
+      right.receiveShadow = true;
+      const lintel = new THREE.Mesh(lintelGeo, stone);
+      lintel.position.set(0, 2.45, 0);
+      lintel.castShadow = true;
+      lintel.receiveShadow = true;
+      const band = new THREE.Mesh(bandGeo, gold);
+      band.position.set(0, 2.45, 0.02);
+
+      group.add(left, right, lintel, band);
+      group.position.set(doorway.center.x, 0, doorway.center.z);
+      group.rotation.y = yaw;
+      root.add(group);
     }
   }
 
   /**
-   * A1: props ruins CC0 (anfore, detriti, botti) lungo i muri delle stanze
-   * non critiche. Densità deterministica da roomId — fallback silenzioso se
-   * i GLB mancano.
+   * Props di riempimento tomba: solo anfora/detriti di pietra (neutri).
+   * Esclusi barrel/chest/banner Kenney — leggono come taverna, non cripta.
    */
-  async function placeRuinsFloorProps(
+  async function placeTombFloorProps(
     layout: FloorSceneLayout,
     root: THREE.Group,
   ): Promise<void> {
@@ -1201,7 +1204,7 @@ export function createThreeRenderer(
     const { hash32 } = await import('@/procedural/Hash32.js');
     if (disposed) return;
 
-    const propIds = ['ruins_pot', 'ruins_rocks', 'ruins_barrel', 'ruins_chest'] as const;
+    const propIds = ['ruins_pot', 'ruins_rocks'] as const;
     const prototypes = new Map<string, THREE.Group>();
     for (const id of propIds) {
       const def = getArtifactById(id);
@@ -1430,12 +1433,11 @@ export function createThreeRenderer(
       log.warn('Props stanza speciale non disponibili', { error: String(error) });
     }
 
-    // W-5 / task-9: piazza props GLB KayKit nelle stanze grandi.
+    // Colonne egizie procedurali + soglie funerarie (niente pack dungeon).
     void placeRoomColumns(layout, dungeonRoot);
-    // A1: archi/gate CC0 sulle soglie (complementa il glow a pavimento).
-    void placeDoorwayGates(layout, dungeonRoot);
-    // A1: anfore/detriti/botti CC0 lungo i muri.
-    void placeRuinsFloorProps(layout, dungeonRoot);
+    placeEgyptianDoorways(layout, dungeonRoot);
+    // Anfore/detriti di pietra (neutri) — no barrel/chest medievali.
+    void placeTombFloorProps(layout, dungeonRoot);
 
     // ART-005: tromba di scale sotto l'uscita, quando il piano ne ha una.
     // L'ultimo piano ha un'uscita vera, non una scala: lì non va costruita.
