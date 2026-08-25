@@ -1187,6 +1187,83 @@ export function createThreeRenderer(
     }
   }
 
+  /**
+   * A1: props ruins CC0 (anfore, detriti, botti) lungo i muri delle stanze
+   * non critiche. Densità deterministica da roomId — fallback silenzioso se
+   * i GLB mancano.
+   */
+  async function placeRuinsFloorProps(
+    layout: FloorSceneLayout,
+    root: THREE.Group,
+  ): Promise<void> {
+    const { loadArtifact } = await import('@/rendering/ArtifactLoader.js');
+    const { getArtifactById } = await import('@/content/ArtifactRegistry.js');
+    const { hash32 } = await import('@/procedural/Hash32.js');
+    if (disposed) return;
+
+    const propIds = ['ruins_pot', 'ruins_rocks', 'ruins_barrel'] as const;
+    const prototypes = new Map<string, THREE.Group>();
+    for (const id of propIds) {
+      const def = getArtifactById(id);
+      if (!def) continue;
+      const model = await loadArtifact(def);
+      if (model) prototypes.set(id, model);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutazione async
+    if (disposed || prototypes.size === 0) return;
+
+    const skipRoles = new Set(['ENTRY', 'EXIT', 'MAP', 'TREASURE', 'FORGE', 'STAIR']);
+    const MARGIN = 1.6;
+
+    for (const room of layout.rooms) {
+      if (skipRoles.has(room.role)) continue;
+      const { minX, maxX, minZ, maxZ } = room.bounds;
+      const w = maxX - minX;
+      const d = maxZ - minZ;
+      if (w < 6 || d < 6) continue;
+
+      const roomSeed = Number(room.roomId) || 0;
+      const count = 1 + (hash32(roomSeed, 0x71) % 3); // 1..3 props
+      for (let i = 0; i < count; i++) {
+        const h = hash32(roomSeed, 0x90 + i);
+        const ids = [...prototypes.keys()];
+        const pick = ids[h % ids.length];
+        if (!pick) continue;
+        const proto = prototypes.get(pick);
+        if (!proto) continue;
+
+        const wall = h % 4;
+        const t = 0.2 + ((h >>> 8) % 61) / 100; // 0.20..0.80
+        let x: number;
+        let z: number;
+        if (wall === 0) {
+          z = minZ + MARGIN;
+          x = minX + t * (maxX - minX);
+        } else if (wall === 1) {
+          z = maxZ - MARGIN;
+          x = minX + t * (maxX - minX);
+        } else if (wall === 2) {
+          x = minX + MARGIN;
+          z = minZ + t * (maxZ - minZ);
+        } else {
+          x = maxX - MARGIN;
+          z = minZ + t * (maxZ - minZ);
+        }
+
+        const instance = proto.clone(true);
+        instance.position.set(x, 0, z);
+        instance.rotation.y = ((h >>> 16) % 8) * (Math.PI / 4);
+        instance.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        root.add(instance);
+      }
+    }
+  }
+
   async function rebuildFloorLayout(layout: FloorSceneLayout): Promise<void> {
     // Swap texture muri: arenaria chiara nei livelli bassi, scura in cripta.
     const useDeepWall = layout.floorIndex >= 5;
@@ -1357,6 +1434,8 @@ export function createThreeRenderer(
     void placeRoomColumns(layout, dungeonRoot);
     // A1: archi/gate CC0 sulle soglie (complementa il glow a pavimento).
     void placeDoorwayGates(layout, dungeonRoot);
+    // A1: anfore/detriti/botti CC0 lungo i muri.
+    void placeRuinsFloorProps(layout, dungeonRoot);
 
     // ART-005: tromba di scale sotto l'uscita, quando il piano ne ha una.
     // L'ultimo piano ha un'uscita vera, non una scala: lì non va costruita.
