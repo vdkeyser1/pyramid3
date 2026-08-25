@@ -14,12 +14,18 @@
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
 const loader = new GLTFLoader();
 // gltf-transform (scripts/optimize-assets.mjs) comprime i GLB con Meshopt:
 // senza decoder il GLTFLoader rifiuta i file compressi. Il modulo carica il
 // .wasm in automatico (Vite lo copia in dist/ via import.meta.url).
 loader.setMeshoptDecoder(MeshoptDecoder);
+
+// GAME-ART-010 / R-05: decoder Draco per GLB compressi (public/draco/).
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('/draco/');
+loader.setDRACOLoader(dracoLoader);
 
 /** Cache delle Promise: path → modello caricato (o null su errore). */
 const cache = new Map<string, Promise<GLTF | null>>();

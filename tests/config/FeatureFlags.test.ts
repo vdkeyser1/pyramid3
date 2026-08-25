@@ -19,6 +19,7 @@ describe('FeatureFlags', () => {
     expect(flags.kaEcho).toBe(true);
     expect(flags.meshLod).toBe(false);
     expect(flags.shadowMapOpt).toBe(true);
+    expect(flags.instancedFloors).toBe(true);
   });
 
   it('nonDefaultFlags elenca solo i delta', () => {

@@ -8,6 +8,11 @@ import {
   buildBladePendulumMesh, buildDartLauncherMesh, buildLeverMesh,
   buildPressurePlateMesh, buildRollingBoulderMesh, buildSealMesh,
 } from '@/rendering/TrapMesh.js';
+import {
+  createInstancedDungeonGroup,
+  type TileTransform,
+} from '@/rendering/InstancedDungeonRenderer.js';
+import { resolveFeatureFlags } from '@/config/FeatureFlags.js';
 import type { RoomBounds as CullBounds } from '@/rendering/FrustumCuller.js';
 import type {
   FloorSceneCorridor,
@@ -154,6 +159,31 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
   // addRoom / addCorridor so the FrustumCuller can cull per-room.
   let _roomGroup: THREE.Group | null = null;
 
+  // GAME-ART-003/010: pavimenti batched in un solo InstancedMesh.
+  const useInstancedFloors = resolveFeatureFlags().instancedFloors;
+  const floorTiles: TileTransform[] = [];
+  const instancedFloors = useInstancedFloors
+    ? createInstancedDungeonGroup(floorMaterial, wallMaterial, wallMaterial)
+    : null;
+  if (instancedFloors) {
+    dungeonRoot.add(instancedFloors.root);
+  }
+
+  function addFloorSlab(width: number, depth: number, x: number, z: number): void {
+    createStaticBox(x, -FLOOR_THICKNESS_M / 2, z, width / 2, FLOOR_THICKNESS_M / 2, depth / 2);
+    if (instancedFloors) {
+      floorTiles.push({
+        x,
+        y: 0,
+        z,
+        scaleX: width,
+        scaleZ: depth,
+      });
+      return;
+    }
+    addDungeonBox(width, FLOOR_THICKNESS_M, depth, x, -FLOOR_THICKNESS_M / 2, z, floorMaterial);
+  }
+
   function addDungeonBox(
     width: number,
     height: number,
@@ -222,23 +252,7 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
   function addRoom(room: FloorSceneRoom): void {
     const width = room.bounds.maxX - room.bounds.minX;
     const depth = room.bounds.maxZ - room.bounds.minZ;
-    addDungeonBox(
-      width,
-      FLOOR_THICKNESS_M,
-      depth,
-      room.center.x,
-      -FLOOR_THICKNESS_M / 2,
-      room.center.z,
-      floorMaterial,
-    );
-    createStaticBox(
-      room.center.x,
-      -FLOOR_THICKNESS_M / 2,
-      room.center.z,
-      width / 2,
-      FLOOR_THICKNESS_M / 2,
-      depth / 2,
-    );
+    addFloorSlab(width, depth, room.center.x, room.center.z);
 
     const halfWidth = width / 2;
     const halfDepth = depth / 2;
@@ -305,8 +319,7 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
     const centerZ = (corridor.bounds.minZ + corridor.bounds.maxZ) / 2;
     const wallY = WALL_HEIGHT_M / 2;
 
-    addDungeonBox(width, FLOOR_THICKNESS_M, depth, centerX, -FLOOR_THICKNESS_M / 2, centerZ, floorMaterial);
-    createStaticBox(centerX, -FLOOR_THICKNESS_M / 2, centerZ, width / 2, FLOOR_THICKNESS_M / 2, depth / 2);
+    addFloorSlab(width, depth, centerX, centerZ);
 
     // Soffitto del corridoio: più basso di quello delle camere, e in pietra
     // (mai stellato — il cielo dipinto è riservato alle sale funerarie).
@@ -635,6 +648,10 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
   }
   if (layout.leverPassage) {
     addLeverPassage(layout.leverPassage);
+  }
+
+  if (instancedFloors) {
+    instancedFloors.setFloorTiles(floorTiles);
   }
 
   return cullBounds;

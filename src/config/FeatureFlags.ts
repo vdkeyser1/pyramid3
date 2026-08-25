@@ -26,6 +26,8 @@ export interface FeatureFlags {
   readonly meshLod: boolean;
   /** GAME-ART-010: aggiornamento condizionale shadow map torcia. */
   readonly shadowMapOpt: boolean;
+  /** GAME-ART-003/010: pavimenti a InstancedMesh (1 draw call). */
+  readonly instancedFloors: boolean;
 }
 
 type MutableFeatureFlags = {
@@ -40,6 +42,7 @@ export const DEFAULT_FEATURE_FLAGS: Readonly<FeatureFlags> = {
   directorAntifrustration: true,
   meshLod: true,
   shadowMapOpt: true,
+  instancedFloors: true,
 } as const;
 
 /**
