@@ -825,6 +825,57 @@ export function createGameApplication(
    * dove cercare, e il combattimento risultava incomprensibile.
    * Il filtro per stanza rivelata sta in buildRuntimeMinimap.
    */
+  function buildThreatChips(): import('@/ui/HUD.js').HUDThreatChip[] {
+    const chips: import('@/ui/HUD.js').HUDThreatChip[] = [];
+
+    if (sliceState && sliceState.target.hp > 0) {
+      chips.push({
+        label: sliceState.target.name,
+        kind: 'guardian',
+        awake: sliceState.target.awakened,
+        hpRatio: sliceState.target.maxHp <= 0
+          ? 0
+          : sliceState.target.hp / sliceState.target.maxHp,
+      });
+    }
+    if (mummyState && mummyState.hp > 0) {
+      chips.push({
+        label: mummyState.name,
+        kind: 'mummy',
+        awake: mummyState.runtime.state !== 'SLEEPING',
+        hpRatio: mummyState.maxHp <= 0 ? 0 : mummyState.hp / mummyState.maxHp,
+      });
+    }
+    const aliveScarabs = scarabStates.filter((s) => s.hp > 0);
+    if (aliveScarabs.length > 0) {
+      const primary = aliveScarabs[0];
+      if (primary) {
+        const hpSum = aliveScarabs.reduce((acc, s) => acc + s.hp, 0);
+        const maxSum = aliveScarabs.reduce((acc, s) => acc + s.maxHp, 0);
+        chips.push({
+          label: aliveScarabs.length > 1
+            ? `Scarabei ×${aliveScarabs.length}`
+            : primary.name,
+          kind: 'scarab',
+          awake: aliveScarabs.some((s) => s.awakened),
+          hpRatio: maxSum <= 0 ? 0 : hpSum / maxSum,
+        });
+      }
+    }
+    if (genericEnemyState && genericEnemyState.hp > 0) {
+      chips.push({
+        label: genericEnemyState.def.name,
+        kind: 'generic',
+        awake: genericEnemyState.runtime.state !== 'DORMANT',
+        hpRatio: genericEnemyState.def.baseHp <= 0
+          ? 0
+          : genericEnemyState.hp / genericEnemyState.def.baseHp,
+      });
+    }
+
+    return chips.slice(0, 4);
+  }
+
   function buildMinimapEnemies(): RuntimeMinimapEnemyInput[] {
     const result: RuntimeMinimapEnemyInput[] = [];
 
@@ -1459,6 +1510,7 @@ export function createGameApplication(
   }
 
   function showFloorInscription(seed: number, floorIndex: number, theme?: string): void {
+    audio.setAmbienceFloor(floorIndex);
     if (theme) {
       hud.showMessage(`Piano ${floorIndex} — ${theme}`, 2400);
     }
@@ -3298,6 +3350,7 @@ export function createGameApplication(
           enemies: buildMinimapEnemies(),
         })
         : null,
+      threats: buildThreatChips(),
     });
 
     // G-15: respiro del buio — si intensifica con la darkness accumulata e

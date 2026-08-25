@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import type { FloorSceneLayout, FloorSceneRoom } from '@/world/FloorSceneLayout.js';
 import { hash32 } from '@/procedural/Hash32.js';
+import { generateInscription } from '@/content/inscriptions.js';
 
 const CRITICAL_ROLES: readonly string[] = ['ENTRY', 'EXIT', 'MAP', 'TREASURE', 'FORGE'];
 
@@ -252,7 +253,7 @@ export function decorateRooms(options: DecorateRoomsOptions): DecorateRoomsResul
   for (let i = 0; i < Math.min(candlePlacements.length, MAX_CANDLE_LIGHTS); i++) {
     const p = candlePlacements[i];
     if (!p) continue;
-    const light = new THREE.PointLight(0xff9b30, 5, 3.5, 2);
+    const light = new THREE.PointLight(0xff9b30, 1.6, 3.2, 2);
     light.position.set(p.x, p.y + 0.35, p.z);
     dungeonRoot.add(light);
   }
@@ -265,6 +266,11 @@ export function decorateRooms(options: DecorateRoomsOptions): DecorateRoomsResul
     if (w >= 8 && d >= 8) {
       placeStatues(room, dungeonRoot, statueMat, Number(room.roomId) * 17 + 3);
       placeWallPanels(room, dungeonRoot, panelFrameMat, panelInsetMat, panelLineMat, Number(room.roomId) * 31 + 7);
+      placeInscriptionPlaques(
+        room,
+        dungeonRoot,
+        layout.floorIndex * 997 + Number(room.roomId) * 41,
+      );
     }
   }
 
@@ -498,4 +504,86 @@ function placeWallPanels(
       }
     }
   }
+}
+
+/**
+ * B-05: lastra murale con iscrizione seed-based (CanvasTexture).
+ * Una sola per stanza ampia — varietà senza costare draw call a iosa.
+ */
+function placeInscriptionPlaques(
+  room: FloorSceneRoom,
+  dungeonRoot: THREE.Group,
+  seed: number,
+): void {
+  if (typeof document === 'undefined') return;
+
+  const inscription = generateInscription(Math.abs(seed) % 2_147_483_647);
+  if (inscription.glyphs.length === 0) return;
+
+  const h = hash32(seed, 0xb01d);
+  if ((h % 5) === 0) return; // ~20% stanze senza lastra
+
+  const { minX, maxX, minZ, maxZ } = room.bounds;
+  const wallPick = h % 4;
+  const t = 0.4 + ((h >>> 8) % 21) / 100; // 0.40..0.60
+  let px: number;
+  let pz: number;
+  let ry: number;
+  if (wallPick === 0) {
+    pz = minZ + 0.04;
+    px = minX + t * (maxX - minX);
+    ry = 0;
+  } else if (wallPick === 1) {
+    pz = maxZ - 0.04;
+    px = minX + t * (maxX - minX);
+    ry = Math.PI;
+  } else if (wallPick === 2) {
+    px = minX + 0.04;
+    pz = minZ + t * (maxZ - minZ);
+    ry = Math.PI / 2;
+  } else {
+    px = maxX - 0.04;
+    pz = minZ + t * (maxZ - minZ);
+    ry = -Math.PI / 2;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  ctx.fillStyle = '#1a1208';
+  ctx.fillRect(0, 0, 256, 128);
+  ctx.strokeStyle = '#8C6A28';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(6, 6, 244, 116);
+  ctx.fillStyle = '#c8900a';
+  ctx.font = '26px "Noto Sans Egyptian Hieroglyphs", "Segoe UI Historic", serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const line = inscription.glyphs.slice(0, 10);
+  ctx.fillText(line, 128, 64);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex,
+    color: 0xffffff,
+    roughness: 0.85,
+    metalness: 0.05,
+    emissive: 0x4a3010,
+    emissiveIntensity: 0.22,
+    emissiveMap: tex,
+  });
+
+  const plaque = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.45), mat);
+  const nx = Math.sin(ry);
+  const nz = Math.cos(ry);
+  plaque.position.set(px + nx * 0.03, 1.35, pz + nz * 0.03);
+  plaque.rotation.y = ry;
+  plaque.receiveShadow = true;
+  dungeonRoot.add(plaque);
 }

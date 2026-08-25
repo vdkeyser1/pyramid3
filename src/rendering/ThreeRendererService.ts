@@ -896,12 +896,15 @@ export function createThreeRenderer(
     torchLight.shadow.camera.far = profile.tier === 'low' ? 20 : 28;
     placedTorchLight.shadow.mapSize.set(Math.min(512, shadowSize), Math.min(512, shadowSize));
 
-    // Bloom (solo WebGL2): off su low, ridotto su medium
+    // Bloom (solo WebGL2): off su low, ridotto su medium, pieno su high.
+    // Threshold più alto su medium → meno bloom su superfici litte (torch).
     if (bloomPass) {
       const strength = profile.usePostFx
-        ? (profile.tier === 'medium' ? 0.38 : 0.55)
+        ? (profile.tier === 'medium' ? 0.32 : profile.tier === 'high' ? 0.55 : 0)
         : 0;
       bloomPass.strength = strength;
+      bloomPass.threshold = profile.tier === 'medium' ? 0.55 : 0.42;
+      bloomPass.radius = profile.tier === 'medium' ? 0.4 : 0.55;
       if (composer) {
         composer.setSize(canvas.clientWidth, canvas.clientHeight);
       }
@@ -909,7 +912,7 @@ export function createThreeRenderer(
 
     // SSAO/bloom (solo WebGL2): il profilo low salta il composer in render()
     // (SSAOPass non ha un toggle runtime semplice e ri-crearlo è costoso).
-    _qualityWantsPostFx = profile.usePostFx;
+    _qualityWantsPostFx = profile.usePostFx && profile.tier !== 'low';
     postFxEnabled = _qualityWantsPostFx && !_motionReduced;
     if (ssaoPass && composer) {
       // Mantieni i target dell'SSAO allineati al canvas corrente

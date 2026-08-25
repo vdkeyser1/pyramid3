@@ -8,7 +8,9 @@ import { getProceduralCueProfile } from '@/audio/ProceduralCueLibrary.js';
 import {
   AMBIENCE_PRESET,
   ambienceGainForDarkness,
+  gainMultiplierForFloor,
   lfoDepthForDarkness,
+  stoneRumbleGainForFloor,
 } from '@/audio/AmbiencePreset.js';
 import { MUSIC_PRESET, type MusicState } from '@/audio/MusicPreset.js';
 import { AUDIO_ASSET_MAP } from '@/audio/AudioAssetLibrary.js';
@@ -38,6 +40,8 @@ export interface AudioEngine {
   setBusGain(bus: AudioBus, gain: number): void;
   /** G-18: livello di oscurità 0..1 → drone ambientale procedurale. */
   setAmbienceLevel(darkness01: number): void;
+  /** B-05: scala il drone con la profondità del piano (rombo di pietra). */
+  setAmbienceFloor(floorIndex: number): void;
   /** G-19: musica adattiva — crossfade tra EXPLORE/TENSION/COMBAT. */
   setMusicState(state: MusicState): void;
   /** G-19/Kenney: carica gli asset audio reali (fire-and-forget). */
@@ -182,6 +186,7 @@ export function createAudioEngine(): AudioEngine {
     lfoGain: GainNode | null;
   } | null = null;
   let currentAmbienceLevel = 0;
+  let ambienceFloorIndex = 1;
 
   function buildAmbience(ctxRef: AudioContext): void {
     const ambienceBus = buses.get('ambience') ?? buses.get('master');
@@ -493,6 +498,36 @@ export function createAudioEngine(): AudioEngine {
     log.info('Asset audio reali caricati', { cues: audioBuffers.size });
   }
 
+  function applyAmbienceLevel(darkness01: number): void {
+    if (!ctx || !unlocked || disposed || !ambienceNodes) return;
+    const clamped = Math.max(0, Math.min(1, darkness01));
+    if (Math.abs(clamped - currentAmbienceLevel) < 0.01) return;
+
+    currentAmbienceLevel = clamped;
+    const floorMult = gainMultiplierForFloor(ambienceFloorIndex);
+    const targetGain = ambienceGainForDarkness(clamped) * floorMult;
+    const lfoDepth = lfoDepthForDarkness(clamped);
+    const stoneLayer = AMBIENCE_PRESET.layers[3];
+    const stoneMax = stoneLayer?.gainMax ?? 0;
+    const stoneTarget = stoneRumbleGainForFloor(ambienceFloorIndex, stoneMax) * clamped;
+
+    const now = ctx.currentTime;
+    // Transizione morbida (≈1.5s) — niente tagli bruschi
+    ambienceNodes.gains.forEach((gain, index) => {
+      // Layer 4 (rombo di pietra) = osc 6 e 7: gain dedicato per floor.
+      const isStone = index >= 6;
+      const dest = isStone ? stoneTarget : targetGain;
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(dest, now + 1.5);
+    });
+    if (ambienceNodes.lfoGain) {
+      ambienceNodes.lfoGain.gain.cancelScheduledValues(now);
+      ambienceNodes.lfoGain.gain.setValueAtTime(ambienceNodes.lfoGain.gain.value, now);
+      ambienceNodes.lfoGain.gain.linearRampToValueAtTime(lfoDepth, now + 1.5);
+    }
+  }
+
   return {
     async unlock(): Promise<void> {
       if (unlocked || disposed) return;
@@ -681,26 +716,15 @@ export function createAudioEngine(): AudioEngine {
     },
 
     setAmbienceLevel(darkness01: number): void {
-      if (!ctx || !unlocked || disposed || !ambienceNodes) return;
-      const clamped = Math.max(0, Math.min(1, darkness01));
-      if (Math.abs(clamped - currentAmbienceLevel) < 0.01) return;
+      applyAmbienceLevel(darkness01);
+    },
 
-      currentAmbienceLevel = clamped;
-      const targetGain = ambienceGainForDarkness(clamped);
-      const lfoDepth = lfoDepthForDarkness(clamped);
-
-      const now = ctx.currentTime;
-      // Transizione morbida (≈1.5s) — niente tagli bruschi
-      for (const gain of ambienceNodes.gains) {
-        gain.gain.cancelScheduledValues(now);
-        gain.gain.setValueAtTime(gain.gain.value, now);
-        gain.gain.linearRampToValueAtTime(targetGain, now + 1.5);
-      }
-      if (ambienceNodes.lfoGain) {
-        ambienceNodes.lfoGain.gain.cancelScheduledValues(now);
-        ambienceNodes.lfoGain.gain.setValueAtTime(ambienceNodes.lfoGain.gain.value, now);
-        ambienceNodes.lfoGain.gain.linearRampToValueAtTime(lfoDepth, now + 1.5);
-      }
+    setAmbienceFloor(floorIndex: number): void {
+      ambienceFloorIndex = Math.max(1, Math.min(10, Math.floor(floorIndex)));
+      // Forza ricalcolo immediato con il nuovo moltiplicatore di piano.
+      const lvl = currentAmbienceLevel;
+      currentAmbienceLevel = -1;
+      applyAmbienceLevel(Math.max(0, lvl));
     },
 
     setMusicState(state: MusicState): void {

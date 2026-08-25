@@ -43,6 +43,19 @@ export interface HUDState {
   floorText: string;
   /** View-model della minimappa. */
   minimap: RuntimeMinimapState | null;
+  /**
+   * Chip minaccia in alto a destra (sotto minimappa): nemici vivi con HP.
+   * Vuoto se nessun nemico attivo.
+   */
+  threats: readonly HUDThreatChip[];
+}
+
+/** Chip nemico per la striscia threat HUD. */
+export interface HUDThreatChip {
+  readonly label: string;
+  readonly kind: 'guardian' | 'mummy' | 'scarab' | 'generic';
+  readonly awake: boolean;
+  readonly hpRatio: number;
 }
 
 export interface HUD {
@@ -158,6 +171,7 @@ export function createHUD(): HUD {
   let weaponNameEl: HTMLElement | null = null;
   let weaponSlotsEl: HTMLElement | null = null;
   let minimapEl: HTMLElement | null = null;
+  let threatStripEl: HTMLElement | null = null;
   let messageEl: HTMLElement | null = null;
   let soundIndicatorEl: HTMLElement | null = null;
   let hitmarkerEl: HTMLElement | null = null;
@@ -209,6 +223,7 @@ export function createHUD(): HUD {
     progressText: 'Nessuna minaccia tracciata',
     floorText: 'Piano non inizializzato',
     minimap: null,
+    threats: [],
   };
 
   function clamp(value: number, min: number, max: number): number {
@@ -520,6 +535,16 @@ export function createHUD(): HUD {
     `;
     root.appendChild(minimapEl);
 
+    // ── Threat strip (sotto minimappa): chip nemici vivi ──
+    threatStripEl = document.createElement('div');
+    threatStripEl.setAttribute('aria-label', 'Minacce vicine');
+    threatStripEl.style.cssText = `
+      position: absolute; top: 164px; right: 16px;
+      width: 140px; display: flex; flex-direction: column; gap: 4px;
+      pointer-events: none; z-index: 11;
+    `;
+    root.appendChild(threatStripEl);
+
     soundIndicatorEl = document.createElement('div');
     soundIndicatorEl.style.cssText = `
       position: absolute; top: 166px; right: 16px;
@@ -717,6 +742,48 @@ export function createHUD(): HUD {
     }
   }
 
+  function renderThreatStrip(threats: readonly HUDThreatChip[]): void {
+    if (!threatStripEl) return;
+    if (threats.length === 0) {
+      threatStripEl.innerHTML = '';
+      if (soundIndicatorEl) soundIndicatorEl.style.top = '164px';
+      return;
+    }
+
+    const kindColor: Record<HUDThreatChip['kind'], string> = {
+      guardian: '#C77D3A',
+      mummy: '#8B7355',
+      scarab: '#2E8B6B',
+      generic: '#9A5A38',
+    };
+
+    threatStripEl.innerHTML = threats.slice(0, 4).map((t) => {
+      const pct = Math.round(Math.max(0, Math.min(1, t.hpRatio)) * 100);
+      const accent = kindColor[t.kind];
+      const opacity = t.awake ? '1' : '0.45';
+      const pulse = t.awake ? 'box-shadow:0 0 4px rgba(200,120,40,0.35);' : '';
+      return `<div style="
+        display:flex;align-items:center;gap:6px;opacity:${opacity};
+        background:rgba(11,9,8,0.88);border:1px solid #3A2A1A;border-radius:3px;
+        padding:3px 6px;${pulse}
+      ">
+        <span style="
+          width:8px;height:8px;border-radius:1px;background:${accent};flex-shrink:0;
+        "></span>
+        <span style="flex:1;font-size:10px;color:#C8B89A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          ${t.label}
+        </span>
+        <span style="
+          width:36px;height:4px;background:#1A1512;border-radius:1px;overflow:hidden;flex-shrink:0;
+        "><span style="display:block;height:100%;width:${pct}%;background:${accent};"></span></span>
+      </div>`;
+    }).join('');
+
+    // Sposta l'indicatore sonoro sotto i chip.
+    const stripH = Math.min(4, threats.length) * 22 + 8;
+    if (soundIndicatorEl) soundIndicatorEl.style.top = `${164 + stripH}px`;
+  }
+
   function renderMinimap(minimap: RuntimeMinimapState | null): void {
     if (!minimapEl) return;
     if (!minimap || minimap.rooms.length === 0) {
@@ -909,6 +976,7 @@ export function createHUD(): HUD {
 
       updateWeaponSlots(state.weaponSlots, state.currentWeaponSlot);
       renderMinimap(state.minimap);
+      renderThreatStrip(state.threats);
     },
 
     applyPresentation(settings): void {
@@ -1113,6 +1181,7 @@ export function createHUD(): HUD {
       weaponNameEl = null;
       weaponSlotsEl = null;
       minimapEl = null;
+      threatStripEl = null;
       messageEl = null;
       soundIndicatorEl = null;
       hitmarkerEl = null;
