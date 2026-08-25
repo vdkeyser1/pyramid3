@@ -8,7 +8,7 @@
  *            renderer di stanze (DungeonTileAssembler).
  *
  * Tipi di stanza speciale:
- *   ARMORY    — arsenale con rack di armi e supporto al combattimento
+ *   ARMORY    — arsenale del tempio (supporti khopesh/lance, scudi a disco)
  *   TREASURY  — tesoreria con reliquie e trappole protettive
  *   SHRINE    — santuario con altare per offerte e upgrade HP
  *   VAULT     — cripta sigillata con boss minori e loot raro

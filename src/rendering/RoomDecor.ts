@@ -34,7 +34,7 @@ export interface DecorateRoomsOptions {
 
 const DECOR_TYPES = [
   'jar', 'amphora', 'candle', 'column', 'sandpile',
-  'bones', 'skeleton', 'rug', 'altar', 'obelisk', 'floorGlyph', 'scarabTile',
+  'bones', 'skeleton', 'offeringBowl', 'altar', 'obelisk', 'floorGlyph', 'scarabTile',
 ] as const;
 type DecorType = (typeof DECOR_TYPES)[number];
 
@@ -64,8 +64,9 @@ function geometryFor(type: DecorType): THREE.BufferGeometry {
     case 'skeleton':
       geometry = new THREE.CapsuleGeometry(0.14, 0.7, 4, 8);
       break;
-    case 'rug':
-      geometry = new THREE.CylinderGeometry(0.85, 0.95, 0.03, 10);
+    case 'offeringBowl':
+      // Coppa d'offerta funeraria (non tappeto da taverna).
+      geometry = new THREE.CylinderGeometry(0.22, 0.14, 0.16, 10);
       break;
     case 'altar':
       geometry = new THREE.BoxGeometry(1.1, 0.28, 0.65);
@@ -159,9 +160,9 @@ export function decorateRooms(options: DecorateRoomsOptions): DecorateRoomsResul
   const boneMaterial = new THREE.MeshStandardMaterial({
     color: 0xcfc4a8, roughness: 0.9, metalness: 0.0,
   });
-  const rugMaterial = new THREE.MeshStandardMaterial({
-    color: 0x5a2a18, roughness: 0.98, metalness: 0.0,
-    emissive: 0x2a0d06, emissiveIntensity: 0.2,
+  const offeringMaterial = new THREE.MeshStandardMaterial({
+    color: 0x8a5a28, roughness: 0.55, metalness: 0.35,
+    emissive: 0x3a2008, emissiveIntensity: 0.25,
   });
   const altarMaterial = new THREE.MeshStandardMaterial({
     color: 0x3a2e22, roughness: 0.75, metalness: 0.15,
@@ -224,7 +225,7 @@ export function decorateRooms(options: DecorateRoomsOptions): DecorateRoomsResul
     const geometry = geometryFor(type);
     const material = materialFor(
       type, clayMaterial, sandMaterial, candleMaterial,
-      wallMaterial, boneMaterial, rugMaterial,
+      wallMaterial, boneMaterial, offeringMaterial,
       altarMaterial, obeliskMaterial, glyphMaterial, scarabMaterial,
     );
     const instanced = new THREE.InstancedMesh(geometry, material, placements.length);
@@ -239,7 +240,7 @@ export function decorateRooms(options: DecorateRoomsOptions): DecorateRoomsResul
     }
 
     instanced.instanceMatrix.needsUpdate = true;
-    instanced.castShadow = type !== 'rug' && type !== 'floorGlyph' && type !== 'scarabTile';
+    instanced.castShadow = type !== 'offeringBowl' && type !== 'floorGlyph' && type !== 'scarabTile';
     instanced.receiveShadow = true;
     dungeonRoot.add(instanced);
 
@@ -266,6 +267,7 @@ export function decorateRooms(options: DecorateRoomsOptions): DecorateRoomsResul
     if (w >= 8 && d >= 8) {
       placeStatues(room, dungeonRoot, statueMat, Number(room.roomId) * 17 + 3);
       placeWallPanels(room, dungeonRoot, panelFrameMat, panelInsetMat, panelLineMat, Number(room.roomId) * 31 + 7);
+      placeFalseDoors(room, dungeonRoot, panelFrameMat, panelInsetMat, Number(room.roomId) * 53 + 11);
       placeInscriptionPlaques(
         room,
         dungeonRoot,
@@ -288,11 +290,11 @@ function collectRoomPlacements(
   if (width < 5 || depth < 5) return;
 
   const pool: readonly DecorType[] = moodIndex === 1
-    ? ['bones', 'bones', 'skeleton', 'rug', 'candle', 'jar', 'altar', 'obelisk']
+    ? ['bones', 'bones', 'skeleton', 'offeringBowl', 'candle', 'jar', 'altar', 'obelisk']
     : moodIndex === 2
       ? ['jar', 'jar', 'amphora', 'column', 'candle', 'sandpile', 'floorGlyph', 'scarabTile']
       : ['jar', 'amphora', 'candle', 'column', 'sandpile', 'bones', 'skeleton',
-         'rug', 'altar', 'obelisk', 'floorGlyph', 'scarabTile'];
+         'offeringBowl', 'altar', 'obelisk', 'floorGlyph', 'scarabTile'];
 
   const slotCountBase = width >= 12 && depth >= 12 ? 6
     : width >= 10 && depth >= 10 ? 4
@@ -318,7 +320,7 @@ function collectRoomPlacements(
         : type === 'amphora'        ? 0.28
           : type === 'skeleton'     ? 0.18
             : type === 'altar'      ? 0.14
-              : type === 'rug'      ? 0.015
+              : type === 'offeringBowl' ? 0.08
                 : type === 'floorGlyph'  ? 0.011
                   : type === 'scarabTile' ? 0.006
                     : 0.16;
@@ -326,7 +328,7 @@ function collectRoomPlacements(
     const list = placementsByType.get(type) ?? [];
     list.push({
       type, x, y, z, rotationY,
-      lying: type === 'skeleton' || type === 'rug',
+      lying: type === 'skeleton',
     });
     placementsByType.set(type, list);
   }
@@ -339,7 +341,7 @@ function materialFor(
   candleMaterial: THREE.Material,
   wallMaterial: THREE.Material,
   boneMaterial: THREE.Material,
-  rugMaterial: THREE.Material,
+  offeringMaterial: THREE.Material,
   altarMaterial: THREE.Material,
   obeliskMaterial: THREE.Material,
   glyphMaterial: THREE.Material,
@@ -352,7 +354,7 @@ function materialFor(
     case 'sandpile':   return sandMaterial;
     case 'bones':
     case 'skeleton':   return boneMaterial;
-    case 'rug':        return rugMaterial;
+    case 'offeringBowl': return offeringMaterial;
     case 'altar':      return altarMaterial;
     case 'obelisk':    return obeliskMaterial;
     case 'floorGlyph': return glyphMaterial;
@@ -504,6 +506,78 @@ function placeWallPanels(
       }
     }
   }
+}
+
+/**
+ * Falsa porta funeraria su una parete della stanza (firma tipica delle tombe).
+ * Al massimo una per stanza — evita di competere con i pannelli geroglifici.
+ */
+function placeFalseDoors(
+  room: FloorSceneRoom,
+  dungeonRoot: THREE.Group,
+  frameM: THREE.Material,
+  insetM: THREE.Material,
+  seed: number,
+): void {
+  const h = hash32(seed, 0xfd00);
+  if ((h % 3) !== 0) return; // ~33% delle stanze ampie
+
+  const { minX, maxX, minZ, maxZ } = room.bounds;
+  const wallPick = h % 4;
+  const t = 0.45 + ((h >>> 8) % 11) / 100;
+  let px: number;
+  let pz: number;
+  let ry: number;
+  if (wallPick === 0) {
+    pz = minZ + 0.05;
+    px = minX + t * (maxX - minX);
+    ry = 0;
+  } else if (wallPick === 1) {
+    pz = maxZ - 0.05;
+    px = minX + t * (maxX - minX);
+    ry = Math.PI;
+  } else if (wallPick === 2) {
+    px = minX + 0.05;
+    pz = minZ + t * (maxZ - minZ);
+    ry = Math.PI / 2;
+  } else {
+    px = maxX - 0.05;
+    pz = minZ + t * (maxZ - minZ);
+    ry = -Math.PI / 2;
+  }
+
+  const nx = Math.sin(ry);
+  const nz = Math.cos(ry);
+  const cy = 1.15;
+
+  const outer = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.35, 0.1), frameM);
+  outer.position.set(px, cy, pz);
+  outer.rotation.y = ry;
+  outer.castShadow = true;
+  outer.receiveShadow = true;
+  dungeonRoot.add(outer);
+
+  const mid = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.95, 0.08), insetM);
+  mid.position.set(px + nx * 0.04, cy - 0.05, pz + nz * 0.04);
+  mid.rotation.y = ry;
+  mid.receiveShadow = true;
+  dungeonRoot.add(mid);
+
+  const inner = new THREE.Mesh(new THREE.BoxGeometry(0.75, 1.5, 0.06), frameM);
+  inner.position.set(px + nx * 0.08, cy - 0.12, pz + nz * 0.08);
+  inner.rotation.y = ry;
+  dungeonRoot.add(inner);
+
+  const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.25, 8), insetM);
+  roll.position.set(px + nx * 0.12, cy - 0.12, pz + nz * 0.12);
+  roll.rotation.y = ry;
+  dungeonRoot.add(roll);
+
+  const cavetto = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.16, 0.18), frameM);
+  cavetto.position.set(px + nx * 0.02, cy + 1.2, pz + nz * 0.02);
+  cavetto.rotation.y = ry;
+  cavetto.castShadow = true;
+  dungeonRoot.add(cavetto);
 }
 
 /**
