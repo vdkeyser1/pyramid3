@@ -5,7 +5,7 @@
  */
 
 export type ArtifactRarity = 'common' | 'uncommon' | 'rare' | 'legendary';
-export type ArtifactSource = 'smithsonian' | 'quaternius' | 'sketchfab-cc0' | 'kaykit' | 'procedural';
+export type ArtifactSource = 'smithsonian' | 'quaternius' | 'sketchfab-cc0' | 'kaykit' | 'kenney' | 'procedural';
 
 export interface ArtifactDef {
   readonly id: string;
@@ -66,7 +66,7 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     interactable: false,
     scale: 1.0,
     description: null,
-    source: 'quaternius',
+    source: 'kenney',
   },
   {
     id: 'ruins_pot',
@@ -77,7 +77,7 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     interactable: false,
     scale: 0.7,
     description: null,
-    source: 'quaternius',
+    source: 'kenney',
   },
   {
     id: 'ruins_rocks',
@@ -88,7 +88,7 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     interactable: false,
     scale: 1.0,
     description: null,
-    source: 'quaternius',
+    source: 'kenney',
   },
   {
     id: 'ruins_barrel',
@@ -99,7 +99,7 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     interactable: false,
     scale: 0.6,
     description: null,
-    source: 'quaternius',
+    source: 'kenney',
   },
   {
     id: 'ruins_gate',
@@ -110,7 +110,7 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     interactable: false,
     scale: 1.15,
     description: 'Arco d\'ingresso delle gallerie funerarie.',
-    source: 'quaternius',
+    source: 'kenney',
   },
   {
     id: 'ruins_trap',
@@ -121,7 +121,51 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     interactable: false,
     scale: 0.9,
     description: null,
-    source: 'quaternius',
+    source: 'kenney',
+  },
+  {
+    id: 'ruins_stairs',
+    url: '/models/ruins/stairs.glb',
+    displayName: 'Scala di Pietra',
+    loreName: null,
+    rarity: 'common',
+    interactable: false,
+    scale: 1.0,
+    description: null,
+    source: 'kenney',
+  },
+  {
+    id: 'ruins_wall_opening',
+    url: '/models/ruins/wall-opening.glb',
+    displayName: 'Apertura Muraria',
+    loreName: null,
+    rarity: 'common',
+    interactable: false,
+    scale: 1.0,
+    description: 'Modulo muro con passaggio — soglia di corridoio.',
+    source: 'kenney',
+  },
+  {
+    id: 'ruins_wall',
+    url: '/models/ruins/wall.glb',
+    displayName: 'Modulo Muro',
+    loreName: null,
+    rarity: 'common',
+    interactable: false,
+    scale: 1.0,
+    description: null,
+    source: 'kenney',
+  },
+  {
+    id: 'ruins_chest',
+    url: '/models/ruins/chest.glb',
+    displayName: 'Cassa di Pietra',
+    loreName: null,
+    rarity: 'uncommon',
+    interactable: true,
+    scale: 0.85,
+    description: null,
+    source: 'kenney',
   },
   // ── KayKit CC0 ───────────────────────────────────────────────────────────
   {

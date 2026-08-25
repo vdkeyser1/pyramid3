@@ -54,6 +54,20 @@ Fonte: https://ambientcg.com (Lennart Demes)
 | `public/textures/stone_roughness.jpg` | Rock 064 (Roughness) |
 | `public/textures/stone_ambientocclusion.jpg` | Rock 064 (AmbientOcclusion) |
 
+## Ambiente dungeon / ruins (CC0)
+
+Fonte: https://kenney.nl/assets/mini-dungeon — pack **Mini Dungeon** (CC0)
+
+| File nel gioco | Note |
+|---|---|
+| `public/models/ruins/*.glb` | barrel, column, gate, pot, rocks, stones, trap, stairs, wall*, floor*, dirt, wood-*, table, banner, key, coin, chest |
+
+Download automatico: `pwsh -File scripts/download-external-assets.ps1`
+
+**Quaternius Ultimate Modular Ruins** (CC0) — solo FBX/OBJ/Blend sul sito ufficiale; download manuale
+(`https://quaternius.com/packs/ultimatemodularruins.html` o Drive mirror) poi:
+`pwsh -File scripts/download-external-assets.ps1 -QuaterniusZip <path.zip>`
+
 ## Audio (CC0)
 
 Fonte: https://kenney.nl — pack "Impact Sounds", "Interface Sounds" e "RPG Audio" (CC0)
@@ -83,4 +97,5 @@ Fonte: https://opengameart.org/content/ancient-egypt-0 (CC0) — fogli
 > Crocodile, Skeleton by Poly by Google (via Poly Pizza, CC-BY 3.0);
 > Colossus by Darwin Yamamoto (via Poly Pizza, CC-BY 3.0).
 > Texture: ambientCG (CC0) di Lennart Demes; geroglifici "ancient-egypt-0" (CC0) da OpenGameArt.
+> Ambiente dungeon: Kenney Mini Dungeon (CC0). Quaternius packs CC0 se importati.
 > Audio: Kenney.nl (CC0) — Impact Sounds, Interface Sounds & RPG Audio.

@@ -1201,7 +1201,7 @@ export function createThreeRenderer(
     const { hash32 } = await import('@/procedural/Hash32.js');
     if (disposed) return;
 
-    const propIds = ['ruins_pot', 'ruins_rocks', 'ruins_barrel'] as const;
+    const propIds = ['ruins_pot', 'ruins_rocks', 'ruins_barrel', 'ruins_chest'] as const;
     const prototypes = new Map<string, THREE.Group>();
     for (const id of propIds) {
       const def = getArtifactById(id);
