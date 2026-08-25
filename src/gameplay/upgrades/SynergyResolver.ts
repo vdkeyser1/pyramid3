@@ -371,6 +371,8 @@ export function mapLiveIdsToSynergyInventory(input: {
 
   for (const id of input.weaponIds ?? []) {
     if (id === 'khopesh') items.push(item('WEAPON_KHOPESH'));
+    if (id === 'staff') items.push(item('WEAPON_RA_STAFF'));
+    if (id === 'cobra' || id === 'dagger') items.push(item('WEAPON_COBRA_DAGGER'));
   }
 
   for (const name of input.graftNames ?? []) {
@@ -378,8 +380,17 @@ export function mapLiveIdsToSynergyInventory(input: {
     if (lower.includes('scarab') || lower.includes('scarabeo')) {
       items.push(item('AMULET_SCARAB'));
     }
-    if (lower.includes('ankh') || lower.includes('anubi')) {
+    if (lower.includes('ankh') || lower.includes('anubi') || lower.includes('khepri')) {
       items.push(item('ANKH_RESURRECTION'));
+      if (lower.includes('khepri') || lower.includes('framment')) {
+        items.push(item('ANKH_FRAGMENT_KHEPRI'));
+      }
+    }
+    if (lower.includes('lapis') || lower.includes('lapislazzuli')) {
+      items.push(item('GEM_LAPIS_RA'));
+    }
+    if (lower.includes('sobek') || lower.includes('scaglia')) {
+      items.push(item('SCALE_SOBEK'));
     }
   }
 
@@ -407,5 +418,46 @@ export function synergyHpRegenPerKill(effects: readonly SynergyEffect[]): number
   return filterEffectsByKind(effects, 'HP_REGEN_PER_KILL').reduce(
     (acc, e) => acc + e.value,
     0,
+  );
+}
+
+/** Somma INVINCIBILITY_FRAMES (può essere negativa). */
+export function synergyIFrameDelta(effects: readonly SynergyEffect[]): number {
+  return filterEffectsByKind(effects, 'INVINCIBILITY_FRAMES').reduce(
+    (acc, e) => acc + e.value,
+    0,
+  );
+}
+
+/** Proiettili / swing extra (somma PROJECTILE_COUNT). */
+export function synergyProjectileCount(effects: readonly SynergyEffect[]): number {
+  return Math.max(
+    0,
+    Math.floor(
+      filterEffectsByKind(effects, 'PROJECTILE_COUNT').reduce((acc, e) => acc + e.value, 0),
+    ),
+  );
+}
+
+/** True se almeno un effetto TRAP_IMMUNITY con value > 0. */
+export function synergyHasTrapImmunity(effects: readonly SynergyEffect[]): boolean {
+  return filterEffectsByKind(effects, 'TRAP_IMMUNITY').some((e) => e.value > 0);
+}
+
+/** Bonus danno vs boss (somma frazioni, es. 0.25 → +25%). */
+export function synergyBossDamageBonus(effects: readonly SynergyEffect[]): number {
+  return filterEffectsByKind(effects, 'BOSS_DAMAGE_BONUS').reduce(
+    (acc, e) => acc + e.value,
+    0,
+  );
+}
+
+/** Oggetti/oro extra per drop (somma LOOT_QUANTITY_BONUS). */
+export function synergyLootBonus(effects: readonly SynergyEffect[]): number {
+  return Math.max(
+    0,
+    Math.floor(
+      filterEffectsByKind(effects, 'LOOT_QUANTITY_BONUS').reduce((acc, e) => acc + e.value, 0),
+    ),
   );
 }

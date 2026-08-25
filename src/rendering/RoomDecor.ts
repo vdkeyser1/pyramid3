@@ -288,9 +288,12 @@ function collectRoomPlacements(
       : ['jar', 'amphora', 'candle', 'column', 'sandpile', 'bones', 'skeleton',
          'rug', 'altar', 'obelisk', 'floorGlyph', 'scarabTile'];
 
-  const slotCount = width >= 12 && depth >= 12 ? 6
+  const slotCountBase = width >= 12 && depth >= 12 ? 6
     : width >= 10 && depth >= 10 ? 4
       : 2;
+  // Cripta: +2 props densità; galleria: +1 — progressione narrativa per fascia.
+  const bandBonus = moodIndex === 1 ? 2 : moodIndex === 0 ? 1 : 0;
+  const slotCount = slotCountBase + bandBonus;
 
   for (let slot = 0; slot < slotCount; slot++) {
     const h = hash32(room.roomId, slot * 7 + 3);

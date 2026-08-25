@@ -190,11 +190,22 @@ import {
 import {
   mapLiveIdsToSynergyInventory,
   resolveSynergiesFromArrays,
+  synergyBossDamageBonus,
   synergyDamageMultiplier,
+  synergyHasTrapImmunity,
   synergyHpRegenPerKill,
+  synergyIFrameDelta,
+  synergyLootBonus,
+  synergyProjectileCount,
   synergySpeedMultiplier,
   type SynergyEffect,
 } from '@/gameplay/upgrades/SynergyResolver.js';
+import {
+  createPhysicsSleepBridge,
+  type EnemyPhysicsState,
+  type PhysicsSleepBridge,
+} from '@/gameplay/enemies/PhysicsSleepBridge.js';
+import type { PhysicsEnemyProxy } from '@/physics/PhysicsWorld.js';
 import { generateInscription } from '@/content/inscriptions.js';
 import { findPath } from '@/ai/navigation/GridNavigator.js';
 import {
@@ -305,6 +316,8 @@ export function createGameApplication(
   let floorNavGrid: FloorNavGrid | null = null;
   let synergyEffects: readonly SynergyEffect[] = [];
   let scarabStates: ScarabEncounterState[] = [];
+  const physicsSleepBridge: PhysicsSleepBridge = createPhysicsSleepBridge();
+  const enemyPhysicsProxies = new Map<EntityId, PhysicsEnemyProxy>();
   // G-15: vignette/grana/respiro del buio (DOM, zero costo GPU).
   const cinematicOverlay = createCinematicOverlay();
   const settingsMenu = createSettingsMenu();
@@ -1369,6 +1382,82 @@ export function createGameApplication(
    * ART-006: ricrea TrapSystem dal layout e collega i mesh via hook del renderer.
    * Deve essere chiamato al posto di `setFloorLayout` grezzo all'init e alla discesa.
    */
+  function registerEnemyPhysicsProxy(
+    entityId: EntityId,
+    position: { readonly x: number; readonly y: number; readonly z: number },
+    radiusM: number,
+    heightM: number,
+    initialState: EnemyPhysicsState = 'DORMANT',
+  ): void {
+    if (!physicsWorld) return;
+    unregisterEnemyPhysicsProxy(entityId);
+    const proxy = physicsWorld.createEnemyProxy(position, radiusM, heightM);
+    enemyPhysicsProxies.set(entityId, proxy);
+    physicsSleepBridge.register(entityId, proxy);
+    if (initialState !== 'DORMANT') {
+      physicsSleepBridge.notifyStateChange(entityId, initialState);
+    }
+  }
+
+  function unregisterEnemyPhysicsProxy(entityId: EntityId): void {
+    const proxy = enemyPhysicsProxies.get(entityId);
+    if (!proxy) return;
+    physicsSleepBridge.unregister(entityId);
+    proxy.dispose();
+    enemyPhysicsProxies.delete(entityId);
+  }
+
+  function clearAllEnemyPhysicsProxies(): void {
+    for (const entityId of [...enemyPhysicsProxies.keys()]) {
+      unregisterEnemyPhysicsProxy(entityId);
+    }
+    physicsSleepBridge.sleepAll();
+  }
+
+  function syncEnemyPhysicsProxy(
+    entityId: EntityId,
+    position: { readonly x: number; readonly y: number; readonly z: number },
+    state: EnemyPhysicsState,
+  ): void {
+    const proxy = enemyPhysicsProxies.get(entityId);
+    if (!proxy) return;
+    proxy.setTranslation(position);
+    physicsSleepBridge.notifyStateChange(entityId, state);
+  }
+
+  function scarabPhysicsState(scarab: ScarabEncounterState): EnemyPhysicsState {
+    if (scarab.hp <= 0) return 'DEAD';
+    if (!scarab.awakened) return 'DORMANT';
+    if (scarab.runtime.state === 'CHARGING' || scarab.runtime.state === 'CHARGING_TELL') {
+      return 'ATTACKING';
+    }
+    return 'PURSUING';
+  }
+
+  function mummyPhysicsState(mummy: MummyEncounterState): EnemyPhysicsState {
+    if (mummy.hp <= 0) return 'DEAD';
+    if (mummy.runtime.state === 'SLEEPING') return 'DORMANT';
+    if (mummy.runtime.state === 'ATTACKING') return 'ATTACKING';
+    if (mummy.runtime.state === 'RECOVERING') return 'RECOVERING';
+    return 'PURSUING';
+  }
+
+  function genericPhysicsState(enemy: GenericEncounterState): EnemyPhysicsState {
+    if (enemy.hp <= 0 || enemy.runtime.state === 'DEAD') return 'DEAD';
+    switch (enemy.runtime.state) {
+      case 'DORMANT':
+        return 'DORMANT';
+      case 'ATTACKING':
+        return 'ATTACKING';
+      case 'RECOVERING':
+        return 'RECOVERING';
+      case 'STAGGERED':
+        return 'STAGGERED';
+      default:
+        return 'PURSUING';
+    }
+  }
+
   function showFloorInscription(seed: number, floorIndex: number, theme?: string): void {
     if (theme) {
       hud.showMessage(`Piano ${floorIndex} — ${theme}`, 2400);
@@ -2082,6 +2171,7 @@ export function createGameApplication(
 
     // Reset dei runtime per-piano
     visitedRoomIds = new Set();
+    clearAllEnemyPhysicsProxies();
     clearScarabSwarm();
     mummyState = null;
     genericEnemyState = null;
@@ -2120,6 +2210,11 @@ export function createGameApplication(
       );
       if (dailyMods.has('FAST_ENEMIES') && genericEnemyState) {
         genericEnemyState = { ...genericEnemyState, def: { ...genericEnemyState.def, speedMps: genericEnemyState.def.speedMps * 1.5 } };
+      }
+      if (genericEnemyState) {
+        const r = genericEnemyState.archetype === 'COBRA' ? 0.3 : 0.55;
+        const h = genericEnemyState.archetype === 'COBRA' ? 0.7 : 1.75;
+        registerEnemyPhysicsProxy(entityId, genericEnemyState.position, r, h, 'DORMANT');
       }
       log.info('Director: spawn iniziale del nuovo piano', { enemyType: encounterPlan.enemyType });
     }
@@ -2354,16 +2449,27 @@ export function createGameApplication(
     ] as const;
     scarabStates = offsets.map((off) => {
       const entityId = simulation.world.createEntity();
-      return createScarabEncounterState(entityId, {
+      const state = createScarabEncounterState(entityId, {
         x: center.x + off.x,
         y: center.y,
         z: center.z + off.z,
       });
+      registerEnemyPhysicsProxy(
+        entityId,
+        state.position,
+        SCARAB_HURTBOX_RADIUS_M,
+        SCARAB_HURTBOX_HEIGHT_M,
+        'DORMANT',
+      );
+      return state;
     });
     scarabState = scarabStates[0] ?? null;
   }
 
   function clearScarabSwarm(): void {
+    for (const scarab of scarabStates) {
+      unregisterEnemyPhysicsProxy(scarab.entityId);
+    }
     scarabStates = [];
     scarabState = null;
   }
@@ -2416,6 +2522,7 @@ export function createGameApplication(
         scarab.position.z,
       );
       simulation.world.health.set(scarab.entityId, scarab.hp, scarab.maxHp);
+      syncEnemyPhysicsProxy(scarab.entityId, scarab.position, scarabPhysicsState(scarab));
 
       if (scarab.hp <= 0) {
         enemyHurtboxes.remove(scarab.entityId);
@@ -2456,6 +2563,7 @@ export function createGameApplication(
       mummyState.position.z,
     );
     simulation.world.health.set(mummyState.entityId, mummyState.hp, mummyState.maxHp);
+    syncEnemyPhysicsProxy(mummyState.entityId, mummyState.position, mummyPhysicsState(mummyState));
 
     if (mummyState.hp <= 0) {
       enemyHurtboxes.remove(mummyState.entityId);
@@ -2496,6 +2604,11 @@ export function createGameApplication(
       genericEnemyState.position.z,
     );
     simulation.world.health.set(genericEnemyState.entityId, genericEnemyState.hp, genericEnemyState.def.baseHp);
+    syncEnemyPhysicsProxy(
+      genericEnemyState.entityId,
+      genericEnemyState.position,
+      genericPhysicsState(genericEnemyState),
+    );
 
     if (genericEnemyState.hp <= 0) {
       enemyHurtboxes.remove(genericEnemyState.entityId);
@@ -2572,11 +2685,12 @@ export function createGameApplication(
     const floorSeed = sliceState?.floor.seed ?? 0;
     const rollValue = hash32(floorSeed, entityId) / 0x100000000;
     const base = rollGoldDrop(tier, rollValue);
+    const lootBonus = synergyLootBonus(synergyEffects);
     // NEW-3: "Fame del Deserto" raddoppia l'oro raccolto
     if (activeCurse?.definition.id === 'fame-del-deserto') {
-      return base * 2;
+      return base * 2 + lootBonus;
     }
-    return base;
+    return base + lootBonus;
   }
 
   function resolveVerticalSliceAttack(
@@ -2588,25 +2702,36 @@ export function createGameApplication(
     }
 
     const playerState = playerController.getState();
-    const hitTargets = collectAttackHits({
-      attackerId: playerEntityId,
-      attack,
-      attackerPose: {
-        x: playerState.position.x,
-        y: playerState.position.y,
-        z: playerState.position.z,
-        yaw: cameraYaw,
-      },
-      hurtboxes: enemyHurtboxes,
-      activeStartTick,
-      hitRegistry: playerHitRegistry,
-      hasLineOfSight: (entry) =>
-        hasRuntimeLineOfSight(playerState.position, {
-          x: entry.centerX,
-          y: entry.centerY,
-          z: entry.centerZ,
-        }),
-    });
+    const extraSwings = synergyProjectileCount(synergyEffects);
+    const yawOffsets = [0];
+    for (let i = 0; i < extraSwings; i++) {
+      const sign = i % 2 === 0 ? 1 : -1;
+      yawOffsets.push(sign * 0.14 * (Math.floor(i / 2) + 1));
+    }
+    const hitTargetSet = new Set<EntityId>();
+    for (const yawOff of yawOffsets) {
+      const hits = collectAttackHits({
+        attackerId: playerEntityId,
+        attack,
+        attackerPose: {
+          x: playerState.position.x,
+          y: playerState.position.y,
+          z: playerState.position.z,
+          yaw: cameraYaw + yawOff,
+        },
+        hurtboxes: enemyHurtboxes,
+        activeStartTick,
+        hitRegistry: playerHitRegistry,
+        hasLineOfSight: (entry) =>
+          hasRuntimeLineOfSight(playerState.position, {
+            x: entry.centerX,
+            y: entry.centerY,
+            z: entry.centerZ,
+          }),
+      });
+      for (const id of hits) hitTargetSet.add(id);
+    }
+    const hitTargets = [...hitTargetSet];
 
     if (hitTargets.length === 0) {
       return false;
@@ -2615,6 +2740,7 @@ export function createGameApplication(
     let connected = false;
     // v2: hitmarker differenziale — cattura il crit dell'ultimo colpo a segno
     let lastHitCritical = false;
+    const bossDamageMult = 1 + synergyBossDamageBonus(synergyEffects);
 
     for (const targetId of hitTargets) {
       // G-05: danno con modifier dei graft — la guardiana è una MUMMY (undead),
@@ -2625,7 +2751,9 @@ export function createGameApplication(
       const graftDamage = resolvePlayerDamage(attack.damage, combatModifiers, {
         targetIsUndead,
       });
-      const synergyScaledDamage = graftDamage * synergyDamageMultiplier(synergyEffects);
+      const isBossTarget = targetId === guardianEntitySync.entityId && activeBossRuntime !== null;
+      const synergyScaledDamage =
+        graftDamage * synergyDamageMultiplier(synergyEffects) * (isBossTarget ? bossDamageMult : 1);
       const outcome = resolveDamage({
         baseDamageHp: synergyScaledDamage,
         attackModifier: 1,
@@ -2954,7 +3082,9 @@ export function createGameApplication(
       });
       // Passo di Bastet: i-frame nella parte centrale della schivata.
       if (runtimeBonuses.hasDodgeIFrames) {
-        dodgeIFramesUntilMs = performance.now() + DODGE_IFRAME_MS;
+        const iframeFrames = synergyIFrameDelta(synergyEffects);
+        const dodgeMs = Math.max(40, DODGE_IFRAME_MS + iframeFrames * (1000 / 60));
+        dodgeIFramesUntilMs = performance.now() + dodgeMs;
         hud.showMessage('Passo di Bastet: scatto intangibile.', 900);
       }
       _frame.consume(ActionKind.Dodge);
@@ -2966,7 +3096,11 @@ export function createGameApplication(
       // è lo stesso whoosh della schivata; il successo usa 'parry_success'.
       log.info('Parry: guardia alzata');
       parryWindowUntilMs = performance.now() + PARRY_WINDOW_MS;
-      parryIFramesUntilMs = performance.now() + PARRY_IFRAME_MS;
+      {
+        const iframeFrames = synergyIFrameDelta(synergyEffects);
+        const parryMs = Math.max(80, PARRY_IFRAME_MS + iframeFrames * (1000 / 60));
+        parryIFramesUntilMs = performance.now() + parryMs;
+      }
       audio.play({ name: 'player_dodge', volume: 0.35 });
       renderer?.playWeaponParry();
       _frame.consume(ActionKind.Parry);
@@ -3308,6 +3442,9 @@ export function createGameApplication(
         if (trapSystem) {
           const trapDamageHp = trapSystem.tick(playerState.position.x, playerState.position.z);
           if (trapDamageHp > 0) {
+            if (synergyHasTrapImmunity(synergyEffects)) {
+              hud.showMessage('Sinergia: la trappola non ti tocca.', 900);
+            } else {
             const appliedDamageHp = applyDamageToPlayer(
               trapDamageHp,
               playerState.position,
@@ -3319,6 +3456,7 @@ export function createGameApplication(
                 markSliceFailed(sliceState);
                 hud.showMessage('Sei stato abbattuto nella cripta.', 3200);
               }
+            }
             }
           }
         }
@@ -3560,18 +3698,34 @@ export function createGameApplication(
               budgetRemaining: followUp.budgetRemaining,
             });
             hud.showMessage('La sabbia si muove: uno sciame di scarabei emerge.', 2400);
-            if (mummyDead) mummyState = null;
-            if (genericDead) genericEnemyState = null;
+            if (mummyDead && mummyState) {
+              unregisterEnemyPhysicsProxy(mummyState.entityId);
+              mummyState = null;
+            }
+            if (genericDead && genericEnemyState) {
+              unregisterEnemyPhysicsProxy(genericEnemyState.entityId);
+              genericEnemyState = null;
+            }
           } else if (followUp?.enemyType === 'MUMMY') {
             const followUpEntityId = simulation.world.createEntity();
             mummyState = createMummyEncounterState(followUpEntityId, followUp.position);
+            registerEnemyPhysicsProxy(
+              followUpEntityId,
+              followUp.position,
+              MUMMY_HURTBOX_RADIUS_M,
+              MUMMY_HURTBOX_HEIGHT_M,
+              'DORMANT',
+            );
             log.info('Director: follow-up mummia materializzato', {
               roomId: followUp.roomId,
               budgetRemaining: followUp.budgetRemaining,
             });
             hud.showMessage('Un sarcofago si apre: una mummia emerge.', 2400);
             if (scarabDead) clearScarabSwarm();
-            if (genericDead) genericEnemyState = null;
+            if (genericDead && genericEnemyState) {
+              unregisterEnemyPhysicsProxy(genericEnemyState.entityId);
+              genericEnemyState = null;
+            }
           } else if (followUp) {
             // G-13: QUALSIASI altro archetipo (COBRA, SHABTI, PRIEST,
             // SOBEK_SPAWN, ROYAL_MUMMY) → runtime data-driven generico.
@@ -3584,6 +3738,11 @@ export function createGameApplication(
             if (dailyMods.has('FAST_ENEMIES') && genericEnemyState) {
               genericEnemyState = { ...genericEnemyState, def: { ...genericEnemyState.def, speedMps: genericEnemyState.def.speedMps * 1.5 } };
             }
+            if (genericEnemyState) {
+              const r = genericEnemyState.archetype === 'COBRA' ? 0.3 : 0.55;
+              const h = genericEnemyState.archetype === 'COBRA' ? 0.7 : 1.75;
+              registerEnemyPhysicsProxy(followUpEntityId, genericEnemyState.position, r, h, 'DORMANT');
+            }
             log.info('Director: follow-up archetipo materializzato', {
               enemyType: followUp.enemyType,
               roomId: followUp.roomId,
@@ -3592,7 +3751,8 @@ export function createGameApplication(
             if (scarabDead) {
               clearScarabSwarm();
             }
-            if (mummyDead) {
+            if (mummyDead && mummyState) {
+              unregisterEnemyPhysicsProxy(mummyState.entityId);
               mummyState = null;
             }
           } else {
@@ -3600,10 +3760,12 @@ export function createGameApplication(
             if (scarabDead) {
               clearScarabSwarm();
             }
-            if (mummyDead) {
+            if (mummyDead && mummyState) {
+              unregisterEnemyPhysicsProxy(mummyState.entityId);
               mummyState = null;
             }
-            if (genericDead) {
+            if (genericDead && genericEnemyState) {
+              unregisterEnemyPhysicsProxy(genericEnemyState.entityId);
               genericEnemyState = null;
             }
           }
@@ -4139,6 +4301,7 @@ export function createGameApplication(
       guardianRuntime = null;
       enemyHurtboxes.clear();
       playerHitRegistry.clear();
+      clearAllEnemyPhysicsProxies();
       scarabStates = [];
       scarabState = null;
       mummyState = null;

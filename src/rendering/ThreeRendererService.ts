@@ -170,6 +170,10 @@ export function createThreeRenderer(
     /** Animator del modello, se il GLB ha clip utilizzabili. */
     animator?: import('@/rendering/EnemyAnimator.js').EnemyAnimator | null;
   }[] = [];
+  /** GAME-ART: InstancedMesh per sciami SCARAB (≥3) — 1 draw call. */
+  let scarabSwarmMesh: THREE.InstancedMesh | null = null;
+  const scarabSwarmDummy = new THREE.Object3D();
+  const SCARAB_SWARM_INSTANCE_CAP = 32;
   /** Cache dei GLB nemici: un solo fetch per tipo, poi si clona. */
   const enemyModelCache = new Map<string, THREE.Group>();
   /** yOffset per archetipo, letto da ENEMY_ASSETS al primo caricamento. */
@@ -2037,8 +2041,64 @@ export function createThreeRenderer(
     }
   }
 
+  function ensureScarabSwarmMesh(): THREE.InstancedMesh {
+    if (scarabSwarmMesh) return scarabSwarmMesh;
+    const geo = new THREE.SphereGeometry(0.32, 8, 6);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x3d5c28,
+      metalness: 0.35,
+      roughness: 0.5,
+      emissive: 0x1a2e10,
+      emissiveIntensity: 0.35,
+    });
+    scarabSwarmMesh = new THREE.InstancedMesh(geo, mat, SCARAB_SWARM_INSTANCE_CAP);
+    scarabSwarmMesh.count = 0;
+    scarabSwarmMesh.castShadow = true;
+    scarabSwarmMesh.frustumCulled = true;
+    scene.add(scarabSwarmMesh);
+    return scarabSwarmMesh;
+  }
+
+  function updateScarabSwarmInstances(states: readonly RendererEnemyState[]): void {
+    const mesh = ensureScarabSwarmMesh();
+    const n = Math.min(states.length, SCARAB_SWARM_INSTANCE_CAP);
+    mesh.count = n;
+    mesh.visible = n > 0;
+    for (let i = 0; i < n; i++) {
+      const s = states[i];
+      if (!s) continue;
+      const scale = Math.max(0.35, s.modelScale) * (0.9 + s.hpRatio * 0.2);
+      scarabSwarmDummy.position.set(s.x, s.y + 0.15, s.z);
+      scarabSwarmDummy.scale.setScalar(scale);
+      scarabSwarmDummy.rotation.set(0, i * 0.7, 0);
+      scarabSwarmDummy.updateMatrix();
+      mesh.setMatrixAt(i, scarabSwarmDummy.matrix);
+      const color = s.hitFlash
+        ? new THREE.Color(0xa23f16)
+        : s.awakened
+          ? new THREE.Color(0x6a9a40)
+          : new THREE.Color(0x3d5c28);
+      mesh.setColorAt(i, color);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+
   function setEnemyStates(states: readonly RendererEnemyState[]): void {
-    ensureEnemyVisualCount(states.length);
+    const scarabs = states.filter((s) => s.kind === 'SCARAB' && s.alive);
+    const useSwarmBatch = scarabs.length >= 3;
+    const individual = useSwarmBatch
+      ? states.filter((s) => s.kind !== 'SCARAB')
+      : states;
+
+    if (useSwarmBatch) {
+      updateScarabSwarmInstances(scarabs);
+    } else if (scarabSwarmMesh) {
+      scarabSwarmMesh.count = 0;
+      scarabSwarmMesh.visible = false;
+    }
+
+    ensureEnemyVisualCount(individual.length);
 
     // G-16: dissolve alla morte — se almeno un nemico è caduto, il materiale
     // dissolve verso il bordo dorato; quando tutti i marker tornano vivi o
@@ -2055,7 +2115,7 @@ export function createThreeRenderer(
       if (!visual) {
         continue;
       }
-      const state = states[i];
+      const state = individual[i];
       if (!state?.alive) {
         // Se c'è un'animazione di morte la si lascia finire prima di
         // nascondere il nemico: sparire di colpo annulla il dissolve.
@@ -2119,6 +2179,12 @@ export function createThreeRenderer(
           ? (presentation.highContrast ? 0xf1ebd9 : 0xb7a98d)
           : (presentation.highContrast ? 0xd7d2c0 : 0x8d8a73),
       );
+    }
+
+    // Nascondi visual individuali residui oltre individual.length
+    for (let i = individual.length; i < enemyVisuals.length; i++) {
+      const visual = enemyVisuals[i];
+      if (visual) visual.mesh.visible = false;
     }
   }
 

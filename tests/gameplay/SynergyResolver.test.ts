@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   mapLiveIdsToSynergyInventory,
   resolveSynergiesFromArrays,
+  synergyBossDamageBonus,
   synergyDamageMultiplier,
+  synergyHasTrapImmunity,
   synergyHpRegenPerKill,
+  synergyIFrameDelta,
+  synergyLootBonus,
+  synergyProjectileCount,
   synergySpeedMultiplier,
   validateSynergyRules,
   type ItemId,
@@ -45,5 +50,50 @@ describe('SynergyResolver', () => {
     );
     expect(synergySpeedMultiplier(effects)).toBeLessThan(1);
     expect(synergyHpRegenPerKill(effects)).toBeGreaterThan(0);
+  });
+
+  it('synergy helpers aggregano trap/boss/proiettili/loot/i-frame', () => {
+    const effects = [
+      {
+        kind: 'TRAP_IMMUNITY' as const,
+        value: 1,
+        synergyId: 't',
+        displayName: '',
+        description: '',
+      },
+      {
+        kind: 'BOSS_DAMAGE_BONUS' as const,
+        value: 0.25,
+        synergyId: 'b',
+        displayName: '',
+        description: '',
+      },
+      {
+        kind: 'PROJECTILE_COUNT' as const,
+        value: 2,
+        synergyId: 'p',
+        displayName: '',
+        description: '',
+      },
+      {
+        kind: 'LOOT_QUANTITY_BONUS' as const,
+        value: 1,
+        synergyId: 'l',
+        displayName: '',
+        description: '',
+      },
+      {
+        kind: 'INVINCIBILITY_FRAMES' as const,
+        value: -3,
+        synergyId: 'i',
+        displayName: '',
+        description: '',
+      },
+    ];
+    expect(synergyHasTrapImmunity(effects)).toBe(true);
+    expect(synergyBossDamageBonus(effects)).toBe(0.25);
+    expect(synergyProjectileCount(effects)).toBe(2);
+    expect(synergyLootBonus(effects)).toBe(1);
+    expect(synergyIFrameDelta(effects)).toBe(-3);
   });
 });
