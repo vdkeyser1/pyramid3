@@ -302,12 +302,11 @@ export function placeSpecialRoomProps(
     obj.scale.multiplyScalar(prop.scale);
     obj.name = `special:${prop.propId}`;
 
-    if (
-      lodManager
-      && obj instanceof THREE.Mesh
-      && obj.geometry.getIndex()
-    ) {
-      const entry = createPropLodEntry(obj, obj.material as THREE.Material);
+    // Props egizi sono spesso Group compositi: LOD solo sui Mesh con index.
+    const mesh = obj instanceof THREE.Mesh ? obj : null;
+    const indexed = mesh !== null && mesh.geometry.index !== null;
+    if (lodManager && mesh !== null && indexed) {
+      const entry = createPropLodEntry(mesh, mesh.material as THREE.Material);
       entry.updatePosition(prop.position.x, 0, prop.position.z);
       lodManager.registerLod(entry);
       group.add(entry.lodObject);
