@@ -336,6 +336,8 @@ export function createGameApplication(
 
   let state: AppState = 'uninitialized';
   let rafId = 0;
+  /** C-02: 'renderer' = Three.setAnimationLoop (necessario per WebXR); 'raf' = fallback. */
+  let loopDriver: 'raf' | 'renderer' = 'raf';
   let lastTimeMs = 0;
   let renderer: RendererHandle | null = null;
   let generationClient: GenerationClient | null = null;
@@ -523,6 +525,28 @@ export function createGameApplication(
     }
   }
 
+  function stopFrameDriver(): void {
+    if (loopDriver === 'renderer') {
+      renderer?.setAnimationLoop?.(null);
+    } else {
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    }
+  }
+
+  function startFrameDriver(): void {
+    stopFrameDriver();
+    if (renderer?.setAnimationLoop) {
+      loopDriver = 'renderer';
+      renderer.setAnimationLoop((timeMs) => {
+        loop(timeMs);
+      });
+    } else {
+      loopDriver = 'raf';
+      rafId = requestAnimationFrame(loop);
+    }
+  }
+
   // Local pause/resume functions (definiti prima di processInput che li usa)
   function localPause(reason: PauseReason = 'manual'): void {
     if (state !== 'running' && state !== 'paused') return;
@@ -535,7 +559,7 @@ export function createGameApplication(
     pendingPointerLockRestore ||= canvasWasPointerLocked;
     suppressNextPointerLockLoss = canvasWasPointerLocked;
     state = 'paused';
-    cancelAnimationFrame(rafId);
+    stopFrameDriver();
     clock.resetAccumulator();
     document.exitPointerLock();
     input.detach();
@@ -567,7 +591,7 @@ export function createGameApplication(
       hud.showMessage('Clicca per riagganciare il mouse', 2200);
     }
     syncPointerLockState();
-    rafId = requestAnimationFrame(loop);
+    startFrameDriver();
     log.info('Game loop ripreso', { reason });
   }
 
@@ -1043,9 +1067,7 @@ export function createGameApplication(
     return profilePersistPromise;
   }
 
-  // C-02: probe WebXR — verifica supporto + sessione immersiva con esito
-  // onesto. Il rendering VR vero (setAnimationLoop) è un prerequisito
-  // documentato in roadmap (C-02): senza refactor del loop non si finge.
+  // C-02: WebXR — sessione immersiva + setAnimationLoop (rendering VR reale).
   async function probeWebXr(): Promise<void> {
     if (typeof navigator === 'undefined' || !('xr' in navigator)) {
       hud.showMessage('WebXR non disponibile in questo browser.', 3200);
@@ -1057,16 +1079,29 @@ export function createGameApplication(
         hud.showMessage('WebXR non disponibile in questo browser.', 3200);
         return;
       }
+      if (backend !== 'webgl2') {
+        hud.showMessage('WebXR richiede il backend WebGL2. Riavvia senza WebGPU.', 4200);
+        return;
+      }
       const supported = await xr.isSessionSupported('immersive-vr');
       if (!supported) {
         hud.showMessage('Nessun visore WebXR rilevato.', 3200);
         return;
       }
       const session = await xr.requestSession('immersive-vr', {
-        optionalFeatures: ['local-floor'],
+        optionalFeatures: ['local-floor', 'bounded-floor'],
       });
-      renderer?.enableXr?.(session);
-      hud.showMessage('Sessione WebXR avviata. Il rendering VR richiede la build dedicata (C-02).', 4200);
+      const ok = await renderer?.enableXr?.(session);
+      if (!ok) {
+        void session.end();
+        hud.showMessage('Collegamento WebXR al renderer fallito.', 3200);
+        return;
+      }
+      // Forza il driver setAnimationLoop (XR presenta i frame dal compositor).
+      if (state === 'running') {
+        startFrameDriver();
+      }
+      hud.showMessage('Sessione WebXR attiva. Esci dal visore per tornare al desktop.', 4200);
       log.info('WebXR: sessione immersiva avviata');
     } catch (error) {
       hud.showMessage('Avvio WebXR fallito.', 3000);
@@ -3989,7 +4024,11 @@ export function createGameApplication(
     // Render
     renderer?.render(deltaMs);
 
-    rafId = requestAnimationFrame(loop);
+    // C-02: con setAnimationLoop il renderer riprogramma il frame;
+    // con RAF dobbiamo riarmare manualmente.
+    if (loopDriver === 'raf') {
+      rafId = requestAnimationFrame(loop);
+    }
   }
 
   return {
@@ -4365,8 +4404,8 @@ export function createGameApplication(
     start(): void {
       if (state !== 'running') return;
       lastTimeMs = 0;
-      rafId = requestAnimationFrame(loop);
-      log.info('Game loop avviato');
+      startFrameDriver();
+      log.info('Game loop avviato', { driver: loopDriver });
     },
 
     pause(reason: PauseReason = 'manual'): void {
@@ -4380,7 +4419,8 @@ export function createGameApplication(
     dispose(): void {
       if (state === 'disposed') return;
       analytics.track('SESSION_END', Date.now(), { floorsCleared: runStats.floorsCleared, kills: runStats.enemiesDefeated });
-      cancelAnimationFrame(rafId);
+      stopFrameDriver();
+      renderer?.disableXr?.();
       detachViewportListeners?.();
       detachViewportListeners = null;
       detachCanvasClick?.();

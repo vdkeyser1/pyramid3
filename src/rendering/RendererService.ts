@@ -169,8 +169,21 @@ export interface RendererHandle {
    */
   setActiveWeaponViewmodel?(weaponId: string): void;
 
-  /** C-02: aggancia una sessione WebXR al renderer (probe sperimentale). */
-  enableXr?(session: unknown): void;
+  /** C-02: aggancia una sessione WebXR e passa il loop a setAnimationLoop. */
+  enableXr?(session: unknown): Promise<boolean>;
+
+  /** C-02: termina la sessione XR e ripristina il loop desktop. */
+  disableXr?(): void;
+
+  /**
+   * C-02: registra il frame callback (Three.js setAnimationLoop).
+   * Su WebGL+XR il callback è guidato dal compositor VR; altrimenti da RAF.
+   * Passa null per fermare il loop del renderer.
+   */
+  setAnimationLoop?(callback: ((timeMs: number) => void) | null): void;
+
+  /** True se una sessione XR è attiva e presenta frame. */
+  isXrActive?(): boolean;
 
   /** Aggiorna i marker dei nemici attivi del vertical slice. */
   setEnemyStates(states: readonly RendererEnemyState[]): void;

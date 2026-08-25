@@ -102,6 +102,17 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     source: 'quaternius',
   },
   {
+    id: 'ruins_gate',
+    url: '/models/ruins/gate.glb',
+    displayName: 'Portale di Pietra',
+    loreName: null,
+    rarity: 'common',
+    interactable: false,
+    scale: 1.15,
+    description: 'Arco d\'ingresso delle gallerie funerarie.',
+    source: 'quaternius',
+  },
+  {
     id: 'ruins_trap',
     url: '/models/ruins/trap.glb',
     displayName: 'Trappola a Lame',

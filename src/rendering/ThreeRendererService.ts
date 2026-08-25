@@ -127,6 +127,9 @@ export function createThreeRenderer(
   } | null = null;
   let envMapTexture: THREE.Texture | null = null;
   let ambientLight: THREE.AmbientLight;
+  /** C-02: sessione XR attiva (solo WebGL2). */
+  let xrActive = false;
+  let onXrSessionEnd: (() => void) | null = null;
   let hemiLight: THREE.HemisphereLight;
   let floorMaterial: THREE.MeshStandardMaterial;
   let wallMaterial: THREE.MeshStandardMaterial;
@@ -1146,6 +1149,44 @@ export function createThreeRenderer(
     }
   }
 
+  /**
+   * A1: porta GLB CC0 (`ruins_gate`) sulle soglie — silhouette di arco
+   * funerario. Se il file manca, nessun crash (solo glow a pavimento).
+   */
+  async function placeDoorwayGates(
+    layout: FloorSceneLayout,
+    root: THREE.Group,
+  ): Promise<void> {
+    if (layout.doorways.length === 0) return;
+    const { loadArtifact } = await import('@/rendering/ArtifactLoader.js');
+    const { getArtifactById } = await import('@/content/ArtifactRegistry.js');
+    if (disposed) return;
+
+    const def = getArtifactById('ruins_gate');
+    if (!def) return;
+
+    const prototype = await loadArtifact(def);
+    if (!prototype) return;
+    // Re-check dopo await: `disposed` può cambiare durante il load GLB.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutazione async
+    if (disposed) return;
+
+    for (const doorway of layout.doorways) {
+      const gate = prototype.clone(true);
+      gate.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+      // Asse 'x' = passaggio lungo X → arco perpendicolare (ruota 90°).
+      const yaw = doorway.axis === 'x' ? Math.PI / 2 : 0;
+      gate.position.set(doorway.center.x, 0, doorway.center.z);
+      gate.rotation.y = yaw;
+      root.add(gate);
+    }
+  }
+
   async function rebuildFloorLayout(layout: FloorSceneLayout): Promise<void> {
     // Swap texture muri: arenaria chiara nei livelli bassi, scura in cripta.
     const useDeepWall = layout.floorIndex >= 5;
@@ -1314,6 +1355,8 @@ export function createThreeRenderer(
 
     // W-5 / task-9: piazza props GLB KayKit nelle stanze grandi.
     void placeRoomColumns(layout, dungeonRoot);
+    // A1: archi/gate CC0 sulle soglie (complementa il glow a pavimento).
+    void placeDoorwayGates(layout, dungeonRoot);
 
     // ART-005: tromba di scale sotto l'uscita, quando il piano ne ha una.
     // L'ultimo piano ha un'uscita vera, non una scala: lì non va costruita.
@@ -2275,6 +2318,11 @@ export function createThreeRenderer(
 
   function dispose(): void {
     disposed = true;
+    if ('setAnimationLoop' in renderer && typeof renderer.setAnimationLoop === 'function') {
+      void renderer.setAnimationLoop(null);
+    }
+    xrActive = false;
+    onXrSessionEnd = null;
     lodManager?.clear();
     shadowMapOptimizer?.dispose();
     shadowMapOptimizer = null;
@@ -2386,20 +2434,65 @@ export function createThreeRenderer(
     playWeaponParry(): void {
       weaponViewmodel?.playParry();
     },
-    /** C-02: aggancia una sessione WebXR (probe sperimentale, try/catch). */
-    enableXr(session: unknown): void {
-      const xrRenderer = renderer as {
-        xr?: { enabled: boolean; setSession(s: unknown): Promise<void> | void };
-      };
-      if (xrRenderer.xr) {
-        xrRenderer.xr.enabled = true;
-        try {
-          void xrRenderer.xr.setSession(session);
-        } catch (error) {
-          log.warn('WebXR setSession fallito', { error: String(error) });
-        }
+    /** C-02: registra il frame callback via Three.js setAnimationLoop. */
+    setAnimationLoop(callback: ((timeMs: number) => void) | null): void {
+      if (disposed) return;
+      if ('setAnimationLoop' in renderer && typeof renderer.setAnimationLoop === 'function') {
+        void renderer.setAnimationLoop(
+          callback
+            ? (time: number) => {
+                callback(time);
+              }
+            : null,
+        );
       }
     },
+
+    isXrActive(): boolean {
+      return xrActive;
+    },
+
+    /**
+     * C-02: avvia una sessione immersive-vr. Richiede WebGL2.
+     * Il loop deve già usare setAnimationLoop affinché XR presenti i frame.
+     */
+    async enableXr(session: unknown): Promise<boolean> {
+      if (disposed) return false;
+      if (backend !== 'webgl2') {
+        log.warn('WebXR richiede backend WebGL2');
+        return false;
+      }
+      const gl = renderer as THREE.WebGLRenderer;
+      gl.xr.enabled = true;
+      try {
+        await gl.xr.setSession(session as XRSession);
+        xrActive = true;
+        const xrSession = session as XRSession;
+        const handleEnd = (): void => {
+          xrActive = false;
+          gl.xr.enabled = false;
+          onXrSessionEnd?.();
+        };
+        xrSession.addEventListener('end', handleEnd);
+        log.info('WebXR: sessione immersiva collegata al renderer');
+        return true;
+      } catch (error) {
+        gl.xr.enabled = false;
+        xrActive = false;
+        log.warn('WebXR setSession fallito', { error: String(error) });
+        return false;
+      }
+    },
+
+    disableXr(): void {
+      if (!xrActive) return;
+      const gl = renderer as THREE.WebGLRenderer;
+      const active = gl.xr.getSession();
+      xrActive = false;
+      gl.xr.enabled = false;
+      void active?.end();
+    },
+
     /** Viewmodel arma 3D: mostra/nascondi (cambio arma). */
     setWeaponViewmodelVisible(visible: boolean): void {
       weaponViewmodel?.setVisible(visible);
