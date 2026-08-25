@@ -45,6 +45,8 @@ function makeLayout(): FloorSceneLayout {
     doorways: [],
     digSite: null,
     shovelPickup: null,
+    traps: [],
+    leverPassage: null,
   };
 }
 

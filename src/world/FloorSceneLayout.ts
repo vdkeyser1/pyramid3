@@ -1,7 +1,7 @@
 import type { FloorModel } from '@/procedural/FloorModel.js';
 import type { RoomBounds, RoomId, RoomNode, RoomRole } from '@/procedural/FloorValidator.js';
 import { themeForRoom, type RoomTheme } from '@/content/RoomThemes.js';
-import { STAIRCASE } from '@/content/balance.js';
+import { STAIRCASE, TRAPS } from '@/content/balance.js';
 
 export interface SceneVector3 {
   readonly x: number;
@@ -63,6 +63,44 @@ export interface FloorSceneDoorway {
   readonly axis: 'x' | 'z';
 }
 
+/**
+ * ART-006: piastra a pressione o pendolo a lama.
+ *
+ * La posizione è il centro della trappola sul pavimento (y = 0).
+ * corridorLengthM e corridorAxis servono solo ai pendoli: dimensionano
+ * il braccio del pendolo e ne orientano l'oscillazione.
+ */
+export interface FloorSceneTrap {
+  readonly trapId: string;
+  readonly kind: 'pressurePlate' | 'bladePendulum';
+  readonly position: SceneVector3;
+  /** Solo bladePendulum: lunghezza del corridoio ospite. */
+  readonly corridorLengthM?: number;
+  /**
+   * Solo bladePendulum: asse del corridoio.
+   * 'x' = corridoio est-ovest → la lama oscilla su Z.
+   * 'z' = corridoio nord-sud → la lama oscilla su X.
+   */
+  readonly corridorAxis?: 'x' | 'z';
+}
+
+/**
+ * ART-006: posizione della leva e del sigillo di pietra corrispondente.
+ *
+ * Il sigillo è visivo-only (senza corpo fisico Rapier): il passaggio è sempre
+ * fisicamente libero, ma la lastra visiva lo occulta fino a che la leva non
+ * viene tirata. sealPosition.y è il centro della lastra nella posizione
+ * "chiusa" (in alto, che ostruisce la nicchia).
+ */
+export interface FloorSceneLeverPassage {
+  readonly leverId: string;
+  readonly leverPosition: SceneVector3;
+  /** Centro del sigillo quando è nella posizione "chiusa" (in alto). */
+  readonly sealPosition: SceneVector3;
+  readonly sealWidthM: number;
+  readonly sealDepthM: number;
+}
+
 export interface FloorSceneLayout {
   readonly floorId: string;
   /** v2: indice del piano (1..MAX_FLOORS) — fascia tematica per decor. */
@@ -97,6 +135,16 @@ export interface FloorSceneLayout {
   readonly digSite: FloorSceneDigSite | null;
   /** Posizione del pickup della pala (se presente in questo piano). */
   readonly shovelPickup: SceneVector3 | null;
+  /**
+   * ART-006: trappole presenti nel piano.
+   * Vuoto nei piani 1-2 (tutorial). Derivato deterministicamente dal seed.
+   */
+  readonly traps: readonly FloorSceneTrap[];
+  /**
+   * ART-006: meccanismo leva+sigillo del piano.
+   * null nei piani 1-2 e nei piani pari >= 4 (compare a rotazione).
+   */
+  readonly leverPassage: FloorSceneLeverPassage | null;
 }
 
 const FLOOR_Y = 0;
@@ -199,6 +247,147 @@ function deriveBraziers(
   }
 
   return result;
+}
+
+/**
+ * ART-006: piastre a pressione e pendoli per il piano.
+ *
+ * Regola di distribuzione — deterministico, nessun Math.random():
+ *   Piastre: una ogni 5 stanze, selezionata per (roomId + floorIndex*3) % 5 === 0,
+ *     escluse entrata ed uscita. Piani 1 e 2: nessuna.
+ *   Pendoli: nei corridoi la cui lunghezza supera minCorridorLengthM (8 m).
+ *     Piani 1 e 2: nessuno.
+ *
+ * L'offset floorIndex*3 sulla selezione delle stanze cambia il sottoinsieme
+ * da piano a piano: lo stesso roomId non riceve sempre una piastra, il che
+ * rende ogni discesa parzialmente imprevedibile senza richiedere casualità.
+ */
+function deriveTraps(
+  floorId: string,
+  floorIndex: number,
+  rooms: readonly FloorSceneRoom[],
+  corridors: readonly FloorSceneCorridor[],
+  entryRoomId: RoomId,
+  exitRoomId: RoomId,
+): FloorSceneTrap[] {
+  // I piani iniziali non hanno trappole: il giocatore deve imparare il sistema.
+  if (floorIndex < 2) return [];
+
+  const traps: FloorSceneTrap[] = [];
+
+  // Piastre a pressione nelle stanze intermedie.
+  for (const room of rooms) {
+    if (room.roomId === entryRoomId || room.roomId === exitRoomId) continue;
+    const roomNum = Number(room.roomId);
+    // Modulo 5 sfasato per piano: stanze diverse da piano a piano.
+    if ((roomNum + floorIndex * 3) % 5 !== 0) continue;
+
+    // Offset dal centro della stanza — derivato dall'id, non casuale.
+    const xOff = ((roomNum * 7) % 5 - 2) * 0.55;
+    const zOff = ((roomNum * 11) % 5 - 2) * 0.55;
+
+    traps.push({
+      trapId: `${floorId}:trap:plate:${String(room.roomId)}`,
+      kind: 'pressurePlate',
+      position: {
+        x: room.center.x + xOff,
+        y: 0,
+        z: room.center.z + zOff,
+      },
+    });
+  }
+
+  // Pendoli nei corridoi lunghi.
+  for (const corridor of corridors) {
+    const length = corridor.axis === 'x'
+      ? corridor.bounds.maxX - corridor.bounds.minX
+      : corridor.bounds.maxZ - corridor.bounds.minZ;
+    if (length < TRAPS.bladePendulum.minCorridorLengthM) continue;
+
+    const centerX = (corridor.bounds.minX + corridor.bounds.maxX) / 2;
+    const centerZ = (corridor.bounds.minZ + corridor.bounds.maxZ) / 2;
+
+    traps.push({
+      trapId: `${floorId}:trap:pendulum:${String(corridor.fromRoomId)}-${String(corridor.toRoomId)}`,
+      kind: 'bladePendulum',
+      position: { x: centerX, y: 0, z: centerZ },
+      corridorLengthM: length,
+      corridorAxis: corridor.axis,
+    });
+  }
+
+  return traps;
+}
+
+/**
+ * ART-006: meccanismo leva+sigillo del piano.
+ *
+ * Seleziona la stanza più grande che abbia un landmark, escludendo entrata
+ * ed uscita. La leva è addossata alla parete nord-ovest; il sigillo di pietra
+ * è posizionato sul lato sud della stessa stanza, davanti a una nicchia
+ * immaginaria. Appare solo a partire dal piano TRAPS.lever.minFloorIndex (3).
+ *
+ * Il sigillo è visivo-only: il passaggio fisico non esiste, ma la lastra
+ * nera suggerisce al giocatore che c'è qualcosa di nascosto. Quando la leva
+ * viene tirata, TrapSystem anima la discesa della lastra (sealDropProgress).
+ */
+function deriveLeverPassage(
+  floorId: string,
+  floorIndex: number,
+  rooms: readonly FloorSceneRoom[],
+  entryRoomId: RoomId,
+  exitRoomId: RoomId,
+): FloorSceneLeverPassage | null {
+  // La leva compare solo nei piani avanzati e a rotazione (piani dispari >= 3).
+  if (floorIndex < TRAPS.lever.minFloorIndex) return null;
+  if (floorIndex % 2 === 0) return null; // Solo piani dispari: 3, 5, 7 …
+
+  // La stanza più grande con un landmark (escluse entrata ed uscita).
+  let bestRoom: FloorSceneRoom | null = null;
+  let bestArea = 0;
+  for (const room of rooms) {
+    if (room.roomId === entryRoomId || room.roomId === exitRoomId) continue;
+    if (!room.landmarkId) continue;
+    const area =
+      (room.bounds.maxX - room.bounds.minX) * (room.bounds.maxZ - room.bounds.minZ);
+    if (area > bestArea) {
+      bestArea = area;
+      bestRoom = room;
+    }
+  }
+  if (!bestRoom) return null;
+
+  const room = bestRoom;
+  const roomNum = Number(room.roomId);
+
+  // Leva: angolo nord-ovest della stanza, inset dalla parete.
+  const leverPosition: SceneVector3 = {
+    x: room.bounds.minX + 1.8,
+    y: 0,
+    z: room.bounds.minZ + 1.5,
+  };
+
+  // Sigillo: lato sud della stanza, leggermente sfalsato per varietà.
+  // L'offset laterale è deterministico: cambia da stanza a stanza.
+  const lateralOff = ((roomNum % 3) - 1) * 1.2; // -1.2, 0, +1.2
+  const sealW = Math.min(2.4, (room.bounds.maxX - room.bounds.minX) * 0.28);
+  const sealDepth = 0.35;
+
+  // sealPosition.y = metà altezza del sigillo quando è "chiuso":
+  // il sigillo copre l'altezza sealDropM, il centro è a sealDropM/2.
+  const sealPosition: SceneVector3 = {
+    x: room.center.x + lateralOff,
+    y: TRAPS.lever.sealDropM / 2,
+    z: room.bounds.maxZ - 1.2,
+  };
+
+  return {
+    leverId: `${floorId}:lever:${String(room.roomId)}`,
+    leverPosition,
+    sealPosition,
+    sealWidthM: sealW,
+    sealDepthM: sealDepth,
+  };
 }
 
 function centerOfBounds(bounds: RoomBounds, y: number): SceneVector3 {
@@ -464,6 +653,23 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
     },
   }));
 
+  // ART-006: trappole e meccanismo leva derivati dal seed del piano.
+  const traps = deriveTraps(
+    floor.floorId,
+    floor.floorIndex,
+    rooms,
+    corridors,
+    floor.entryRoomId,
+    floor.exitRoomId,
+  );
+  const leverPassage = deriveLeverPassage(
+    floor.floorId,
+    floor.floorIndex,
+    rooms,
+    floor.entryRoomId,
+    floor.exitRoomId,
+  );
+
   return {
     floorId: floor.floorId,
     floorIndex: floor.floorIndex,
@@ -491,5 +697,7 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
     doorways,
     digSite,
     shovelPickup,
+    traps,
+    leverPassage,
   };
 }

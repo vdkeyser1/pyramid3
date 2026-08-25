@@ -151,3 +151,80 @@ export const DARKNESS = {
   thresholds: { calm: 25, whispers: 50, patrols: 75, witness: 100 },
   sanctuaryRecoveryPerSecond: 4,
 } as const;
+
+/**
+ * ART-006: trappole procedurali e meccanismo leva+sigillo.
+ *
+ * I danni sono calibrati su PLAYER.baseHealthHp = 100.
+ * - Piastra: 15 HP — evitabile se il giocatore è attento (vede la lastra).
+ * - Pendolo: 22 HP — meno evitabile perché occupa l'intero corridoio.
+ * - Un'unica attivazione di piastra non è letale; due di fila in cooldown
+ *   corto sì — la pressione su torch gestione non è casuale.
+ *
+ * I timer di estensione (0,15 s) e ritrazione (0,40 s) danno tempo di
+ * reagire senza rendere la trappola banale. Il cooldown (4,0 s) impedisce
+ * lo spam ma lascia la stanza sempre pericolosa al secondo passaggio.
+ */
+export const TRAPS = {
+  pressurePlate: {
+    damageHp: 15,
+    /** Raggio di attivazione dal centro della piastra. */
+    activationRadiusM: 0.55,
+    /** Altezza delle punte sopra il pavimento quando estese. */
+    spikeHeightM: 0.58,
+    /** Durata della fase di estensione (punte in salita). */
+    extendTicks: secondsToTicks(0.15),
+    /** Durata della fase di mantenimento (punte ferme e danno attivo). */
+    holdTicks: secondsToTicks(1.2),
+    /** Durata della fase di rientro. */
+    retractTicks: secondsToTicks(0.40),
+    /** Cooldown prima che la trappola si riarmi. */
+    cooldownTicks: secondsToTicks(4.0),
+  },
+  bladePendulum: {
+    damageHp: 22,
+    /** Semiescursione del pendolo in gradi. */
+    halfSwingDeg: 75,
+    /** Durata di un'oscillazione completa (andata e ritorno). */
+    swingPeriodTicks: secondsToTicks(2.6),
+    /** Larghezza della lama — dimensiona il mesh. */
+    bladeWidthM: 1.5,
+    /** Quota del perno di rotazione (asse di montaggio). */
+    mountHeightM: 3.0,
+    /** Lunghezza del braccio dal perno alla lama. */
+    armLengthM: 1.8,
+    /** Raggio di colpo dalla punta della lama. */
+    hitRadiusM: 0.6,
+    /**
+     * Cooldown minimo fra due colpi dello stesso pendolo, in tick.
+     * Impedisce che la lama infligga danno ogni tick nel punto di passaggio.
+     * Calcolato come metà periodo: la lama passa al centro una volta per
+     * semioscillazione.
+     */
+    hitCooldownTicks: secondsToTicks(1.3),
+    /**
+     * Soglia di lunghezza corridoio per piazzare un pendolo.
+     * Deve allinearsi con PENDULUM_MIN_CORRIDOR_M in FloorSceneLayout.ts.
+     */
+    minCorridorLengthM: 8.0,
+  },
+  lever: {
+    /** Raggio entro cui il giocatore può interagire con la leva. */
+    interactionRadiusM: 1.4,
+    /** Durata dell'animazione di tiro della leva. */
+    pullDurationTicks: secondsToTicks(0.9),
+    /**
+     * Distanza di discesa del sigillo di pietra.
+     * Deve superare WALL_HEIGHT_M (4,5 m) nel renderer perché il sigillo
+     * deve scomparire completamente sotto il pavimento.
+     */
+    sealDropM: 2.8,
+    /** Durata dell'animazione di discesa del sigillo dopo il tiro. */
+    sealDropTicks: secondsToTicks(2.0),
+    /**
+     * Piano minimo in cui compare il meccanismo leva.
+     * I piani 1-2 sono di tutorial: nessuna leva.
+     */
+    minFloorIndex: 3,
+  },
+} as const;

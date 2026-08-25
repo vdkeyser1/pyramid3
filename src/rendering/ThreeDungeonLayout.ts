@@ -4,12 +4,17 @@ import { presetFor, type CeilingVariant, type RoomTheme } from '@/content/RoomTh
 import {
   buildAltar, buildCanopicJar, buildSarcophagus, buildStatue, buildWell,
 } from '@/rendering/EgyptianLandmarks.js';
+import {
+  buildBladePendulumMesh, buildLeverMesh, buildPressurePlateMesh, buildSealMesh,
+} from '@/rendering/TrapMesh.js';
 import type { RoomBounds as CullBounds } from '@/rendering/FrustumCuller.js';
 import type {
   FloorSceneCorridor,
   FloorSceneLandmark,
   FloorSceneLayout,
+  FloorSceneLeverPassage,
   FloorSceneRoom,
+  FloorSceneTrap,
 } from '@/world/FloorSceneLayout.js';
 
 const FLOOR_THICKNESS_M = 0.2;
@@ -93,6 +98,37 @@ export interface BuildDungeonLayoutOptions {
    * Se assente si usa wallMaterial: il soffitto c'è comunque, ma in pietra.
    */
   readonly ceilingMaterial?: THREE.Material | null;
+  /**
+   * ART-006: callback invocata per ogni piastra a pressione costruita.
+   * Il chiamante ottiene spikesGroup (il gruppo delle 9 punte) e lo collega
+   * a TrapSystem per l'animazione verticale.
+   * Opzionale — se assente la trappola è renderizzata ma non animata.
+   */
+  readonly onPressurePlateMeshReady?: (
+    trapId: string,
+    spikesGroup: THREE.Object3D,
+  ) => void;
+  /**
+   * ART-006: callback invocata per ogni pendolo a lama costruito.
+   * Il chiamante ottiene pivotGroup e imposta rotation.z (corridoio X)
+   * o rotation.x (corridoio Z) ogni frame tramite TrapSystem.
+   * Opzionale — se assente il pendolo è renderizzato ma fermo.
+   */
+  readonly onPendulumMeshReady?: (
+    trapId: string,
+    pivotGroup: THREE.Object3D,
+  ) => void;
+  /**
+   * ART-006: callback invocata per il meccanismo leva+sigillo.
+   * handleMesh ruota di rotation.z quando la leva viene tirata;
+   * sealMesh.position.y scende da sealDropM/2 a –sealDropM/2.
+   * Opzionale — se assente il meccanismo è renderizzato ma statico.
+   */
+  readonly onLeverMeshReady?: (
+    leverId: string,
+    handleMesh: THREE.Mesh,
+    sealMesh: THREE.Mesh,
+  ) => void;
 }
 
 export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBounds[] {
@@ -453,6 +489,65 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
     createStaticBox(landmark.position.x, 0.18, landmark.position.z, 0.55, 0.18, 0.55);
   }
 
+  /**
+   * ART-006: piastra a pressione.
+   *
+   * La lastra è sul pavimento; le punte sono figlie di spikesGroup, che
+   * parte con position.y = 0 (punte nascoste) e viene animato verso l'alto
+   * da TrapSystem. Il corpo fisico non è necessario: le trappole sono
+   * geometria pura, il danno è calcolato dalla simulazione (distanza).
+   */
+  function addPressurePlate(trap: FloorSceneTrap): void {
+    const { plate, spikesGroup } = buildPressurePlateMesh(wallMaterial);
+    plate.position.set(trap.position.x, 0, trap.position.z);
+    dungeonRoot.add(plate);
+    spikesGroup.position.set(trap.position.x, 0, trap.position.z);
+    dungeonRoot.add(spikesGroup);
+    options.onPressurePlateMeshReady?.(trap.trapId, spikesGroup);
+  }
+
+  /**
+   * ART-006: pendolo a lama da soffitto.
+   *
+   * Il mountMesh è statico (il blocco al soffitto). pivotGroup contiene braccio
+   * e lama e viene animato in rotazione da TrapSystem. L'asse di rotazione
+   * dipende dal corridoio ospite: corridoio X → rotation.z, corridoio Z → rotation.x.
+   * Questa mappatura avviene nel codice che registra l'animator in TrapSystem,
+   * non qui: il renderer si limita a consegnare il pivotGroup alla callback.
+   */
+  function addBladePendulum(trap: FloorSceneTrap): void {
+    const { pivotGroup, mountMesh } = buildBladePendulumMesh(wallMaterial);
+    mountMesh.position.set(trap.position.x, 0, trap.position.z);
+    pivotGroup.position.set(trap.position.x, 0, trap.position.z);
+    dungeonRoot.add(mountMesh);
+    dungeonRoot.add(pivotGroup);
+    options.onPendulumMeshReady?.(trap.trapId, pivotGroup);
+  }
+
+  /**
+   * ART-006: meccanismo leva + sigillo di pietra.
+   *
+   * La leva è addossata alla parete; il sigillo è posizionato secondo
+   * sealPosition (centro della lastra nella posizione "chiusa").
+   * Nessun corpo fisico per il sigillo: il passaggio è sempre aperto,
+   * la lastra è solo visiva.
+   */
+  function addLeverPassage(passage: FloorSceneLeverPassage): void {
+    const { leverGroup, handleMesh } = buildLeverMesh(wallMaterial);
+    leverGroup.position.set(passage.leverPosition.x, 0, passage.leverPosition.z);
+    dungeonRoot.add(leverGroup);
+
+    const sealMesh = buildSealMesh(wallMaterial, passage.sealWidthM, passage.sealDepthM);
+    sealMesh.position.set(
+      passage.sealPosition.x,
+      passage.sealPosition.y,
+      passage.sealPosition.z,
+    );
+    dungeonRoot.add(sealMesh);
+
+    options.onLeverMeshReady?.(passage.leverId, handleMesh, sealMesh);
+  }
+
   const cullBounds: CullBounds[] = [];
 
   for (const room of layout.rooms) {
@@ -485,6 +580,18 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
 
   for (const landmark of layout.landmarks) {
     addLandmark(landmark);
+  }
+
+  // ART-006: trappole e meccanismo leva.
+  for (const trap of layout.traps) {
+    if (trap.kind === 'pressurePlate') {
+      addPressurePlate(trap);
+    } else {
+      addBladePendulum(trap);
+    }
+  }
+  if (layout.leverPassage) {
+    addLeverPassage(layout.leverPassage);
   }
 
   return cullBounds;
