@@ -15,7 +15,7 @@ import {
   buildSarcophagus,
   buildStatue,
 } from '@/rendering/EgyptianLandmarks.js';
-import { createPropLodEntry, type LodManager } from '@/rendering/LodManager.js';
+import type { LodManager } from '@/rendering/LodManager.js';
 
 const shared = new Map<string, THREE.BufferGeometry>();
 
@@ -283,13 +283,13 @@ function objectForProp(propId: string, wallMaterial: THREE.Material): THREE.Obje
 
 /**
  * Piazza i props della stanza speciale sotto `dungeonRoot`.
- * Con `lodManager` i mesh semplici restano in LOD; i gruppi egizi no.
+ * I props egizi sono Group compositi: niente LOD mesh-only (evita cast unsafe).
  */
 export function placeSpecialRoomProps(
   props: readonly FloorSceneSpecialProp[],
   dungeonRoot: THREE.Group,
   wallMaterial: THREE.Material,
-  lodManager?: LodManager | null,
+  _lodManager?: LodManager | null,
 ): THREE.Group | null {
   if (props.length === 0) return null;
 
@@ -301,20 +301,9 @@ export function placeSpecialRoomProps(
     obj.rotation.y = prop.yawRad;
     obj.scale.multiplyScalar(prop.scale);
     obj.name = `special:${prop.propId}`;
-
-    // Props egizi sono spesso Group compositi: LOD solo sui Mesh con index.
-    const mesh = obj instanceof THREE.Mesh ? obj : null;
-    const indexed = mesh !== null && mesh.geometry.index !== null;
-    if (lodManager && mesh !== null && indexed) {
-      const entry = createPropLodEntry(mesh, mesh.material as THREE.Material);
-      entry.updatePosition(prop.position.x, 0, prop.position.z);
-      lodManager.registerLod(entry);
-      group.add(entry.lodObject);
-    } else {
-      obj.position.x = prop.position.x;
-      obj.position.z = prop.position.z;
-      group.add(obj);
-    }
+    obj.position.x = prop.position.x;
+    obj.position.z = prop.position.z;
+    group.add(obj);
   }
 
   dungeonRoot.add(group);
