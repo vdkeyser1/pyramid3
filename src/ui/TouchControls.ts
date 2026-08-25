@@ -18,6 +18,8 @@ export interface TouchInputState {
 export interface TouchControls {
   readonly sample: () => TouchInputState;
   mount(parent: HTMLElement): void;
+  /** Richiede permesso iOS + attiva DeviceOrientation per look giroscopico. */
+  enableGyroscope(): Promise<boolean>;
   dispose(): void;
 }
 
@@ -41,6 +43,11 @@ export function createTouchControls(): TouchControls {
   let rightId: number | null = null;
   let leftOrigin = { x: 0, y: 0 };
   let rightOrigin = { x: 0, y: 0 };
+  let gyroEnabled = false;
+  let lastBeta: number | null = null;
+  let lastGamma: number | null = null;
+  let gyroLookDX = 0;
+  let gyroLookDY = 0;
 
   const leftPad = makePad('left');
   const rightPad = makePad('right');
@@ -132,9 +139,26 @@ export function createTouchControls(): TouchControls {
   root.addEventListener('pointerup', onPointerUp);
   root.addEventListener('pointercancel', onPointerUp);
 
+  function onDeviceOrientation(e: DeviceOrientationEvent): void {
+    if (e.beta == null || e.gamma == null) return;
+    if (lastBeta !== null && lastGamma !== null) {
+      // gamma ≈ yaw (sinistra/destra), beta ≈ pitch (su/giù)
+      gyroLookDX += (e.gamma - lastGamma) * 0.55;
+      gyroLookDY += (e.beta - lastBeta) * 0.45;
+    }
+    lastBeta = e.beta;
+    lastGamma = e.gamma;
+  }
+
   return {
     sample() {
-      const snap: TouchInputState = { ...state };
+      const snap: TouchInputState = {
+        ...state,
+        lookDX: state.lookDX + gyroLookDX,
+        lookDY: state.lookDY + gyroLookDY,
+      };
+      gyroLookDX = 0;
+      gyroLookDY = 0;
       // Pulsanti one-shot: si consumano al sample.
       state.attack = false;
       state.parry = false;
@@ -146,7 +170,28 @@ export function createTouchControls(): TouchControls {
     mount(parent) {
       parent.appendChild(root);
     },
+    async enableGyroscope() {
+      if (gyroEnabled || typeof window === 'undefined') return false;
+      try {
+        const DOE = DeviceOrientationEvent as unknown as {
+          requestPermission?: () => Promise<PermissionState>;
+        };
+        if (typeof DOE.requestPermission === 'function') {
+          const perm = await DOE.requestPermission();
+          if (perm !== 'granted') return false;
+        }
+        window.addEventListener('deviceorientation', onDeviceOrientation, true);
+        gyroEnabled = true;
+        return true;
+      } catch {
+        return false;
+      }
+    },
     dispose() {
+      if (gyroEnabled) {
+        window.removeEventListener('deviceorientation', onDeviceOrientation, true);
+        gyroEnabled = false;
+      }
       root.remove();
     },
   };

@@ -191,8 +191,11 @@ import {
   mapLiveIdsToSynergyInventory,
   resolveSynergiesFromArrays,
   synergyDamageMultiplier,
+  synergyHpRegenPerKill,
+  synergySpeedMultiplier,
   type SynergyEffect,
 } from '@/gameplay/upgrades/SynergyResolver.js';
+import { generateInscription } from '@/content/inscriptions.js';
 import { findPath } from '@/ai/navigation/GridNavigator.js';
 import {
   buildNavGridFromBounds,
@@ -289,6 +292,13 @@ export function createGameApplication(
   let actionMap = createActionMap();
   const input = createInputSystem(actionMap);
   const hud = createHUD();
+  quality.onThermalThrottle = (tier) => {
+    hud.showMessage(
+      `Prestazioni critiche: qualità impostata a ${tier} (surriscaldamento).`,
+      3600,
+    );
+    renderer?.applyQualityProfile(quality.profile);
+  };
   let attackDirectionIndicator: AttackDirectionIndicator | null = null;
   let runTimer: RunTimer | null = null;
   let touchControls: TouchControls | null = null;
@@ -1271,6 +1281,7 @@ export function createGameApplication(
       synergyInventory.items,
       synergyInventory.curses,
     );
+    playerController?.setSpeedMultiplier(synergySpeedMultiplier(synergyEffects));
     if (!isWeaponUnlocked(currentWeaponIndex)) {
       currentWeaponIndex = 1;
       weaponName = currentWeapon().name;
@@ -1358,6 +1369,19 @@ export function createGameApplication(
    * ART-006: ricrea TrapSystem dal layout e collega i mesh via hook del renderer.
    * Deve essere chiamato al posto di `setFloorLayout` grezzo all'init e alla discesa.
    */
+  function showFloorInscription(seed: number, floorIndex: number, theme?: string): void {
+    if (theme) {
+      hud.showMessage(`Piano ${floorIndex} — ${theme}`, 2400);
+    }
+    const inscription = generateInscription(seed);
+    if (inscription.glyphs.length > 0) {
+      hud.showContextualHint({
+        id: `inscription-floor-${floorIndex}`,
+        text: `${inscription.preamble} ${inscription.glyphs}`,
+      });
+    }
+  }
+
   function rebuildFloorNavGrid(layout: FloorSceneLayout): void {
     floorNavGrid = buildNavGridFromBounds(regionsFromSceneLayout(layout));
   }
@@ -1572,6 +1596,19 @@ export function createGameApplication(
           audio.play({ name: 'fragment_pickup', volume: 0.5 });
           hud.showMessage(`☥ +${kaMultiplier} Ka (Furia degli Sciacalli)${kaMultiplier > 1 ? ' (×2)' : ''}`, 1800);
           runStats = { ...runStats, kaEarnedThisRun: runStats.kaEarnedThisRun + kaMultiplier };
+        }
+      }
+
+      // GAME-ART: sinergia HP_REGEN_PER_KILL (es. Ankh + Fame del Deserto).
+      if (event.kind === 'ENEMY_DIED') {
+        const regenHp = synergyHpRegenPerKill(synergyEffects);
+        if (regenHp > 0 && playerEntityId !== null) {
+          const health = currentPlayerHealth();
+          if (health && health.hp < health.maxHp) {
+            const nextHp = Math.min(health.maxHp, health.hp + regenHp);
+            simulation.world.health.set(playerEntityId, nextHp, health.maxHp);
+            hud.showMessage(`Sinergia: +${regenHp} HP`, 1400);
+          }
         }
       }
       shouldPersistProfile ||= shouldPersistAfterEvent(event);
@@ -2145,7 +2182,7 @@ export function createGameApplication(
     syncVerticalSlicePresentation();
     syncTorchPresentation();
     cinematicOverlay?.fadeToBlack(false);
-    hud.showMessage(`Piano ${nextIndex} — ${progression.theme}`, 2800);
+    showFloorInscription(nextSlice.floor.seed, nextIndex, progression.theme);
     analytics.setFloor(nextIndex);
     analytics.track('FLOOR_START', Date.now(), { floor: nextIndex });
     if (dailyMods.has('SPEED_RUN')) {
@@ -3891,6 +3928,14 @@ export function createGameApplication(
         if (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) {
           touchControls = createTouchControls();
           touchControls.mount(parent);
+          // M-01: giroscopio — permesso iOS al primo tocco sull'overlay.
+          parent.addEventListener(
+            'pointerdown',
+            () => {
+              void touchControls?.enableGyroscope();
+            },
+            { once: true },
+          );
         }
         settingsMenu.mount(parent);
         progressionOverlay.mount(parent);
@@ -3912,6 +3957,7 @@ export function createGameApplication(
       persistRuntimeSettings();
       updateHUD();
       hud.showMessage(`Guardiano tracciato: ${sliceState.target.name}`, 2800);
+      showFloorInscription(sliceState.floor.seed, currentFloorIndex);
 
       // Il tutorial appare dopo il click su "INIZIA LA DISCESA" (menu principale),
       // non all'avvio: prima l'utente vede il menu e sceglie.

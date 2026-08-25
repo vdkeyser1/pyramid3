@@ -393,3 +393,19 @@ export function synergyDamageMultiplier(effects: readonly SynergyEffect[]): numb
     1,
   );
 }
+
+/** Prodotto dei SPEED_MULTIPLIER (1 se assenti). */
+export function synergySpeedMultiplier(effects: readonly SynergyEffect[]): number {
+  return filterEffectsByKind(effects, 'SPEED_MULTIPLIER').reduce(
+    (acc, e) => acc * e.value,
+    1,
+  );
+}
+
+/** Somma HP_REGEN_PER_KILL (0 se assenti). */
+export function synergyHpRegenPerKill(effects: readonly SynergyEffect[]): number {
+  return filterEffectsByKind(effects, 'HP_REGEN_PER_KILL').reduce(
+    (acc, e) => acc + e.value,
+    0,
+  );
+}

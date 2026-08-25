@@ -3,6 +3,8 @@ import {
   mapLiveIdsToSynergyInventory,
   resolveSynergiesFromArrays,
   synergyDamageMultiplier,
+  synergyHpRegenPerKill,
+  synergySpeedMultiplier,
   validateSynergyRules,
   type ItemId,
   type CurseId,
@@ -34,5 +36,14 @@ describe('SynergyResolver', () => {
 
   it('synergyDamageMultiplier è 1 senza effetti', () => {
     expect(synergyDamageMultiplier([])).toBe(1);
+  });
+
+  it('synergySpeedMultiplier e synergyHpRegenPerKill aggregano gli effetti', () => {
+    const effects = resolveSynergiesFromArrays(
+      ['AMULET_SCARAB', 'ANKH_RESURRECTION'] as ItemId[],
+      ['CURSE_SWARM', 'CURSE_DECAY'] as CurseId[],
+    );
+    expect(synergySpeedMultiplier(effects)).toBeLessThan(1);
+    expect(synergyHpRegenPerKill(effects)).toBeGreaterThan(0);
   });
 });
