@@ -20,6 +20,8 @@
  *   - ogni stanza ha esattamente un punto di ingresso e uno di uscita.
  */
 
+import type { RandomSource } from '@/procedural/SeedRng.js';
+
 // ── Tipi ─────────────────────────────────────────────────────────────────────
 
 /** Categorie di stanze speciali disponibili. */
@@ -326,24 +328,23 @@ export function getAvailableSpecialRooms(
 
 /**
  * Seleziona una stanza speciale con probabilità proporzionale al suo peso.
- * Utilizza un generatore di numeri casuali esterno (no Math.random() diretto)
- * per garantire la determinabilità in test e con seed.
+ * Usa SeedRng cosi la selezione resta deterministica col seed.
  *
  * @param floorIndex - Piano corrente.
- * @param rng        - Funzione che restituisce un float in [0, 1).
+ * @param rng        - Sorgente casuale del canale procedurale.
  * @param kind       - Filtra per tipo (opzionale).
  * @returns Il template selezionato, o undefined se nessuno è disponibile.
  */
 export function pickSpecialRoom(
   floorIndex: number,
-  rng:        () => number,
-  kind?:      SpecialRoomKind,
+  rng: RandomSource,
+  kind?: SpecialRoomKind,
 ): SpecialRoomTemplate | undefined {
   const candidates = getAvailableSpecialRooms(floorIndex, kind);
   if (candidates.length === 0) return undefined;
 
   const totalWeight = candidates.reduce((sum, t) => sum + t.spawnWeight, 0);
-  let roll = rng() * totalWeight;
+  let roll = rng.next() * totalWeight;
 
   for (const template of candidates) {
     roll -= template.spawnWeight;
