@@ -31,6 +31,9 @@ import {
 } from '@/rendering/Materials.js';
 import { createLogger } from '@/core/Logger.js';
 import { TRAPS } from '@/content/balance.js';
+import { resolveFeatureFlags } from '@/config/FeatureFlags.js';
+import { createLodManager, type LodManager } from '@/rendering/LodManager.js';
+import { ShadowMapOptimizer } from '@/rendering/ShadowMapOptimizer.js';
 import type { AssetLoader } from '@/rendering/AssetLoader.js';
 import type { ParticleBurst } from '@/rendering/Vfx.js';
 import type { PhysicsKinematicBox, PhysicsWorld } from '@/physics/PhysicsWorld.js';
@@ -179,6 +182,10 @@ export function createThreeRenderer(
   let initialized = false;
   let activeFloorLayout: FloorSceneLayout | null = null;
   let pendingTrapHooks: FloorLayoutTrapHooks | null = null;
+  /** GAME-ART-010: LOD props + shadow map condizionale (FeatureFlags). */
+  const featureFlags = resolveFeatureFlags();
+  const lodManager: LodManager | null = featureFlags.meshLod ? createLodManager() : null;
+  let shadowMapOptimizer: ShadowMapOptimizer | null = null;
   let _doorOpen = false;
   let _doorMesh: THREE.Mesh | null = null;
   let _doorPhysics: PhysicsKinematicBox | null = null;
@@ -529,6 +536,13 @@ export function createThreeRenderer(
     torchLight.shadow.bias = -0.0002;
     scene.add(torchLight);
     scene.add(torchLight.target);
+
+    if (featureFlags.shadowMapOpt && 'shadowMap' in renderer) {
+      const gl = renderer as THREE.WebGLRenderer;
+      gl.shadowMap.autoUpdate = false;
+      shadowMapOptimizer = new ShadowMapOptimizer();
+      shadowMapOptimizer.addSpotLight(torchLight, 256);
+    }
 
     torchAmbientLight = new THREE.PointLight(0xff9a3c, 0, 9, 1.7);
     torchAmbientLight.visible = false;
@@ -1150,6 +1164,8 @@ export function createThreeRenderer(
     }
 
     dungeonRoot.clear();
+    lodManager?.clear();
+    shadowMapOptimizer?.forceUpdate();
     brazierRoot.clear();
     brazierLights.clear();
     brazierMaterials.clear();
@@ -1281,7 +1297,7 @@ export function createThreeRenderer(
     // GAME-ART-008: props della stanza speciale (arsenale / tesoreria / santuario).
     try {
       const { placeSpecialRoomProps } = await import('@/rendering/SpecialRoomProps.js');
-      placeSpecialRoomProps(layout.specialProps, dungeonRoot, wallMaterial);
+      placeSpecialRoomProps(layout.specialProps, dungeonRoot, wallMaterial, lodManager);
     } catch (error) {
       log.warn('Props stanza speciale non disponibili', { error: String(error) });
     }
@@ -1628,6 +1644,10 @@ export function createThreeRenderer(
     }
 
     frustumCuller.update(camera);
+    lodManager?.update(camera);
+    if (shadowMapOptimizer) {
+      shadowMapOptimizer.update(camera.position);
+    }
 
     if (webgpuPipeline) {
       webgpuPipeline.render();
@@ -2160,6 +2180,9 @@ export function createThreeRenderer(
 
   function dispose(): void {
     disposed = true;
+    lodManager?.clear();
+    shadowMapOptimizer?.dispose();
+    shadowMapOptimizer = null;
     _doorPhysics?.dispose();
     _doorPhysics = null;
     assetLoader = null;

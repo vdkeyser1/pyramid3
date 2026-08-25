@@ -224,6 +224,7 @@ import type {
   DailyModifier,
 } from '@/gameplay/DailyChallengeSystem.js';
 import { createGameAnalytics, type GameAnalytics } from '@/analytics/GameAnalytics.js';
+import { resolveFeatureFlags, nonDefaultFlags } from '@/config/FeatureFlags.js';
 
 export type AppState = 'uninitialized' | 'initializing' | 'running' | 'paused' | 'disposed';
 
@@ -3506,6 +3507,11 @@ export function createGameApplication(
 
       state = 'initializing';
       log.info('Inizializzazione GameApplication', { backend });
+      const featureFlags = resolveFeatureFlags();
+      log.info('Feature flags risolti', {
+        flags: featureFlags,
+        nonDefault: nonDefaultFlags(featureFlags),
+      });
 
       onStatus?.('Caricamento profilo...');
       try {

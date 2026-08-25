@@ -9,6 +9,7 @@
 
 import * as THREE from 'three';
 import type { FloorSceneSpecialProp } from '@/world/FloorSceneLayout.js';
+import { createPropLodEntry, type LodManager } from '@/rendering/LodManager.js';
 
 const shared = new Map<string, THREE.BufferGeometry>();
 
@@ -90,12 +91,13 @@ function meshForProp(propId: string, wallMaterial: THREE.Material): THREE.Mesh {
 
 /**
  * Piazza i props della stanza speciale sotto `dungeonRoot`.
- * Restituisce il gruppo creato (o null se non ci sono props).
+ * Con `lodManager` i mesh sono wrappati in THREE.LOD (GAME-ART-010).
  */
 export function placeSpecialRoomProps(
   props: readonly FloorSceneSpecialProp[],
   dungeonRoot: THREE.Group,
   wallMaterial: THREE.Material,
+  lodManager?: LodManager | null,
 ): THREE.Group | null {
   if (props.length === 0) return null;
 
@@ -104,12 +106,20 @@ export function placeSpecialRoomProps(
 
   for (const prop of props) {
     const mesh = meshForProp(prop.propId, wallMaterial);
-    mesh.position.x = prop.position.x;
-    mesh.position.z = prop.position.z;
     mesh.rotation.y = prop.yawRad;
     mesh.scale.setScalar(prop.scale);
     mesh.name = `special:${prop.propId}`;
-    group.add(mesh);
+
+    if (lodManager && mesh.geometry.getIndex()) {
+      const entry = createPropLodEntry(mesh, mesh.material as THREE.Material);
+      entry.updatePosition(prop.position.x, 0, prop.position.z);
+      lodManager.registerLod(entry);
+      group.add(entry.lodObject);
+    } else {
+      mesh.position.x = prop.position.x;
+      mesh.position.z = prop.position.z;
+      group.add(mesh);
+    }
   }
 
   dungeonRoot.add(group);
