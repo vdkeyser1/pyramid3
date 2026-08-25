@@ -1,0 +1,79 @@
+LICENZA COMMERCIALE PROPRIETARIA
+La Piramide Perduta
+
+Copyright (c) 2026 Vincent Dekeyser. Tutti i diritti riservati.
+
+Il software, il codice sorgente, i contenuti originali, i marchi, il design,
+l'audio originale e ogni altro materiale creato per il gioco «La Piramide
+Perduta» (il «Gioco») sono proprietà esclusiva di Vincent Dekeyser
+(il «Titolare»).
+
+1. Concessione
+Senza un accordo scritto separato con il Titolare, nessuno può copiare,
+modificare, distribuire, sublicenziare, vendere, affittare, pubblicare,
+eseguire in pubblico a scopo di lucro, o usare il Gioco (incluso il
+sorgente) se non per:
+  (a) giocare a una copia legittimamente ottenuta dal Titolare;
+  (b) contribuire al repository su invito del Titolare, restando
+      il contributo di proprietà del Titolare salvo diverso accordo.
+
+2. Uso commerciale
+Qualsiasi uso commerciale (vendita, streaming a pagamento, merchandising,
+porting, white-label, integrazione in altri prodotti, hosting a pagamento)
+richiede una licenza commerciale scritta dal Titolare.
+
+3. Materiali di terzi
+Alcuni file in `public/` e dipendenze npm restano soggetti alle rispettive
+licenze (CC0, CC-BY, Apache-2.0, MIT, ecc.). Vedi CREDITS.md e i file
+LICENSE dei vendor. Questa licenza non pretende di sostituirle: gli
+obblighi di attribuzione (es. CC-BY) restano a carico di chi distribuisce
+il Gioco.
+
+4. Esclusione di garanzia
+IL GIOCO È FORNITO «COSÌ COM'È», SENZA GARANZIE DI ALCUN TIPO. Il Titolare
+non è responsabile di danni diretti o indiretti derivanti dall'uso.
+
+5. Legge applicabile
+Questa licenza è regolata dalle leggi del Belgio, salvo norma inderogabile
+del paese del consumatore.
+
+Per richieste di licenza commerciale: vincent.dekeyser.vd@gmail.com
+
+
+PROPRIETARY COMMERCIAL LICENSE
+La Piramide Perduta
+
+Copyright (c) 2026 Vincent Dekeyser. All rights reserved.
+
+The software, source code, original content, marks, design, original audio
+and all other materials created for the game "La Piramide Perduta" (the
+"Game") are the exclusive property of Vincent Dekeyser (the "Owner").
+
+1. Grant
+Without a separate written agreement with the Owner, nobody may copy,
+modify, distribute, sublicense, sell, rent, publish, publicly perform for
+profit, or use the Game (including source) except to:
+  (a) play a copy lawfully obtained from the Owner;
+  (b) contribute to the repository at the Owner's invitation, with
+      contributions owned by the Owner unless otherwise agreed.
+
+2. Commercial use
+Any commercial use (sale, paid streaming, merchandising, porting,
+white-label, embedding in other products, paid hosting) requires a
+written commercial license from the Owner.
+
+3. Third-party materials
+Some files under `public/` and npm dependencies remain under their own
+licenses (CC0, CC-BY, Apache-2.0, MIT, etc.). See CREDITS.md and vendor
+LICENSE files. This license does not override them; attribution duties
+(e.g. CC-BY) remain with anyone who distributes the Game.
+
+4. Disclaimer
+THE GAME IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. The Owner is
+not liable for direct or indirect damages arising from use.
+
+5. Governing law
+This license is governed by the laws of Belgium, without prejudice to
+mandatory consumer-protection rules.
+
+Commercial licensing inquiries: vincent.dekeyser.vd@gmail.com

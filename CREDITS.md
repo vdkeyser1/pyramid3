@@ -1,5 +1,8 @@
 # CREDITI ASSET — La Piramide Perduta
 
+Il gioco originale è sotto licenza commerciale proprietaria (`LICENSE`).
+Questo file elenca solo gli asset e le librerie di terzi e le loro licenze.
+
 Tutti gli asset esterni usati in questo progetto, con licenza e attribuzione.
 
 ## Modelli 3D (.glb)

@@ -4,6 +4,8 @@
   "version": "0.2.0",
   "type": "module",
   "description": "Egyptian Noir Roguelike FPS — Vertical Slice",
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "Vincent Dekeyser",
   "scripts": {
     "dev": "vite --force",
     "build": "tsc -b && vite build",
