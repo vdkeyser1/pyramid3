@@ -29,6 +29,8 @@ import {
 } from '@/input/ActionMap.js';
 import { createInputSystem, type InputSystem, type InputFrame } from '@/input/InputSystem.js';
 import { createHUD, type HUD, type SubtitleDirection } from '@/ui/HUD.js';
+import { AttackDirectionIndicator } from '@/ui/AttackDirectionIndicator.js';
+import { RunTimer } from '@/ui/RunTimer.js';
 import { createCinematicOverlay } from '@/ui/CinematicOverlay.js';
 import { createSettingsMenu, type SettingsMenu, type RuntimeSettings } from '@/ui/SettingsMenu.js';
 import {
@@ -269,6 +271,8 @@ export function createGameApplication(
   let actionMap = createActionMap();
   const input = createInputSystem(actionMap);
   const hud = createHUD();
+  let attackDirectionIndicator: AttackDirectionIndicator | null = null;
+  let runTimer: RunTimer | null = null;
   // G-15: vignette/grana/respiro del buio (DOM, zero costo GPU).
   const cinematicOverlay = createCinematicOverlay();
   const settingsMenu = createSettingsMenu();
@@ -478,6 +482,7 @@ export function createGameApplication(
 
     const addedReason = pauseReasons.add(reason);
     if (!addedReason || state === 'paused') return;
+    runTimer?.pause();
 
     const canvasWasPointerLocked = isCanvasPointerLocked();
     pendingPointerLockRestore ||= canvasWasPointerLocked;
@@ -500,6 +505,7 @@ export function createGameApplication(
 
     state = 'running';
     lastTimeMs = 0;
+    runTimer?.start();
     if (renderer) {
       input.attach(renderer.canvas);
       focusCanvas();
@@ -983,6 +989,7 @@ export function createGameApplication(
   function showDeathOverlay(canRetry: boolean): void {
     // G-18: cue di morte del player (una sola volta per run fallita)
     audio.play({ name: 'player_death', volume: 0.6 });
+    runTimer?.pause();
     const deathPos = currentPlayerPosition();
     analytics.track('PLAYER_DEATH', Date.now(), {
       floor: currentFloorIndex,
@@ -1400,6 +1407,21 @@ export function createGameApplication(
     // G-07: feedback visivo del danno subito — vibrazione camera proporzionale,
     // attenuata da reduceCameraShake nel renderer.
     renderer?.addCameraShake(Math.min(1, 0.35 + outcome.finalDamageHp / 60));
+    // AC-03: freccia 8-dir verso la sorgente del colpo (relativa allo sguardo).
+    if (attackDirectionIndicator && playerController) {
+      const playerPos = playerController.getState().position;
+      const dx = position.x - playerPos.x;
+      const dz = position.z - playerPos.z;
+      if (Math.hypot(dx, dz) > 0.15) {
+        const angleToHit = Math.atan2(dx, dz);
+        const angleForward = Math.atan2(-Math.sin(cameraYaw), -Math.cos(cameraYaw));
+        let rel = angleToHit - angleForward;
+        while (rel > Math.PI) rel -= Math.PI * 2;
+        while (rel < -Math.PI) rel += Math.PI * 2;
+        const deg = ((rel * 180) / Math.PI + 360) % 360;
+        attackDirectionIndicator.show(deg);
+      }
+    }
     // Tutorial graduale: primo danno subito e soglia critica (una volta sola).
     if (remainingHp > 0 && remainingHp <= Math.round(playerMaxHp * 0.3)) {
       hud.showContextualHint({
@@ -3700,6 +3722,9 @@ export function createGameApplication(
       const parent = canvas.parentElement;
       if (parent) {
         hud.mount(parent);
+        attackDirectionIndicator = new AttackDirectionIndicator(parent);
+        runTimer = new RunTimer(parent);
+        runTimer.start();
         settingsMenu.mount(parent);
         progressionOverlay.mount(parent);
         deathOverlay.mount(parent);
@@ -3869,6 +3894,10 @@ export function createGameApplication(
       detachPointerLockListeners?.();
       detachPointerLockListeners = null;
       input.dispose();
+      attackDirectionIndicator?.dispose();
+      attackDirectionIndicator = null;
+      runTimer?.dispose();
+      runTimer = null;
       hud.dispose();
       cinematicOverlay?.dispose();
       settingsMenu.dispose();

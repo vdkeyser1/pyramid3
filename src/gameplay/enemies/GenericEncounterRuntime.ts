@@ -14,6 +14,7 @@
  */
 
 import { ENEMIES, type EnemyArchetype, type EnemyDef } from '@/content/enemies.js';
+import { checkPerception } from '@/ai/PerceptionSystem.js';
 import type { EntityId } from '@/ecs/EntityAllocator.js';
 import type { AttackDefinition, AttackShapeDefinition } from '@/gameplay/combat/AttackDefinition.js';
 import { HitRegistry } from '@/gameplay/combat/HitRegistry.js';
@@ -21,6 +22,7 @@ import { HurtboxStore } from '@/gameplay/combat/HurtboxStore.js';
 import { createPlayerHurtbox, resolveEnemyAttackHitsPlayer } from '@/gameplay/combat/EnemyAttackResolver.js';
 import { isEnemyInParryArc, PARRY_STAGGER_TICKS } from '@/gameplay/combat/ParryResolver.js';
 
+/** @deprecated Prefer EnemyDef.viewRadiusM via checkPerception; kept for tests/docs. */
 export const GENERIC_WAKE_RADIUS_M = 5.0;
 /** Rotazione di inseguimento in gradi/secondo (comune a tutti). */
 export const GENERIC_TURN_RATE_DEG_S = 60;
@@ -223,11 +225,26 @@ export function tickGenericEncounter(
     const noiseDistanceM = noise
       ? Math.hypot(noise.x - state.position.x, noise.z - state.position.z)
       : Number.POSITIVE_INFINITY;
-    const canHear = distanceM <= state.def.hearRadiusM;
+    // GAME-ART-006: vista a cono + udito da EnemyDef (non raggio fisso isotropo).
+    // Convenzione facingDeg 0 = -z; PerceptionSystem yaw 0 = +z ⇒ +π.
+    const enemyYawRad = (state.facingDeg * Math.PI) / 180 + Math.PI;
+    const perception = checkPerception(
+      state.def,
+      state.position.x,
+      state.position.y,
+      state.position.z,
+      enemyYawRad,
+      playerPosition.x,
+      playerPosition.y,
+      playerPosition.z,
+      0,
+      torchLit ? 'HIGH' : 'OFF',
+    );
+    const canHear = perception.canHear;
     const canHearNoise = noise !== null && noise !== undefined
       && noiseDistanceM <= state.def.hearRadiusM * (0.6 + 0.4 * Math.min(1, Math.max(0, noise.intensity)));
-    const canSee = distanceM <= GENERIC_WAKE_RADIUS_M && (hasLineOfSight === null || hasLineOfSight());
-    if (canSee || canHear || canHearNoise) {
+    const canSee = perception.canSee && (hasLineOfSight === null || hasLineOfSight());
+    if (canSee || canHear || canHearNoise || perception.canSenseKa) {
       r.state = 'PURSUING';
       r.stateTicks = 0;
       state.facingDeg = 0;

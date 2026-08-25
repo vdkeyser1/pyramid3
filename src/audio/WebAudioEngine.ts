@@ -481,7 +481,8 @@ export function createAudioEngine(): AudioEngine {
             if (!response.ok) continue;
             const arrayBuffer = await response.arrayBuffer();
             const buffer = await ctxRef.decodeAudioData(arrayBuffer);
-            buffers.push(buffer);
+            const { resampleBuffer } = await import('@/audio/AudioBufferResampler.js');
+            buffers.push(await resampleBuffer(buffer, ctxRef.sampleRate));
           } catch { /* variante mancante: ignora */ }
         }
         if (buffers.length > 0) {
