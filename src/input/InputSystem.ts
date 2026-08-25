@@ -92,6 +92,23 @@ export interface InputSystem {
 
   /** Aggiorna la action map usata per risolvere i binding a runtime. */
   setActionMap(actionMap: ActionMap): void;
+
+  /**
+   * M-01: assi virtuali (touch / accessibilità).
+   * move −1..1; lookDX/DY pixel-equivalenti sommati al mouse delta del frame.
+   */
+  setVirtualAxes(axes: {
+    readonly moveX: number;
+    readonly moveZ: number;
+    readonly lookDX?: number;
+    readonly lookDY?: number;
+  }): void;
+
+  /** M-01: pulsanti virtuali tenuti/premuti (edge = wasPressed sul frame). */
+  setVirtualButtons(down: ReadonlySet<ActionKind>): void;
+
+  /** Assi movimento virtuali del frame corrente (−1..1). */
+  getVirtualMove(): { readonly x: number; readonly z: number };
 }
 
 // ── Implementazione ──────────────────────────────────────────────────────
@@ -115,6 +132,12 @@ export function createInputSystem(actionMap: ActionMap): InputSystem {
   let frameMouseDY = 0;
   let frameScrollDY = 0;
   let currentGamepad: GamepadState | null = null;
+  let virtualMoveX = 0;
+  let virtualMoveZ = 0;
+  let virtualLookDX = 0;
+  let virtualLookDY = 0;
+  let virtualButtons = new Set<ActionKind>();
+  let prevVirtualButtons = new Set<ActionKind>();
 
   // DOM listener refs per cleanup
   let targetElement: HTMLElement | null = null;
@@ -340,12 +363,14 @@ export function createInputSystem(actionMap: ActionMap): InputSystem {
       released.clear();
 
       // Pubblica i delta accumulati dall'ultimo frame e azzera gli accumulatori
-      frameMouseDX = pendingMouseDX;
-      frameMouseDY = pendingMouseDY;
+      frameMouseDX = pendingMouseDX + virtualLookDX;
+      frameMouseDY = pendingMouseDY + virtualLookDY;
       frameScrollDY = pendingScrollDY;
       pendingMouseDX = 0;
       pendingMouseDY = 0;
       pendingScrollDY = 0;
+      virtualLookDX = 0;
+      virtualLookDY = 0;
 
       // Ricostruisci held dal raw state
       held.clear();
@@ -363,6 +388,21 @@ export function createInputSystem(actionMap: ActionMap): InputSystem {
           }
         }
       }
+
+      // M-01: virtual buttons (touch) → held + edge pressed
+      for (const action of virtualButtons) {
+        held.add(action);
+        if (!prevVirtualButtons.has(action)) {
+          pressed.add(action);
+        }
+      }
+      for (const action of prevVirtualButtons) {
+        if (!virtualButtons.has(action)) {
+          released.add(action);
+        }
+      }
+      prevVirtualButtons = new Set(virtualButtons);
+      // virtualButtons restano finché setVirtualButtons non li aggiorna.
 
       // Poll gamepad
       pollGamepad();
@@ -421,6 +461,21 @@ export function createInputSystem(actionMap: ActionMap): InputSystem {
 
     setActionMap(nextActionMap: ActionMap): void {
       currentActionMap = nextActionMap;
+    },
+
+    setVirtualAxes(axes): void {
+      virtualMoveX = Math.max(-1, Math.min(1, axes.moveX));
+      virtualMoveZ = Math.max(-1, Math.min(1, axes.moveZ));
+      if (axes.lookDX !== undefined) virtualLookDX += axes.lookDX;
+      if (axes.lookDY !== undefined) virtualLookDY += axes.lookDY;
+    },
+
+    setVirtualButtons(down): void {
+      virtualButtons = new Set(down);
+    },
+
+    getVirtualMove() {
+      return { x: virtualMoveX, z: virtualMoveZ };
     },
   };
 

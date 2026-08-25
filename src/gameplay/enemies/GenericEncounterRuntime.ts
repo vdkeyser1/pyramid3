@@ -61,6 +61,11 @@ export interface GenericEncounterTickOptions {
    * sguardo se il rumore è più vicino del player. intensity 0..1.
    */
   readonly noiseStimulus?: { readonly x: number; readonly z: number; readonly intensity: number } | null;
+  /**
+   * GAME-ART: punto verso cui camminare in PURSUING (waypoint A* o player).
+   * Se assente, il chase usa direttamente la posizione del player.
+   */
+  readonly pursuitTarget?: { readonly x: number; readonly z: number } | null;
 }
 
 export interface GenericEncounterTickResult {
@@ -394,9 +399,14 @@ export function tickGenericEncounter(
     return { message: null, playerDamageHp: 0, telegraphStrength: 0 };
   }
 
-  // Fuori range: avvicinati ruotando verso il player
-  const moveX = -dx / Math.max(0.01, distanceM);
-  const moveZ = -dz / Math.max(0.01, distanceM);
+  // Fuori range: avvicinati verso pursuitTarget (A*) o player.
+  // Stesso segno del chase storico: dx = target - self, step = -dx/|d|.
+  const seek = options.pursuitTarget ?? playerPosition;
+  const seekDx = seek.x - state.position.x;
+  const seekDz = seek.z - state.position.z;
+  const seekDist = Math.hypot(seekDx, seekDz);
+  const moveX = -seekDx / Math.max(0.01, seekDist);
+  const moveZ = -seekDz / Math.max(0.01, seekDist);
   state.position.x += moveX * state.def.speedMps / 60;
   state.position.z += moveZ * state.def.speedMps / 60;
 

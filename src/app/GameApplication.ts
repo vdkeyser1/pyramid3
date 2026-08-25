@@ -187,6 +187,24 @@ import {
   upgradesFromNames,
   type CombatModifiers,
 } from '@/gameplay/upgrades/UpgradeResolver.js';
+import {
+  mapLiveIdsToSynergyInventory,
+  resolveSynergiesFromArrays,
+  synergyDamageMultiplier,
+  type SynergyEffect,
+} from '@/gameplay/upgrades/SynergyResolver.js';
+import { findPath } from '@/ai/navigation/GridNavigator.js';
+import {
+  buildNavGridFromBounds,
+  regionsFromSceneLayout,
+  type FloorNavGrid,
+} from '@/ai/navigation/FloorNavGrid.js';
+import { createTouchControls, type TouchControls } from '@/ui/TouchControls.js';
+import {
+  computeSwarmSteering,
+  DEFAULT_SCARAB_SWARM_CONFIG,
+  type SwarmAgent,
+} from '@/ai/steering/SwarmSteering.js';
 import { resolveDamage } from '@/gameplay/combat/DamageResolver.js';
 import { PARRY_IFRAME_MS, PARRY_WINDOW_MS, parryWindowActive } from '@/gameplay/combat/ParryResolver.js';
 import type { MusicState } from '@/audio/MusicPreset.js';
@@ -273,6 +291,10 @@ export function createGameApplication(
   const hud = createHUD();
   let attackDirectionIndicator: AttackDirectionIndicator | null = null;
   let runTimer: RunTimer | null = null;
+  let touchControls: TouchControls | null = null;
+  let floorNavGrid: FloorNavGrid | null = null;
+  let synergyEffects: readonly SynergyEffect[] = [];
+  let scarabStates: ScarabEncounterState[] = [];
   // G-15: vignette/grana/respiro del buio (DOM, zero costo GPU).
   const cinematicOverlay = createCinematicOverlay();
   const settingsMenu = createSettingsMenu();
@@ -449,12 +471,12 @@ export function createGameApplication(
    * BOSS se boss attivo, COMBAT se attacco in corso, TENSION se svegli, EXPLORE altrimenti.
    */
   function updateMusicState(): void {
-    const scarabCombat = scarabState?.runtime.state === 'CHARGING';
+    const scarabCombat = scarabStates.some((s) => s.runtime.state === 'CHARGING');
     const mummyCombat = mummyState?.runtime.state === 'ATTACKING';
     const genericCombat = genericEnemyState?.runtime.state === 'ATTACKING';
     const anyCombat = scarabCombat || mummyCombat || genericCombat;
     const anyAwake =
-      scarabState?.awakened === true ||
+      scarabStates.some((s) => s.awakened) ||
       mummyState?.runtime.state !== 'SLEEPING' ||
       genericEnemyState?.runtime.state !== 'DORMANT';
     const isBossActive = activeBossRuntime !== null;
@@ -801,12 +823,13 @@ export function createGameApplication(
         hpRatio: mummyState.maxHp <= 0 ? 0 : mummyState.hp / mummyState.maxHp,
       });
     }
-    if (scarabState && scarabState.hp > 0) {
+    for (const scarab of scarabStates) {
+      if (scarab.hp <= 0) continue;
       result.push({
-        x: scarabState.position.x,
-        z: scarabState.position.z,
-        awake: scarabState.awakened,
-        hpRatio: scarabState.maxHp <= 0 ? 0 : scarabState.hp / scarabState.maxHp,
+        x: scarab.position.x,
+        z: scarab.position.z,
+        awake: scarab.awakened,
+        hpRatio: scarab.maxHp <= 0 ? 0 : scarab.hp / scarab.maxHp,
       });
     }
     if (genericEnemyState && genericEnemyState.hp > 0) {
@@ -1238,6 +1261,16 @@ export function createGameApplication(
     combatModifiers = resolveCombatModifiers(
       upgradesFromNames(progressionState.discoveredGrafts, ALL_UPGRADES),
     );
+    // GAME-ART: sinergie live (maledizioni + arma + graft) → effetti di combattimento.
+    const synergyInventory = mapLiveIdsToSynergyInventory({
+      curseIds: activeCurse ? [activeCurse.definition.id] : [],
+      weaponIds: [String(currentWeapon().id)],
+      graftNames: progressionState.discoveredGrafts,
+    });
+    synergyEffects = resolveSynergiesFromArrays(
+      synergyInventory.items,
+      synergyInventory.curses,
+    );
     if (!isWeaponUnlocked(currentWeaponIndex)) {
       currentWeaponIndex = 1;
       weaponName = currentWeapon().name;
@@ -1325,7 +1358,12 @@ export function createGameApplication(
    * ART-006: ricrea TrapSystem dal layout e collega i mesh via hook del renderer.
    * Deve essere chiamato al posto di `setFloorLayout` grezzo all'init e alla discesa.
    */
+  function rebuildFloorNavGrid(layout: FloorSceneLayout): void {
+    floorNavGrid = buildNavGridFromBounds(regionsFromSceneLayout(layout));
+  }
+
   function bindTrapSystemToFloor(layout: FloorSceneLayout): void {
+    rebuildFloorNavGrid(layout);
     const hasTraps = layout.traps.length > 0 || layout.leverPassage !== null;
     trapSystem = hasTraps ? new TrapSystem(layout.traps, layout.leverPassage) : null;
     const hooks: FloorLayoutTrapHooks | undefined = trapSystem
@@ -1995,6 +2033,7 @@ export function createGameApplication(
       if (cursed.kaPerKillBonus > 0) {
         log.info('Furia degli Sciacalli attiva', { kaPerKill: cursed.kaPerKillBonus, budgetMult: cursed.enemyBudgetMultiplier });
       }
+      syncProgressionRuntimeBonuses();
     }
     log.info('Discesa al piano successivo', {
       floorIndex: nextIndex,
@@ -2006,7 +2045,7 @@ export function createGameApplication(
 
     // Reset dei runtime per-piano
     visitedRoomIds = new Set();
-    scarabState = null;
+    clearScarabSwarm();
     mummyState = null;
     genericEnemyState = null;
     activeBossRuntime = null;
@@ -2034,8 +2073,7 @@ export function createGameApplication(
     });
     const encounterPlan = enemySpawnDirector.planNext();
     if (encounterPlan?.enemyType === 'SCARAB') {
-      const entityId = simulation.world.createEntity();
-      scarabState = createScarabEncounterState(entityId, encounterPlan.position);
+      spawnScarabSwarm(encounterPlan.position);
     } else if (encounterPlan) {
       const entityId = simulation.world.createEntity();
       genericEnemyState = createGenericEncounterState(
@@ -2183,18 +2221,18 @@ export function createGameApplication(
       },
     ];
 
-    if (scarabState) {
+    for (const scarab of scarabStates) {
       enemyStates.push({
         kind: 'SCARAB',
-        x: scarabState.position.x,
-        y: scarabState.position.y,
-        z: scarabState.position.z,
+        x: scarab.position.x,
+        y: scarab.position.y,
+        z: scarab.position.z,
         modelScale: 0.62,
-        hpRatio: scarabState.maxHp <= 0 ? 0 : scarabState.hp / scarabState.maxHp,
-        alive: scarabState.hp > 0,
-        awakened: scarabState.awakened,
+        hpRatio: scarab.maxHp <= 0 ? 0 : scarab.hp / scarab.maxHp,
+        alive: scarab.hp > 0,
+        awakened: scarab.awakened,
         hitFlash: nowMs <= scarabHitFlashUntilMs,
-        telegraphStrength: getScarabTelegraphStrength(scarabState),
+        telegraphStrength: getScarabTelegraphStrength(scarab),
       });
     }
 
@@ -2269,43 +2307,104 @@ export function createGameApplication(
     });
   }
 
-  function syncScarabEntityState(): void {
-    if (!scarabState) {
-      return;
-    }
-
-    simulation.world.transform.setPosition(
-      scarabState.entityId,
-      scarabState.position.x,
-      scarabState.position.y,
-      scarabState.position.z,
-    );
-    simulation.world.health.set(scarabState.entityId, scarabState.hp, scarabState.maxHp);
-
-    if (scarabState.hp <= 0) {
-      enemyHurtboxes.remove(scarabState.entityId);
-      return;
-    }
-
-    const existing = enemyHurtboxes.getByEntity(scarabState.entityId);
-    if (existing) {
-      enemyHurtboxes.update(
-        scarabState.entityId,
-        scarabState.position.x,
-        scarabState.position.y,
-        scarabState.position.z,
-      );
-      return;
-    }
-
-    enemyHurtboxes.add({
-      entityId: scarabState.entityId,
-      centerX: scarabState.position.x,
-      centerY: scarabState.position.y,
-      centerZ: scarabState.position.z,
-      radiusM: SCARAB_HURTBOX_RADIUS_M,
-      heightM: SCARAB_HURTBOX_HEIGHT_M,
+  function spawnScarabSwarm(
+    center: { readonly x: number; readonly y: number; readonly z: number },
+  ): void {
+    const offsets = [
+      { x: 0, z: 0 },
+      { x: 1.15, z: 0.85 },
+      { x: -1.05, z: 0.95 },
+    ] as const;
+    scarabStates = offsets.map((off) => {
+      const entityId = simulation.world.createEntity();
+      return createScarabEncounterState(entityId, {
+        x: center.x + off.x,
+        y: center.y,
+        z: center.z + off.z,
+      });
     });
+    scarabState = scarabStates[0] ?? null;
+  }
+
+  function clearScarabSwarm(): void {
+    scarabStates = [];
+    scarabState = null;
+  }
+
+  function syncPrimaryScarabRef(): void {
+    scarabState =
+      scarabStates.find((s) => s.hp > 0) ??
+      scarabStates[0] ??
+      null;
+  }
+
+  function applyScarabSwarmSteering(
+    playerPosition: { readonly x: number; readonly y: number; readonly z: number },
+    deltaSeconds: number,
+  ): void {
+    const alive = scarabStates.filter((s) => s.hp > 0);
+    if (alive.length < 3) return;
+
+    const agents: SwarmAgent[] = alive.map((s) => ({
+      entityId: s.entityId,
+      position: { x: s.position.x, y: s.position.y, z: s.position.z },
+      velocity: { x: 0, y: 0, z: 0 },
+      isCharging: s.runtime.state === 'CHARGING',
+      chargeCooldownTicks: 0,
+    }));
+    const target = { x: playerPosition.x, y: playerPosition.y, z: playerPosition.z };
+    const blendMps = DEFAULT_SCARAB_SWARM_CONFIG.maxSpeed * 0.35;
+
+    for (let i = 0; i < alive.length; i++) {
+      const scarab = alive[i];
+      const agent = agents[i];
+      if (!scarab || !agent) continue;
+      if (!scarab.awakened || scarab.runtime.state === 'CHARGING') continue;
+      const steer = computeSwarmSteering(agent, agents, target, DEFAULT_SCARAB_SWARM_CONFIG);
+      scarab.position = {
+        x: scarab.position.x + steer.x * blendMps * deltaSeconds,
+        y: scarab.position.y,
+        z: scarab.position.z + steer.z * blendMps * deltaSeconds,
+      };
+    }
+  }
+
+  function syncScarabEntityState(): void {
+    syncPrimaryScarabRef();
+    for (const scarab of scarabStates) {
+      simulation.world.transform.setPosition(
+        scarab.entityId,
+        scarab.position.x,
+        scarab.position.y,
+        scarab.position.z,
+      );
+      simulation.world.health.set(scarab.entityId, scarab.hp, scarab.maxHp);
+
+      if (scarab.hp <= 0) {
+        enemyHurtboxes.remove(scarab.entityId);
+        continue;
+      }
+
+      const existing = enemyHurtboxes.getByEntity(scarab.entityId);
+      if (existing) {
+        enemyHurtboxes.update(
+          scarab.entityId,
+          scarab.position.x,
+          scarab.position.y,
+          scarab.position.z,
+        );
+        continue;
+      }
+
+      enemyHurtboxes.add({
+        entityId: scarab.entityId,
+        centerX: scarab.position.x,
+        centerY: scarab.position.y,
+        centerZ: scarab.position.z,
+        radiusM: SCARAB_HURTBOX_RADIUS_M,
+        heightM: SCARAB_HURTBOX_HEIGHT_M,
+      });
+    }
   }
 
   function syncMummyEntityState(): void {
@@ -2489,8 +2588,9 @@ export function createGameApplication(
       const graftDamage = resolvePlayerDamage(attack.damage, combatModifiers, {
         targetIsUndead,
       });
+      const synergyScaledDamage = graftDamage * synergyDamageMultiplier(synergyEffects);
       const outcome = resolveDamage({
-        baseDamageHp: graftDamage,
+        baseDamageHp: synergyScaledDamage,
         attackModifier: 1,
         sourceModifier: 1,
         targetArmor: 0,
@@ -2538,27 +2638,36 @@ export function createGameApplication(
           const bossHp = activeBossRuntime ? ` (${activeBossRuntime.hp}/${activeBossRuntime.maxHp})` : '';
           hud.showMessage(`Colpo a segno: -${resolution.damageHp} HP${bossHp}`);
         }
-      } else if (targetId === scarabState?.entityId) {
-        const resolution = applyDamageToScarab(scarabState, outcome.finalDamageHp);
-        simulation.world.health.set(targetId, resolution.targetHp, scarabState.maxHp);
+      } else if (scarabStates.some((s) => s.entityId === targetId)) {
+        const hitScarab = scarabStates.find((s) => s.entityId === targetId);
+        if (!hitScarab) {
+          continue;
+        }
+        const resolution = applyDamageToScarab(hitScarab, outcome.finalDamageHp);
+        simulation.world.health.set(targetId, resolution.targetHp, hitScarab.maxHp);
         scarabHitFlashUntilMs = performance.now() + 140;
         connected = true;
+        syncPrimaryScarabRef();
 
         if (resolution.killed) {
           simulation.events.emit({
             kind: 'ENEMY_DIED',
             entityId: targetId,
-            position: scarabState.position,
+            position: hitScarab.position,
             data: {
-              enemy: scarabState.name,
+              enemy: hitScarab.name,
               archetype: 'SCARAB',
               attackId: attack.id,
               goldDropped: rollEnemyGoldDrop(1, targetId),
             },
           });
           runStats = { ...runStats, enemiesDefeated: runStats.enemiesDefeated + 1 };
-          analytics.track('ENEMY_KILLED', Date.now(), { enemy: scarabState.name, archetype: 'SCARAB', floor: currentFloorIndex });
-          hud.showMessage('Scarabeo spezzato.', 1800);
+          analytics.track('ENEMY_KILLED', Date.now(), { enemy: hitScarab.name, archetype: 'SCARAB', floor: currentFloorIndex });
+          const remaining = scarabStates.filter((s) => s.hp > 0).length;
+          hud.showMessage(
+            remaining > 0 ? `Scarabeo spezzato (${remaining} restano).` : 'Sciame spezzato.',
+            1800,
+          );
         } else {
           hud.showMessage(`Carapace infranto: -${resolution.damageHp} HP`, 1200);
         }
@@ -3058,16 +3167,34 @@ export function createGameApplication(
       }
     }
 
-    // Process input
+    // Process input — touch virtuale prima di beginFrame (edge buttons + look).
+    if (touchControls) {
+      const touch = touchControls.sample();
+      input.setVirtualAxes({
+        moveX: touch.moveX,
+        moveZ: touch.moveZ,
+        lookDX: touch.lookDX,
+        lookDY: touch.lookDY,
+      });
+      const virtualDown = new Set<ActionKind>();
+      if (touch.attack) virtualDown.add(ActionKind.Attack);
+      if (touch.parry) virtualDown.add(ActionKind.Parry);
+      if (touch.jump) virtualDown.add(ActionKind.Jump);
+      if (touch.interact) virtualDown.add(ActionKind.Interact);
+      if (touch.torch) virtualDown.add(ActionKind.TorchToggle);
+      input.setVirtualButtons(virtualDown);
+    }
     input.beginFrame();
     processInput(input.frame);
     const frameEvents: DomainEvent[] = [];
     drainPendingFrameEvents(frameEvents);
 
-    // Mouse-look: accumulato una volta per frame di rendering (non per tick
-    // fisso di simulazione, altrimenti la sensibilità dipenderebbe dal
-    // numero di step fissi eseguiti in questo frame).
-    if (document.pointerLockElement) {
+    // Mouse-look: pointer lock OPPURE look virtuale (touch) sullo stesso delta.
+    const hasLookDelta =
+      document.pointerLockElement !== null ||
+      input.frame.mouseDeltaX !== 0 ||
+      input.frame.mouseDeltaY !== 0;
+    if (hasLookDelta) {
       const sens = 0.002 * config.controls.mouseSensitivity;
       const pitchDirection = config.controls.invertY ? 1 : -1;
       // G-18 V3: smoothing esponenziale — il delta grezzo alimenta un filtro
@@ -3211,22 +3338,31 @@ export function createGameApplication(
             hud.showMessage('Sei stato abbattuto nella cripta.', 3200);
           }
         }
-        if (scarabState && scarabState.hp > 0) {
-          const scarabTick = tickScarabEncounter(scarabState, {
-            playerPosition: playerState.position,
-            deltaSeconds: 1 / TICK_HZ,
-            hasLineOfSight: hasRuntimeLineOfSight(scarabState.position, playerState.position),
-            torchAttractor: placedTorchPosition,
-            noiseAttractor: runtimeStimulusState.activeStimulus?.position ?? null,
-          });
-          if (scarabTick.message) {
-            hud.showMessage(scarabTick.message, scarabTick.playerDamageHp > 0 ? 1800 : 1300);
+        if (scarabStates.some((s) => s.hp > 0)) {
+          let scarabMessage: string | null = null;
+          let scarabDamageHp = 0;
+          for (const scarab of scarabStates) {
+            if (scarab.hp <= 0) continue;
+            const scarabTick = tickScarabEncounter(scarab, {
+              playerPosition: playerState.position,
+              deltaSeconds: 1 / TICK_HZ,
+              hasLineOfSight: hasRuntimeLineOfSight(scarab.position, playerState.position),
+              torchAttractor: placedTorchPosition,
+              noiseAttractor: runtimeStimulusState.activeStimulus?.position ?? null,
+            });
+            if (scarabTick.message) scarabMessage = scarabTick.message;
+            scarabDamageHp += scarabTick.playerDamageHp;
           }
-          if (scarabTick.playerDamageHp > 0) {
+          applyScarabSwarmSteering(playerState.position, 1 / TICK_HZ);
+          syncPrimaryScarabRef();
+          if (scarabMessage) {
+            hud.showMessage(scarabMessage, scarabDamageHp > 0 ? 1800 : 1300);
+          }
+          if (scarabDamageHp > 0) {
             const appliedDamageHp = applyDamageToPlayer(
-              scarabTick.playerDamageHp,
+              scarabDamageHp,
               playerState.position,
-              scarabState.name,
+              scarabState?.name ?? 'Scarabeo',
             );
             if ((currentPlayerHealth()?.hp ?? 0) <= 0 && appliedDamageHp > 0) {
               markSliceFailed(sliceState);
@@ -3281,6 +3417,30 @@ export function createGameApplication(
 
         if (genericEnemyState && isGenericEnemyAlive(genericEnemyState)) {
           const genericPosition = genericEnemyState.position;
+          let pursuitTarget: { x: number; z: number } | null = null;
+          if (floorNavGrid) {
+            const start = floorNavGrid.worldToCell(genericPosition.x, genericPosition.z);
+            const goal = floorNavGrid.worldToCell(
+              playerState.position.x,
+              playerState.position.z,
+            );
+            const path = findPath(
+              floorNavGrid.grid,
+              start.x,
+              start.z,
+              goal.x,
+              goal.z,
+            );
+            // findPath emette waypoint in metri locali griglia (cx * cellSize).
+            const next = path?.waypoints[0];
+            if (next) {
+              const half = floorNavGrid.grid.cellSizeM * 0.5;
+              pursuitTarget = {
+                x: floorNavGrid.originX + next.x + half,
+                z: floorNavGrid.originZ + next.z + half,
+              };
+            }
+          }
           const genericTick = tickGenericEncounter(genericEnemyState, {
             playerPosition: playerState.position,
             playerYaw: cameraYaw,
@@ -3301,6 +3461,7 @@ export function createGameApplication(
                   intensity: runtimeStimulusState.activeStimulus.intensity,
                 }
               : null,
+            pursuitTarget,
           });
           if (genericTick.parried) {
             audio.play({
@@ -3349,19 +3510,19 @@ export function createGameApplication(
         // prossimo incontro finché il budget del piano lo consente. Ogni slot
         // (scarab/mummy/generic) è indipendente: lo spawn usa lo slot libero.
         // (Il blocco esterno garantisce già !sliceState.completed.)
-        const scarabDead = scarabState !== null && scarabState.hp <= 0;
+        const scarabDead =
+          scarabStates.length > 0 && scarabStates.every((s) => s.hp <= 0);
         const mummyDead = mummyState !== null && mummyState.hp <= 0;
         const genericDead = genericEnemyState !== null && !isGenericEnemyAlive(genericEnemyState);
         if (scarabDead || mummyDead || genericDead) {
           const followUp = enemySpawnDirector?.planNext() ?? null;
           if (followUp?.enemyType === 'SCARAB') {
-            const followUpEntityId = simulation.world.createEntity();
-            scarabState = createScarabEncounterState(followUpEntityId, followUp.position);
+            spawnScarabSwarm(followUp.position);
             log.info('Director: follow-up scarabeo pianificato', {
               roomId: followUp.roomId,
               budgetRemaining: followUp.budgetRemaining,
             });
-            hud.showMessage('La sabbia si muove: un altro scarabeo emerge.', 2400);
+            hud.showMessage('La sabbia si muove: uno sciame di scarabei emerge.', 2400);
             if (mummyDead) mummyState = null;
             if (genericDead) genericEnemyState = null;
           } else if (followUp?.enemyType === 'MUMMY') {
@@ -3372,7 +3533,7 @@ export function createGameApplication(
               budgetRemaining: followUp.budgetRemaining,
             });
             hud.showMessage('Un sarcofago si apre: una mummia emerge.', 2400);
-            if (scarabDead) scarabState = null;
+            if (scarabDead) clearScarabSwarm();
             if (genericDead) genericEnemyState = null;
           } else if (followUp) {
             // G-13: QUALSIASI altro archetipo (COBRA, SHABTI, PRIEST,
@@ -3392,7 +3553,7 @@ export function createGameApplication(
             });
             hud.showMessage('Le ombre della cripta si condensano in una forma minacciosa.', 2400);
             if (scarabDead) {
-              scarabState = null;
+              clearScarabSwarm();
             }
             if (mummyDead) {
               mummyState = null;
@@ -3400,7 +3561,7 @@ export function createGameApplication(
           } else {
             log.info('Director: budget esaurito, nessun follow-up');
             if (scarabDead) {
-              scarabState = null;
+              clearScarabSwarm();
             }
             if (mummyDead) {
               mummyState = null;
@@ -3579,8 +3740,7 @@ export function createGameApplication(
       // Il vertical slice materializza solo SCARAB (runtime ECS dedicato).
       // Gli altri archetipi pianificati dal Director restano per l'EnemySpawnSystem (G-03).
       if (encounterPlan?.enemyType === 'SCARAB') {
-        const scarabEntityId = simulation.world.createEntity();
-        scarabState = createScarabEncounterState(scarabEntityId, encounterPlan.position);
+        spawnScarabSwarm(encounterPlan.position);
         log.info('Scarab encounter pianificata dal Director', {
           roomId: encounterPlan.roomId,
           distanceToPlayerM: encounterPlan.distanceToPlayerM,
@@ -3679,12 +3839,15 @@ export function createGameApplication(
       const inputSource: InputSource = {
         poll(): PlayerInput {
           const f = input.frame;
-          const moveZ =
+          const keyZ =
             (f.isDown(ActionKind.MoveForward) ? 1 : 0) -
             (f.isDown(ActionKind.MoveBackward) ? 1 : 0);
-          const moveX =
+          const keyX =
             (f.isDown(ActionKind.MoveRight) ? 1 : 0) -
             (f.isDown(ActionKind.MoveLeft) ? 1 : 0);
+          const virtual = input.getVirtualMove();
+          const moveX = Math.max(-1, Math.min(1, keyX + virtual.x));
+          const moveZ = Math.max(-1, Math.min(1, keyZ + virtual.z));
           return {
             moveX,
             moveZ,
@@ -3725,6 +3888,10 @@ export function createGameApplication(
         attackDirectionIndicator = new AttackDirectionIndicator(parent);
         runTimer = new RunTimer(parent);
         runTimer.start();
+        if (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) {
+          touchControls = createTouchControls();
+          touchControls.mount(parent);
+        }
         settingsMenu.mount(parent);
         progressionOverlay.mount(parent);
         deathOverlay.mount(parent);
@@ -3898,6 +4065,10 @@ export function createGameApplication(
       attackDirectionIndicator = null;
       runTimer?.dispose();
       runTimer = null;
+      touchControls?.dispose();
+      touchControls = null;
+      floorNavGrid = null;
+      synergyEffects = [];
       hud.dispose();
       cinematicOverlay?.dispose();
       settingsMenu.dispose();
@@ -3922,6 +4093,7 @@ export function createGameApplication(
       guardianRuntime = null;
       enemyHurtboxes.clear();
       playerHitRegistry.clear();
+      scarabStates = [];
       scarabState = null;
       mummyState = null;
       genericEnemyState = null;

@@ -337,3 +337,59 @@ export function filterEffectsByKind(
 ): readonly SynergyEffect[] {
   return effects.filter((e) => e.kind === kind);
 }
+
+/**
+ * GAME-ART: mappa ID runtime (curses kebab-case, armi, graft) → ID tabella sinergie.
+ * Senza questa adattazione le regole restano morte in partita.
+ */
+export function mapLiveIdsToSynergyInventory(input: {
+  readonly curseIds?: readonly string[];
+  readonly weaponIds?: readonly string[];
+  readonly graftNames?: readonly string[];
+}): { readonly items: ItemId[]; readonly curses: CurseId[] } {
+  const items: ItemId[] = [];
+  const curses: CurseId[] = [];
+
+  for (const id of input.curseIds ?? []) {
+    switch (id) {
+      case 'furia-degli-sciacalli':
+        curses.push(curse('CURSE_SWARM'));
+        break;
+      case 'sigillo-di-sobek':
+        curses.push(curse('CURSE_BLOOD_FRENZY'));
+        break;
+      case 'fame-del-deserto':
+        curses.push(curse('CURSE_DECAY'));
+        break;
+      case 'oscurita-antica':
+        curses.push(curse('CURSE_PETRIFICATION'));
+        break;
+      default:
+        break;
+    }
+  }
+
+  for (const id of input.weaponIds ?? []) {
+    if (id === 'khopesh') items.push(item('WEAPON_KHOPESH'));
+  }
+
+  for (const name of input.graftNames ?? []) {
+    const lower = name.toLowerCase();
+    if (lower.includes('scarab') || lower.includes('scarabeo')) {
+      items.push(item('AMULET_SCARAB'));
+    }
+    if (lower.includes('ankh') || lower.includes('anubi')) {
+      items.push(item('ANKH_RESURRECTION'));
+    }
+  }
+
+  return { items, curses };
+}
+
+/** Prodotto dei DAMAGE_MULTIPLIER (1 se assenti). */
+export function synergyDamageMultiplier(effects: readonly SynergyEffect[]): number {
+  return filterEffectsByKind(effects, 'DAMAGE_MULTIPLIER').reduce(
+    (acc, e) => acc * e.value,
+    1,
+  );
+}
