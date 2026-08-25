@@ -140,7 +140,7 @@ describe('buildFloorSceneLayout', () => {
       ],
       specialRoom: {
         roomId: 5 as never,
-        templateId: 'armory-01',
+        templateId: 'ARMORY_SMALL',
         kind: 'ARMORY',
       },
     };
@@ -148,5 +148,7 @@ describe('buildFloorSceneLayout', () => {
     const layout = buildFloorSceneLayout(floor);
     const combat = layout.rooms.find((r) => r.roomId === (5 as never));
     expect(combat?.theme).toBe('PLUNDERED');
+    expect(layout.specialProps.length).toBeGreaterThan(0);
+    expect(layout.specialProps.some((p) => p.propId.includes('WEAPON'))).toBe(true);
   });
 });

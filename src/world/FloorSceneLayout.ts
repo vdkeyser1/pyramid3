@@ -2,6 +2,7 @@ import type { FloorModel } from '@/procedural/FloorModel.js';
 import type { RoomBounds, RoomId, RoomNode, RoomRole } from '@/procedural/FloorValidator.js';
 import { themeForRoom, type RoomTheme } from '@/content/RoomThemes.js';
 import { STAIRCASE, TRAPS } from '@/content/balance.js';
+import { SPECIAL_ROOM_BY_ID } from '@/procedural/SpecialRooms.js';
 
 /** Mappa G-05 kind → tema ART-004 per forzare varietà nella stanza speciale. */
 function themeForSpecialKind(kind: string): RoomTheme | null {
@@ -163,6 +164,19 @@ export interface FloorSceneLayout {
    * null nei piani 1-2 e nei piani pari >= 4 (compare a rotazione).
    */
   readonly leverPassage: FloorSceneLeverPassage | null;
+  /**
+   * GAME-ART-008: props della stanza speciale (arsenale/tesoreria/santuario),
+   * già mappati in coordinate mondo. Vuoto se non c'è specialRoom.
+   */
+  readonly specialProps: readonly FloorSceneSpecialProp[];
+}
+
+/** Prop di SpecialRooms già risolto in mondo (per il placer rendering). */
+export interface FloorSceneSpecialProp {
+  readonly propId: string;
+  readonly position: SceneVector3;
+  readonly yawRad: number;
+  readonly scale: number;
 }
 
 const FLOOR_Y = 0;
@@ -283,6 +297,7 @@ function deriveTraps(
   corridors: readonly FloorSceneCorridor[],
   entryRoomId: RoomId,
   exitRoomId: RoomId,
+  specialProps: readonly FloorSceneSpecialProp[],
 ): FloorSceneTrap[] {
   if (floorIndex < 2) return [];
 
@@ -388,7 +403,57 @@ function deriveTraps(
     }
   }
 
+  // GAME-ART-008: piastre dichiarate nei template SpecialRooms (es. tesoreria).
+  let plateExtra = 0;
+  for (const prop of specialProps) {
+    if (!prop.propId.includes('PRESSURE_PLATE')) continue;
+    traps.push({
+      trapId: `${floorId}:trap:special-plate:${plateExtra}`,
+      kind: 'pressurePlate',
+      position: { x: prop.position.x, y: 0, z: prop.position.z },
+    });
+    plateExtra += 1;
+  }
+
   return traps;
+}
+
+/**
+ * GAME-ART-008: mappa i props del template SpecialRooms nella stanza host.
+ * Le coordinate template (tile, y = asse Z) sono normalizzate sul bounds reale.
+ */
+function deriveSpecialProps(
+  floor: FloorModel,
+  rooms: readonly FloorSceneRoom[],
+): FloorSceneSpecialProp[] {
+  const special = floor.specialRoom ?? null;
+  if (!special) return [];
+
+  const template = SPECIAL_ROOM_BY_ID.get(special.templateId);
+  if (!template) return [];
+
+  const host = rooms.find((r) => r.roomId === special.roomId);
+  if (!host) return [];
+
+  const width = Math.max(0.1, host.bounds.maxX - host.bounds.minX);
+  const depth = Math.max(0.1, host.bounds.maxZ - host.bounds.minZ);
+  const tw = Math.max(0.1, template.bounds.width);
+  const th = Math.max(0.1, template.bounds.height);
+
+  return template.props.map((prop) => {
+    const u = prop.position.x / tw;
+    const v = prop.position.y / th;
+    return {
+      propId: prop.propId,
+      position: {
+        x: host.bounds.minX + u * width,
+        y: FLOOR_Y,
+        z: host.bounds.minZ + v * depth,
+      },
+      yawRad: (prop.rotation * Math.PI) / 180,
+      scale: prop.scale,
+    };
+  });
 }
 
 /**
@@ -730,7 +795,8 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
     },
   }));
 
-  // ART-006: trappole e meccanismo leva derivati dal seed del piano.
+  // ART-006 / GAME-ART-008: props speciali → trappole template → leva.
+  const specialProps = deriveSpecialProps(floor, rooms);
   const traps = deriveTraps(
     floor.floorId,
     floor.floorIndex,
@@ -738,6 +804,7 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
     corridors,
     floor.entryRoomId,
     floor.exitRoomId,
+    specialProps,
   );
   const leverPassage = deriveLeverPassage(
     floor.floorId,
@@ -776,5 +843,6 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
     shovelPickup,
     traps,
     leverPassage,
+    specialProps,
   };
 }

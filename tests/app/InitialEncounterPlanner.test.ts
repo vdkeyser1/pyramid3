@@ -68,6 +68,7 @@ function createLayout(): FloorSceneLayout {
     shovelPickup: null,
     traps: [],
     leverPassage: null,
+    specialProps: [],
   };
 }
 

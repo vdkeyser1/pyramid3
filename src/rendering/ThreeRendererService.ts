@@ -1278,6 +1278,14 @@ export function createThreeRenderer(
       log.warn('Decorazione stanze non disponibile', { error: String(error) });
     }
 
+    // GAME-ART-008: props della stanza speciale (arsenale / tesoreria / santuario).
+    try {
+      const { placeSpecialRoomProps } = await import('@/rendering/SpecialRoomProps.js');
+      placeSpecialRoomProps(layout.specialProps, dungeonRoot, wallMaterial);
+    } catch (error) {
+      log.warn('Props stanza speciale non disponibili', { error: String(error) });
+    }
+
     // W-5 / task-9: piazza props GLB KayKit nelle stanze grandi.
     void placeRoomColumns(layout, dungeonRoot);
 
