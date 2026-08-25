@@ -99,7 +99,8 @@ export function createThreeRenderer(
   let torchLight: THREE.SpotLight;
   let torchAmbientLight: THREE.PointLight;
   let placedTorchLight: THREE.PointLight;
-  let placedTorchMesh: THREE.Mesh;
+  /** Lampada a olio posata (procedurale egizia — niente GLB KayKit). */
+  let placedOilLamp: import('@/rendering/EgyptianOilLamp.js').PlacedOilLamp | null = null;
   // G-15: fiamma procedurale della torcia (mano) e della torcia posata.
   let handFlame: { group: THREE.Group; update(deltaMs: number, intensity: number): void; setFlickerReduced(reduced: boolean): void } | null = null;
   /** Braccio che regge la torcia (con la fiamma agganciata in cima). */
@@ -231,8 +232,6 @@ export function createThreeRenderer(
   let lootReliquary: THREE.Group | null = null;
   // Pickup della pala — piccola croce dorata sul pavimento.
   let shovelPickupGroup: THREE.Group | null = null;
-  // KayKit: torcia posata (GLB) — sostituisce il cilindro placeholder se caricato.
-  let placedTorchGlb: THREE.Group | null = null;
   // Soffitto stellato: ricreato a ogni piano (seed = floorIndex), va rilasciato.
   let ceilingMaterial: THREE.MeshStandardMaterial | null = null;
 
@@ -289,23 +288,6 @@ export function createThreeRenderer(
       if (paths.length > 0) {
         await assetLoader.preload(paths);
         log.info('Asset preload completato', { assets: paths.length, caricate: paths.filter((p) => assetLoader?.has(p) ?? false).length });
-      }
-
-      // Carica torcia KayKit (CC0) — sostituisce il cilindro placeholder.
-      const torchGltf = await assetLoader.load('assets/props/torch_lit.glb');
-      if (torchGltf && !disposed) {
-        const group = torchGltf.scene.clone(true);
-        group.scale.setScalar(0.9);
-        // KayKit usa asse Y verso l'alto, origine alla base — nessuna rotazione necessaria.
-        group.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-          }
-        });
-        group.visible = false;
-        scene.add(group);
-        placedTorchGlb = group;
       }
 
       // W-1: HDRI Poly Haven CC0 — migliora l'IBL su tutti i MeshStandardMaterial.
@@ -739,14 +721,10 @@ export function createThreeRenderer(
     exitBeaconLight.position.set(_doorClosedPos.x, _doorClosedPos.y + 1.0, _doorClosedPos.z);
     scene.add(exitBeaconLight);
 
-    placedTorchMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.05, 0.09, 0.85, 8),
-      placedTorchMaterial,
-    );
-    placedTorchMesh.visible = false;
-    placedTorchMesh.castShadow = true;
-    placedTorchMesh.receiveShadow = true;
-    scene.add(placedTorchMesh);
+    const { createPlacedOilLamp } = await import('@/rendering/EgyptianOilLamp.js');
+    placedOilLamp = createPlacedOilLamp(placedTorchMaterial);
+    placedOilLamp.group.visible = false;
+    scene.add(placedOilLamp.group);
 
     // G-15: fiamme procedurali — la fiamma in mano segue la camera (viewmodel),
     // quella posata segue il mesh della torcia posata.
@@ -1766,9 +1744,8 @@ export function createThreeRenderer(
       shovelPickupGroup.position.y = 0.04 + Math.sin(t * 1.8) * 0.04;
     }
 
-    if (placedTorchMesh.visible) {
-      placedTorchMesh.rotation.z = Math.PI / 2.9;
-      placedTorchMesh.rotation.y += deltaMs * 0.00016;
+    if (placedOilLamp?.group.visible) {
+      placedOilLamp.group.rotation.y += deltaMs * 0.00012;
     }
 
     applyCameraShake(deltaMs);
@@ -2456,20 +2433,14 @@ export function createThreeRenderer(
     },
     setPlacedTorchState(state: RendererPlacedTorchState | null): void {
       if (!state) {
-        placedTorchMesh.visible = false;
-        if (placedTorchGlb) placedTorchGlb.visible = false;
+        if (placedOilLamp) placedOilLamp.group.visible = false;
         placedTorchLight.visible = false;
         if (placedFlame) placedFlame.group.visible = false;
         return;
       }
-      // Se il GLB KayKit è caricato lo usa; altrimenti il cilindro placeholder.
-      if (placedTorchGlb) {
-        placedTorchGlb.visible = true;
-        placedTorchGlb.position.set(state.x, state.y, state.z);
-        placedTorchMesh.visible = false;
-      } else {
-        placedTorchMesh.visible = true;
-        placedTorchMesh.position.set(state.x, state.y + 0.38, state.z);
+      if (placedOilLamp) {
+        placedOilLamp.group.visible = true;
+        placedOilLamp.group.position.set(state.x, state.y, state.z);
       }
       placedTorchLight.visible = true;
       placedTorchLight.position.set(state.x, state.y + 0.72, state.z);
