@@ -37,12 +37,12 @@
 
 | # | Risorsa | URL | Licenza | Uso | Stato |
 |---|---|---|---|---|---|
-| A1 | **Quaternius — Ultimate Modular Ruins** | quaternius.com/packs/ultimatemodularruins.html | CC0 | Kit modulare rovine: muri/colonne/archi/scale per stanze e corridoi procedurali | ⬜ da integrare |
-| A2 | **ToxSam/open-source-3D-assets** (registry GLB) | github.com/ToxSam/open-source-3D-assets | CC0 | 991+ GLB CC0 incl. **Egyptian temples**; JSON per il manifest | ⬜ da integrare |
-| A3 | **Sketchfab** (search `egyptian`, filtro CC0/CC-BY) | sketchfab.com/search?q=egyptian&type=models | CC0/CC-BY | Sarcofagi, statue Anubi/Bastet/Thoth/Sobek, obelischi, vasi canopi, bracieri | ⬜ da selezionare |
+| A1 | ~~Quaternius Modular Ruins~~ → **Ambiente piramide procedurale** | — | — | Colonne papiriformi, soglie dorati, false porte, soffitto stellato — **non** pack Medieval | ✅ sostituito (2026-08-25) |
+| A2 | **ToxSam/open-source-3D-assets** (registry GLB) | github.com/ToxSam/open-source-3D-assets | CC0 | 991+ GLB CC0 incl. **Egyptian temples**; JSON per il manifest | ✅ 5/5 landmark GLB integrati |
+| A3 | **Sketchfab** (search `egyptian`, filtro CC0/CC-BY) | sketchfab.com/search?q=egyptian&type=models | CC0/CC-BY | Sarcofagi, statue Anubi/Bastet/Thoth/Sobek, obelischi, vasi canopi, bracieri | 🟡 opzionale (ToxSam copre il VS) |
 | A4 | **Mixamo** (animazioni) | mixamo.com | Gratis | Idle/walk/attack/death/hit per player viewmodel + PRIEST/ROYAL_MUMMY | ⬜ da integrare |
-| A5 | **Kenney — Game Assets** | kenney.nl/assets | CC0 | Props generici (urne, casse, torce) + UI | ⬜ opzionale |
-| A6 | **Quaternius — Animated Creatures** | quaternius.com | CC0 | Creature animate per MUMMY/SCARAB/SHABTI | ⬜ opzionale |
+| A5 | **Kenney — filler pietra neutro** | kenney.nl/assets/mini-dungeon | CC0 | Solo pot/rocks/stairs (`-KenneyStoneOnly`) — **no** barrel/gate/banner | 🟡 opzionale |
+| A6 | ~~Quaternius Creatures~~ | — | — | Nemici già da ToxSam/Poly Pizza GLB | ✅ coperto |
 
 ### 1.3 Texture / Materiali PBR (G-14, G-16)
 

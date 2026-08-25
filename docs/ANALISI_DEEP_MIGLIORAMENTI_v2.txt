@@ -1,4 +1,9 @@
 La Piramide Perduta — Analisi Deep v2.0 | Agosto 2026
+
+NOTA 2026-08-25: Ambiente piramide completato con geometria procedurale egizia
+(colonne, soglie, false porte, lampade a olio, scala dorata). Quaternius Ruins
+(Medieval) NON è più la direzione — vedi docs/PYRAMID_ART_DIRECTION.md.
+
 Analisi Deep v2.0 — Progetto Aggiornato
 🏺 La Piramide Perduta
 Egyptian Noir Roguelike FPS — Vertical Slice v0.1.0 | Analisi Professionale Completa

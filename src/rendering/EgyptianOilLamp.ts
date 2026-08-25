@@ -34,18 +34,51 @@ export function createPlacedOilLamp(bodyMaterial: THREE.MeshStandardMaterial): P
   rim.position.y = 0.64;
   group.add(rim);
 
+  addFlame(group, bodyMaterial, 0.76);
+
+  markShadows(group);
+  return { group, bodyMaterial };
+}
+
+/** Lampada murale per gallerie — più compatta, con staffa a L. */
+export function createWallSconce(bodyMaterial: THREE.MeshStandardMaterial): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'wall-sconce';
+
+  const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.22, 0.14), bodyMaterial);
+  bracket.position.set(0, 0.18, 0.04);
+  group.add(bracket);
+
+  const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.08, 0.1, 10), bodyMaterial);
+  bowl.position.set(0, 0.34, 0.1);
+  group.add(bowl);
+
+  addFlame(group, bodyMaterial, 0.42, 0.1);
+
+  markShadows(group);
+  return group;
+}
+
+function addFlame(
+  group: THREE.Group,
+  bodyMaterial: THREE.MeshStandardMaterial,
+  y: number,
+  z = 0,
+): void {
   const flameMat = bodyMaterial.clone();
   flameMat.emissive = new THREE.Color(0xff8a20);
   flameMat.emissiveIntensity = 1.1;
   flameMat.color.setHex(0xffc060);
-  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 6), flameMat);
-  flame.position.y = 0.76;
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.14, 6), flameMat);
+  flame.position.set(0, y, z);
   group.add(flame);
+}
 
-  for (const child of group.children) {
-    child.castShadow = true;
-    child.receiveShadow = true;
-  }
-
-  return { group, bodyMaterial };
+function markShadows(root: THREE.Object3D): void {
+  root.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
 }

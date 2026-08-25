@@ -1,35 +1,45 @@
 # Pyramid art direction — changelog (2026-08-25)
 
-Identità confermata: **piramide egizia / Egyptian Noir**, non dungeon medievale.
+Identità: **piramide egizia / Egyptian Noir**, non dungeon medievale.
 
-## Completato
+## Completato (filone ambiente)
 
 | Step | Dettaglio |
 |---|---|
-| Soglie | Stipiti + architrave dorato procedurali (no `gate.glb` Kenney) |
-| Props pavimento | Solo `pot` / `rocks` neutri (no barrel, chest, banner, wood) |
-| Registry | Rimossi asset Kenney dungeon da `ArtifactRegistry` |
-| Script asset | `download-external-assets.ps1` → `-KenneyStoneOnly` / `-EgyptianFolder` |
-| Stanze speciali | Khopesh, scudi a disco, canopi/altari da `EgyptianLandmarks` |
-| Decor stanze | False porte funerarie; tappeti → coppe d'offerta |
-| Torcia posata | Lampada a olio procedurale (`EgyptianOilLamp.ts`), no KayKit `torch_lit` |
-| GLB | Meshopt su enemies/landmarks/props in `public/assets/` |
+| Soglie | Stipiti + architrave dorato procedurali |
+| Props pavimento | Solo anfora/detriti (`pot`/`rocks`) |
+| Registry + script | Kenney dungeon rimosso; `-EgyptianFolder` per import |
+| Stanze speciali | Khopesh, scudi a disco, canopi/altari procedurali |
+| Decor stanze | False porte funerarie; coppe d'offerta (no tappeti) |
+| Torcia posata | `EgyptianOilLamp` procedurale |
+| Lampade corridoi | `createWallSconce` sui muri delle gallerie |
+| Scala discesa | Bordi dorati + cavetto in cima (`Staircase.ts`) |
+| Viewmodel | Khopesh, bastone Ra, pala, pugni procedurali |
+| GLB | Meshopt su enemies/landmarks/props |
+| Landmark GLB | 5/5 ToxSam integrati + 13 procedurali `EgyptianLandmarks` |
 
 ## Non usare
 
-- Quaternius Modular Dungeons / Ultimate Modular Ruins (tag Medieval)
+- Quaternius Modular Dungeons / Ultimate Modular Ruins (Medieval)
 - Kenney barrel, gate, banner, wood, chest
-- KayKit colonne/scudi come ambiente (solo bauli loot se necessario)
+- KayKit colonne/scudi/torce come ambiente
 
-## Fonti egizie consigliate
+## Prossimi passi (post-VS, non bloccanti)
 
-- `public/assets/landmarks/` — ToxSam CC0 (già in gioco)
-- Poly Pizza / ToxSam registry filtrati "egyptian"
-- Colonne `EgyptianColumn`, landmark `EgyptianLandmarks`, decor `RoomDecor`
+- Mixamo animazioni su PRIEST/ROYAL_MUMMY
+- HDRI Poly Haven deserto (T2 roadmap)
+- Import GLB egizi extra in `public/models/egyptian/`
+- Simulazione su Web Worker (architettura futura)
 
-## Prossimi passi (post-VS)
+## Comandi utili
 
-- Viewmodel falce / mani (Mixamo)
-- Animazioni nemici su rig esistente
-- Texture PBR geroglifici emissivi aggiuntive (OpenGameArt)
-- Import GLB egizi opzionali in `public/models/egyptian/`
+```powershell
+# Filler pietra neutro (opzionale)
+pwsh -File scripts/download-external-assets.ps1 -KenneyStoneOnly
+
+# Import pack egizio
+pwsh -File scripts/download-external-assets.ps1 -SkipKenney -EgyptianFolder "<path>"
+
+# Ottimizza GLB
+node scripts/optimize-assets.mjs
+```

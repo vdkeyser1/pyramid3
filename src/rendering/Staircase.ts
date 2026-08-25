@@ -62,6 +62,26 @@ export function createStaircase(
   const stepGeo = new THREE.BoxGeometry(STAIR_WIDTH_M, STEP_THICKNESS_M, STEP_RUN_M);
   disposables.push(stepGeo);
 
+  const goldMat = new THREE.MeshStandardMaterial({
+    color: 0xc8900a,
+    metalness: 0.55,
+    roughness: 0.38,
+    emissive: 0x4a3010,
+    emissiveIntensity: 0.25,
+  });
+  disposables.push(goldMat);
+  const nosingGeo = new THREE.BoxGeometry(STAIR_WIDTH_M * 0.94, 0.035, 0.07);
+  disposables.push(nosingGeo);
+
+  // Architrave in cima alla tromba — firma egizia (cavetto).
+  const cavettoGeo = new THREE.BoxGeometry(STAIR_WIDTH_M + 0.4, 0.22, 0.35);
+  disposables.push(cavettoGeo);
+  const cavetto = new THREE.Mesh(cavettoGeo, goldMat);
+  cavetto.position.set(origin.x, origin.y + 0.12, origin.z);
+  cavetto.rotation.y = directionRad;
+  cavetto.castShadow = true;
+  group.add(cavetto);
+
   for (let i = 0; i < STEP_COUNT; i++) {
     // Ogni gradino avanza di una pedata e scende di un'alzata.
     const along = (i + 0.5) * STEP_RUN_M;
@@ -75,6 +95,17 @@ export function createStaircase(
     step.receiveShadow = true;
     step.castShadow = true;
     group.add(step);
+
+    // Bordo dorato sulla fronte del gradino (rampe funerarie egizie).
+    const nosing = new THREE.Mesh(nosingGeo, goldMat);
+    const noseAlong = (i + 1) * STEP_RUN_M - STEP_RUN_M * 0.04;
+    nosing.position.set(
+      origin.x + dx * noseAlong,
+      y + STEP_THICKNESS_M / 2 + 0.02,
+      origin.z + dz * noseAlong,
+    );
+    nosing.rotation.y = directionRad;
+    group.add(nosing);
 
     // Collider per gradino: senza, si cade attraverso la scala.
     addCollider(x, y, z, STAIR_WIDTH_M / 2, STEP_THICKNESS_M / 2, STEP_RUN_M / 2);

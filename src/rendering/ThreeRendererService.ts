@@ -33,6 +33,7 @@ import { createLogger } from '@/core/Logger.js';
 import { TRAPS } from '@/content/balance.js';
 import { resolveFeatureFlags } from '@/config/FeatureFlags.js';
 import { createLodManager, type LodManager } from '@/rendering/LodManager.js';
+import { createPlacedOilLamp } from '@/rendering/EgyptianOilLamp.js';
 import { ShadowMapOptimizer } from '@/rendering/ShadowMapOptimizer.js';
 import type { AssetLoader } from '@/rendering/AssetLoader.js';
 import type { ParticleBurst } from '@/rendering/Vfx.js';
@@ -721,7 +722,6 @@ export function createThreeRenderer(
     exitBeaconLight.position.set(_doorClosedPos.x, _doorClosedPos.y + 1.0, _doorClosedPos.z);
     scene.add(exitBeaconLight);
 
-    const { createPlacedOilLamp } = await import('@/rendering/EgyptianOilLamp.js');
     placedOilLamp = createPlacedOilLamp(placedTorchMaterial);
     placedOilLamp.group.visible = false;
     scene.add(placedOilLamp.group);

@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import type { FloorSceneLayout, FloorSceneRoom } from '@/world/FloorSceneLayout.js';
 import { hash32 } from '@/procedural/Hash32.js';
 import { generateInscription } from '@/content/inscriptions.js';
+import { createWallSconce } from '@/rendering/EgyptianOilLamp.js';
 
 const CRITICAL_ROLES: readonly string[] = ['ENTRY', 'EXIT', 'MAP', 'TREASURE', 'FORGE'];
 
@@ -276,6 +277,9 @@ export function decorateRooms(options: DecorateRoomsOptions): DecorateRoomsResul
     }
   }
 
+  // ── Lampade murale nei corridoi (gallerie funerarie) ─────────────────────────
+  placeCorridorSconces(layout, dungeonRoot, clayMaterial);
+
   void candleColor;
   return { glyphMaterial };
 }
@@ -360,6 +364,58 @@ function materialFor(
     case 'floorGlyph': return glyphMaterial;
     case 'scarabTile': return scarabMaterial;
     default:           return wallMaterial;
+  }
+}
+
+/**
+ * Lampade a olio sui muri dei corridoi — luce di riempimento egizia, non torce
+ * medievali a staffa. Densità bassa per non lavare l'oscurità (Egyptian Noir).
+ */
+function placeCorridorSconces(
+  layout: FloorSceneLayout,
+  dungeonRoot: THREE.Group,
+  sconceMat: THREE.MeshStandardMaterial,
+): void {
+  const MAX_SCONCES = 10;
+  let placed = 0;
+
+  for (let ci = 0; ci < layout.corridors.length && placed < MAX_SCONCES; ci++) {
+    const corridor = layout.corridors[ci];
+    if (!corridor) continue;
+
+    const h = hash32(Number(corridor.fromRoomId), Number(corridor.toRoomId) + ci * 13);
+    if ((h % 3) === 0) continue;
+
+    const { minX, maxX, minZ, maxZ } = corridor.bounds;
+    const length = corridor.axis === 'x' ? maxX - minX : maxZ - minZ;
+    if (length < 5) continue;
+
+    const t = 0.35 + ((h >>> 8) % 31) / 100;
+    const side = (h % 2) === 0 ? 1 : -1;
+    let px: number;
+    let pz: number;
+    let ry: number;
+
+    if (corridor.axis === 'x') {
+      px = minX + t * (maxX - minX);
+      pz = side > 0 ? minZ + 0.06 : maxZ - 0.06;
+      ry = side > 0 ? 0 : Math.PI;
+    } else {
+      pz = minZ + t * (maxZ - minZ);
+      px = side > 0 ? minX + 0.06 : maxX - 0.06;
+      ry = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+    }
+
+    const sconce = createWallSconce(sconceMat);
+    sconce.position.set(px, 1.05, pz);
+    sconce.rotation.y = ry;
+    dungeonRoot.add(sconce);
+
+    const light = new THREE.PointLight(0xff9b30, 0.9, 4.5, 2);
+    light.position.set(px, 1.35, pz);
+    dungeonRoot.add(light);
+
+    placed++;
   }
 }
 
