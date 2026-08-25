@@ -17,7 +17,7 @@ import type {
   RendererPlacedTorchState,
 } from '@/rendering/RendererService.js';
 import { TrapSystem } from '@/gameplay/TrapSystem.js';
-import type { FloorSceneLayout } from '@/world/FloorSceneLayout.js';
+import type { FloorSceneLayout, FloorSceneRoom } from '@/world/FloorSceneLayout.js';
 import type { GenerationClient } from '@/workers/GenerationClient.js';
 import { QualityController } from '@/rendering/QualityController.js';
 import {
@@ -224,6 +224,7 @@ import { PARRY_IFRAME_MS, PARRY_WINDOW_MS, parryWindowActive } from '@/gameplay/
 import type { MusicState } from '@/audio/MusicPreset.js';
 import { createMusicStateMachine } from '@/audio/MusicStateMachine.js';
 import type { MusicStateMachine } from '@/audio/MusicStateMachine.js';
+import type { RoomType } from '@/audio/SyntheticImpulseResponse.js';
 import {
   applyDamageToGenericEnemy,
   createGenericEncounterState,
@@ -424,6 +425,7 @@ export function createGameApplication(
   let runtimeGameplayState = createRuntimeGameplayState();
   // Stanze fisicamente visitate dal player in questo piano (si azzera a ogni cambio piano).
   let visitedRoomIds = new Set<number>();
+  let lastAudioRoomType: RoomType | null = null;
   // Slot 0=Pugni, 1=Khopesh, 2=Bastone, 3=Pala (disponibile solo se shovelDigs > 0)
   const weapons: readonly WeaponDefinition[] = [WEAPON_FISTS, WEAPON_KHOPESH, WEAPON_STAFF, WEAPON_SHOVEL];
   let currentWeaponIndex = 1;
@@ -1509,6 +1511,51 @@ export function createGameApplication(
     }
   }
 
+  function resolveAudioRoomType(
+    layout: FloorSceneLayout,
+    x: number,
+    z: number,
+  ): RoomType {
+    for (const corridor of layout.corridors) {
+      const b = corridor.bounds;
+      if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) {
+        return 'CORRIDOR';
+      }
+    }
+    const room = layout.rooms.find(
+      (r) =>
+        x >= r.bounds.minX && x <= r.bounds.maxX &&
+        z >= r.bounds.minZ && z <= r.bounds.maxZ,
+    );
+    return audioRoomTypeForSceneRoom(room, layout.floorIndex);
+  }
+
+  function audioRoomTypeForSceneRoom(
+    room: FloorSceneRoom | undefined,
+    floorIndex: number,
+  ): RoomType {
+    if (!room) return 'CHAMBER';
+    if (room.role === 'STAIR' || room.role === 'EXIT') return 'SHAFT';
+    if (room.role === 'TREASURE' || room.role === 'MAP' || room.theme === 'ROYAL') {
+      return 'THRONE_ROOM';
+    }
+    if (
+      room.theme === 'FUNERARY' ||
+      room.role === 'COMBAT' && floorIndex >= 5
+    ) {
+      return 'BURIAL_CHAMBER';
+    }
+    return 'CHAMBER';
+  }
+
+  function syncAmbienceRoomReverb(playerX: number, playerZ: number): void {
+    if (!sliceState) return;
+    const next = resolveAudioRoomType(sliceState.sceneLayout, playerX, playerZ);
+    if (next === lastAudioRoomType) return;
+    lastAudioRoomType = next;
+    audio.setRoomType(next);
+  }
+
   function showFloorInscription(seed: number, floorIndex: number, theme?: string): void {
     audio.setAmbienceFloor(floorIndex);
     if (theme) {
@@ -2309,8 +2356,15 @@ export function createGameApplication(
     // Layout al renderer + respawn player alla entry del piano.
     // v2: dissolvenza nera — copre il rebuild della scena (main thread) e
     // rende la discesa cinematografica invece di un frame drop visibile.
+    const descentInscription = generateInscription(nextSlice.floor.seed);
+    const captionLines = [
+      `Piano ${nextIndex}`,
+      progression.theme,
+      descentInscription.glyphs.slice(0, 12),
+    ].filter((line) => line.length > 0);
+    cinematicOverlay?.setFloorCaption(captionLines.join('\n'));
     cinematicOverlay?.fadeToBlack(true);
-    await new Promise((resolve) => setTimeout(resolve, 380));
+    await new Promise((resolve) => setTimeout(resolve, 720));
     bindTrapSystemToFloor(nextSlice.sceneLayout);
     renderer?.setShovelPickup(shovelPickupPos);
     renderer?.applyFloorPalette(progression.palette);
@@ -2328,7 +2382,9 @@ export function createGameApplication(
     }
     syncVerticalSlicePresentation();
     syncTorchPresentation();
+    lastAudioRoomType = null;
     cinematicOverlay?.fadeToBlack(false);
+    cinematicOverlay?.setFloorCaption(null);
     showFloorInscription(nextSlice.floor.seed, nextIndex, progression.theme);
     analytics.setFloor(nextIndex);
     analytics.track('FLOOR_START', Date.now(), { floor: nextIndex });
@@ -3313,6 +3369,7 @@ export function createGameApplication(
           playerPosition.z >= r.bounds.minZ && playerPosition.z <= r.bounds.maxZ,
       );
       if (currentRoom) visitedRoomIds.add(Number(currentRoom.roomId));
+      syncAmbienceRoomReverb(playerPosition.x, playerPosition.z);
     }
 
     const digProgressSuffix =
