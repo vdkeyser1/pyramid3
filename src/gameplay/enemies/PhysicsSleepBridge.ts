@@ -101,10 +101,10 @@ export function createPhysicsSleepBridge(): PhysicsSleepBridge {
 
 export function createNullPhysicsSleepBridge(): PhysicsSleepBridge {
   return {
-    register: () => {},
-    unregister: () => {},
-    notifyStateChange: () => {},
-    sleepAll: () => {},
+    register() { return; },
+    unregister() { return; },
+    notifyStateChange() { return; },
+    sleepAll() { return; },
     getStats: () => ({ total: 0, sleeping: 0, awake: 0 }),
   };
 }

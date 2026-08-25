@@ -8,6 +8,7 @@ import type { FloorGenerationInput } from '@/procedural/FloorModel.js';
 import { validateFloor, graphDistance } from '@/procedural/FloorValidator.js';
 import type { ValidationLimits } from '@/procedural/FloorValidator.js';
 import { createSeedRngFactory, type RandomSource } from '@/procedural/SeedRng.js';
+import { pickSpecialRoom } from '@/procedural/SpecialRooms.js';
 import { FLOOR_CONSTRAINTS } from '@/content/balance.js';
 import { MAX_FLOORS } from '@/content/floorProgression.js';
 import { createLogger } from '@/core/Logger.js';
@@ -445,6 +446,36 @@ function assignLandmarks(
   return landmarks;
 }
 
+/**
+ * GAME-ART-008a: innesta al più una stanza speciale (peso × SeedRng) su un
+ * host COMBAT/OPTIONAL. Non cambia i ruoli obbligatori del validator.
+ */
+function attachSpecialRoom(
+  floor: FloorModel,
+  floorIndex: number,
+  rng: RandomSource,
+): FloorModel {
+  const template = pickSpecialRoom(floorIndex, rng);
+  if (!template) return { ...floor, specialRoom: null };
+
+  const hosts = floor.rooms.filter(
+    (r) => r.role === 'COMBAT' || r.role === 'OPTIONAL' || r.role === 'JUNCTION',
+  );
+  if (hosts.length === 0) return { ...floor, specialRoom: null };
+
+  const host = rng.pick(hosts);
+  if (!host) return { ...floor, specialRoom: null };
+
+  return {
+    ...floor,
+    specialRoom: {
+      roomId: host.id,
+      templateId: template.id,
+      kind: template.kind,
+    },
+  };
+}
+
 // ─── Fase 5: Assemblaggio ───
 
 function assembleFloor(
@@ -478,6 +509,7 @@ function assembleFloor(
     keysByRoomId: {},
     // G-10: i piani non-finali escono con una SCALA, il piano 10 con la porta
     exitIsStair: !isTutorial && floorIndex < MAX_FLOORS,
+    specialRoom: null,
   };
 }
 
@@ -512,7 +544,9 @@ export function generateFloor(input: FloorGenerationInput): FloorModel {
     assignment.treasureRoomId = treasure.treasureRoomId;
 
     const landmarkMap = assignLandmarks(rooms, assignment.roles, rolesRng);
-    const floor = assembleFloor(rooms, assignment, landmarkMap, saltedSeed, input.generationVersion, input.isTutorial, input.floorIndex);
+    const decorRng = attemptFactory.forChannel('decor');
+    let floor = assembleFloor(rooms, assignment, landmarkMap, saltedSeed, input.generationVersion, input.isTutorial, input.floorIndex);
+    floor = attachSpecialRoom(floor, input.floorIndex, decorRng);
     const result = validateFloor(floor, DEFAULT_LIMITS);
 
     if (result.ok) return result.value;
@@ -581,5 +615,6 @@ function createFallbackFloor(input: FloorGenerationInput): FloorModel {
     mapRoomId: mapId, treasureRoomId: treasureId,
     keysByRoomId: {},
     exitIsStair: !input.isTutorial && input.floorIndex < MAX_FLOORS,
+    specialRoom: null,
   };
 }

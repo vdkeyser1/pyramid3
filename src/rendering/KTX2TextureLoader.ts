@@ -63,7 +63,8 @@ export function getKTX2Loader(
 
 /**
  * Carica una texture KTX2 con cache condivisa.
- * Fallback trasparente a TextureLoader se il file non è .ktx2.
+ * Fallback: se il `.ktx2` fallisce, prova il sibling `.jpg` / `.png`
+ * (utile in dev quando manca toktx o il file non è ancora convertito).
  */
 export async function loadKTX2Texture(
   path: string,
@@ -78,14 +79,18 @@ export async function loadKTX2Texture(
 
   if (path.endsWith('.ktx2')) {
     const loader = getKTX2Loader(renderer, options);
-    texture = await new Promise<THREE.CompressedTexture>((resolve, reject) => {
-      loader.load(path, resolve, undefined, reject);
-    });
+    try {
+      texture = await new Promise<THREE.CompressedTexture>((resolve, reject) => {
+        loader.load(path, resolve, undefined, reject);
+      });
+    } catch {
+      // GAME-ART-010a: fallback raster se KTX2 assente o transcoder KO.
+      const rasterPath = await resolveRasterSibling(path);
+      if (!rasterPath) throw new Error(`KTX2 e raster mancanti: ${path}`);
+      texture = await loadRasterTexture(rasterPath);
+    }
   } else {
-    // Fallback: .jpg/.png con TextureLoader standard
-    texture = await new Promise<THREE.Texture>((resolve, reject) => {
-      new THREE.TextureLoader().load(path, resolve, undefined, reject);
-    });
+    texture = await loadRasterTexture(path);
   }
 
   // Impostazioni standard per tutte le texture PBR
@@ -109,6 +114,27 @@ export async function loadKTX2Texture(
 
   cache.set(path, texture);
   return { texture, fromCache: false };
+}
+
+function loadRasterTexture(path: string): Promise<THREE.Texture> {
+  return new Promise((resolve, reject) => {
+    new THREE.TextureLoader().load(path, resolve, undefined, reject);
+  });
+}
+
+/** Sibling `.jpg` / `.png` per un path `.ktx2` (stesso basename sotto /textures). */
+async function resolveRasterSibling(ktx2Path: string): Promise<string | null> {
+  const base = ktx2Path.replace(/\.ktx2$/i, '');
+  for (const ext of ['.jpg', '.png'] as const) {
+    const candidate = `${base}${ext}`;
+    try {
+      const res = await fetch(candidate, { method: 'HEAD' });
+      if (res.ok) return candidate;
+    } catch {
+      // Ignora: prova la prossima estensione.
+    }
+  }
+  return null;
 }
 
 /**

@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import type { WebGPURenderer as ThreeWebGPURenderer } from 'three/webgpu';
 import type {
+  FloorLayoutTrapHooks,
   RendererBrazierState,
   RendererEnemyState,
   RendererHandle,
@@ -176,6 +177,7 @@ export function createThreeRenderer(
   let disposed = false;
   let initialized = false;
   let activeFloorLayout: FloorSceneLayout | null = null;
+  let pendingTrapHooks: FloorLayoutTrapHooks | null = null;
   let _doorOpen = false;
   let _doorMesh: THREE.Mesh | null = null;
   let _doorPhysics: PhysicsKinematicBox | null = null;
@@ -821,8 +823,12 @@ export function createThreeRenderer(
     });
   }
 
-  function setFloorLayout(layout: FloorSceneLayout | null): void {
+  function setFloorLayout(
+    layout: FloorSceneLayout | null,
+    trapHooks?: FloorLayoutTrapHooks,
+  ): void {
     activeFloorLayout = layout;
+    pendingTrapHooks = trapHooks ?? null;
     if (!initialized || !layout) {
       return;
     }
@@ -1173,6 +1179,7 @@ export function createThreeRenderer(
     _doorPhysics = null;
 
     frustumCuller.clearRooms();
+    const trapHooks = pendingTrapHooks;
     const roomBounds = buildDungeonLayout?.({
       layout,
       dungeonRoot,
@@ -1182,6 +1189,26 @@ export function createThreeRenderer(
       glyphEmissiveMap: glyphTexture,
       glyphColorMap,
       ceilingMaterial: buildCeilingMaterial(layout.floorIndex),
+      onPressurePlateMeshReady: (trapId, spikesGroup) => {
+        trapHooks?.onPressurePlateReady?.(trapId, (spikesGroupY) => {
+          spikesGroup.position.y = spikesGroupY;
+        });
+      },
+      onPendulumMeshReady: (trapId, pivotGroup, corridorAxis) => {
+        trapHooks?.onPendulumReady?.(trapId, (angleRad) => {
+          if (corridorAxis === 'x') {
+            pivotGroup.rotation.z = angleRad;
+          } else {
+            pivotGroup.rotation.x = angleRad;
+          }
+        });
+      },
+      onLeverMeshReady: (leverId, handleMesh, sealMesh) => {
+        trapHooks?.onLeverReady?.(leverId, (handleAngleRad, sealY) => {
+          handleMesh.rotation.z = handleAngleRad;
+          sealMesh.position.y = sealY;
+        });
+      },
     }) ?? [];
 
     // Pulviscolo in sospensione proporzionale alla profondità: l'aria si fa

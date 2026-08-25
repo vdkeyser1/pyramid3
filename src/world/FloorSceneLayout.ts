@@ -3,6 +3,24 @@ import type { RoomBounds, RoomId, RoomNode, RoomRole } from '@/procedural/FloorV
 import { themeForRoom, type RoomTheme } from '@/content/RoomThemes.js';
 import { STAIRCASE, TRAPS } from '@/content/balance.js';
 
+/** Mappa G-05 kind → tema ART-004 per forzare varietà nella stanza speciale. */
+function themeForSpecialKind(kind: string): RoomTheme | null {
+  switch (kind) {
+    case 'ARMORY':
+      return 'PLUNDERED';
+    case 'TREASURY':
+      return 'ROYAL';
+    case 'SHRINE':
+      return 'SACRED';
+    case 'VAULT':
+      return 'FUNERARY';
+    case 'LIBRARY':
+      return 'PLAIN';
+    default:
+      return null;
+  }
+}
+
 export interface SceneVector3 {
   readonly x: number;
   readonly y: number;
@@ -562,6 +580,7 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
 
   const exitDirection = exitDirectionFor(floor, exitRoom);
   const targetRoom = selectTargetRoom(floor, roomIndex);
+  const special = floor.specialRoom ?? null;
   const rooms = floor.rooms.map((room) => {
     const openings = room.doors
       .map((doorId) => roomIndex.get(doorId))
@@ -572,6 +591,11 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
       openings.push(exitDirection);
     }
 
+    const forcedTheme =
+      special?.roomId === room.id
+        ? themeForSpecialKind(special.kind)
+        : null;
+
     return {
       roomId: room.id,
       role: room.role,
@@ -579,9 +603,8 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
       center: centerOfBounds(room.bounds, FLOOR_Y),
       landmarkId: room.landmarkId,
       openings,
-      // ART-004: tema deterministico da piano e stanza. Il vincolo per ruolo
-      // sta in RoomThemes: l'ingresso non può essere crollato o infestato.
-      theme: themeForRoom(floor.floorIndex, Number(room.id), room.role),
+      // ART-004 / GAME-ART-008: tema deterministico; stanza speciale forza il mood.
+      theme: forcedTheme ?? themeForRoom(floor.floorIndex, Number(room.id), room.role),
     };
   });
 

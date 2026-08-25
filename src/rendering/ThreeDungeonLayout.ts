@@ -117,6 +117,7 @@ export interface BuildDungeonLayoutOptions {
   readonly onPendulumMeshReady?: (
     trapId: string,
     pivotGroup: THREE.Object3D,
+    corridorAxis: 'x' | 'z',
   ) => void;
   /**
    * ART-006: callback invocata per il meccanismo leva+sigillo.
@@ -521,7 +522,7 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
     pivotGroup.position.set(trap.position.x, 0, trap.position.z);
     dungeonRoot.add(mountMesh);
     dungeonRoot.add(pivotGroup);
-    options.onPendulumMeshReady?.(trap.trapId, pivotGroup);
+    options.onPendulumMeshReady?.(trap.trapId, pivotGroup, trap.corridorAxis ?? 'x');
   }
 
   /**

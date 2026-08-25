@@ -372,7 +372,7 @@ export class TrapSystem {
     elapsedTicks: number;
   } {
     return {
-      traps: [...this.traps.values()],
+      traps: [...this.traps.values()].map((t) => ({ ...t })),
       lever: this.leverState ? { ...this.leverState } : null,
       elapsedTicks: this.elapsedTicks,
     };

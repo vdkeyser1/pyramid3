@@ -115,4 +115,38 @@ describe('buildFloorSceneLayout', () => {
     const b = buildFloorSceneLayout(createFloor(11)).braziers;
     expect(a).toEqual(b);
   });
+
+  it('GAME-ART-008a: specialRoom forza il tema della stanza host', () => {
+    const base = createFloor(7);
+    const floor: FloorModel = {
+      ...base,
+      rooms: [
+        {
+          ...base.rooms[0]!,
+          doors: [...base.rooms[0]!.doors, 5 as never],
+        },
+        base.rooms[1]!,
+        base.rooms[2]!,
+        base.rooms[3]!,
+        {
+          id: 5 as never,
+          role: 'COMBAT',
+          bounds: { minX: 0, minZ: 40, maxX: 12, maxZ: 52 },
+          doors: [1 as never],
+          requiredKeyId: null,
+          spawnClearanceM: 3,
+          landmarkId: null,
+        },
+      ],
+      specialRoom: {
+        roomId: 5 as never,
+        templateId: 'armory-01',
+        kind: 'ARMORY',
+      },
+    };
+
+    const layout = buildFloorSceneLayout(floor);
+    const combat = layout.rooms.find((r) => r.roomId === (5 as never));
+    expect(combat?.theme).toBe('PLUNDERED');
+  });
 });

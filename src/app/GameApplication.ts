@@ -10,11 +10,14 @@ import { type Simulation, createSimulation } from '@/simulation/Simulation.js';
 import { TICK_HZ, PLAYER, TORCH, WEAPONS } from '@/content/balance.js';
 import { createLogger, configureLogger, type Logger } from '@/core/Logger.js';
 import type {
+  FloorLayoutTrapHooks,
   RendererBrazierState,
   RendererEnemyState,
   RendererHandle,
   RendererPlacedTorchState,
 } from '@/rendering/RendererService.js';
+import { TrapSystem } from '@/gameplay/TrapSystem.js';
+import type { FloorSceneLayout } from '@/world/FloorSceneLayout.js';
 import type { GenerationClient } from '@/workers/GenerationClient.js';
 import { QualityController } from '@/rendering/QualityController.js';
 import {
@@ -304,6 +307,8 @@ export function createGameApplication(
   let placedTorchPosition: RendererPlacedTorchState | null = null;
   let brazierStates: BrazierState[] = [];
   let digSite: DigSite | null = null;
+  /** ART-006: FSM trappole/leva del piano corrente (null se il piano non ne ha). */
+  let trapSystem: TrapSystem | null = null;
   // Pala: scavi rimanenti (0 = nessuna pala in inventario).
   let shovelDigs = 0;
   // Posizione world del pickup pala corrente (null = già raccolta o non presente).
@@ -1308,6 +1313,41 @@ export function createGameApplication(
     };
   }
 
+  /**
+   * ART-006: ricrea TrapSystem dal layout e collega i mesh via hook del renderer.
+   * Deve essere chiamato al posto di `setFloorLayout` grezzo all'init e alla discesa.
+   */
+  function bindTrapSystemToFloor(layout: FloorSceneLayout): void {
+    const hasTraps = layout.traps.length > 0 || layout.leverPassage !== null;
+    trapSystem = hasTraps ? new TrapSystem(layout.traps, layout.leverPassage) : null;
+    const hooks: FloorLayoutTrapHooks | undefined = trapSystem
+      ? {
+          onPressurePlateReady: (trapId, setSpikesY) => {
+            trapSystem?.registerPressurePlateAnimator(trapId, setSpikesY);
+          },
+          onPendulumReady: (trapId, setAngleRad) => {
+            trapSystem?.registerPendulumAnimator(trapId, setAngleRad);
+          },
+          onLeverReady: (_leverId, setPose) => {
+            trapSystem?.registerLeverAnimator(setPose);
+          },
+        }
+      : undefined;
+    renderer?.setFloorLayout(layout, hooks);
+  }
+
+  function tryHandleLeverInteract(
+    playerPosition: { readonly x: number; readonly z: number } | null,
+  ): boolean {
+    if (!trapSystem || !playerPosition) return false;
+    if (trapSystem.getLeverState() !== 'READY') return false;
+    const activated = trapSystem.tryActivateLever(playerPosition.x, playerPosition.z);
+    if (!activated) return false;
+    hud.showMessage('Leva tirata — il sigillo di pietra scende.', 2600);
+    audio.play({ name: 'door_creak', volume: 0.7 });
+    return true;
+  }
+
   function applyDamageToPlayer(
     baseDamageHp: number,
     position: { readonly x: number; readonly y: number; readonly z: number },
@@ -1941,6 +1981,7 @@ export function createGameApplication(
     mummyState = null;
     genericEnemyState = null;
     activeBossRuntime = null;
+    trapSystem = null;
     hud.updateBossBar(null);
     enemyHurtboxes.clear();
     playerHitRegistry.clear();
@@ -2019,7 +2060,7 @@ export function createGameApplication(
     // rende la discesa cinematografica invece di un frame drop visibile.
     cinematicOverlay?.fadeToBlack(true);
     await new Promise((resolve) => setTimeout(resolve, 380));
-    renderer?.setFloorLayout(nextSlice.sceneLayout);
+    bindTrapSystemToFloor(nextSlice.sceneLayout);
     renderer?.setShovelPickup(shovelPickupPos);
     renderer?.applyFloorPalette(progression.palette);
     syncWorldInteractables();
@@ -2686,6 +2727,8 @@ export function createGameApplication(
         _frame.consume(ActionKind.Interact);
       } else if (tryPickUpIntroTorch(playerPosition)) {
         _frame.consume(ActionKind.Interact);
+      } else if (tryHandleLeverInteract(playerPosition)) {
+        _frame.consume(ActionKind.Interact);
       } else if (tryHandleObjectiveInteract()) {
         _frame.consume(ActionKind.Interact);
       } else if (tryHandleBrazierInteract()) {
@@ -3068,6 +3111,24 @@ export function createGameApplication(
       enemySpawnDirector?.tick();
       if (sliceState && playerController && !sliceState.completed && !sliceState.failed) {
         const playerState = playerController.getState();
+        // ART-006: trappole e leva — danno + animazioni mesh ogni tick fisso.
+        if (trapSystem) {
+          const trapDamageHp = trapSystem.tick(playerState.position.x, playerState.position.z);
+          if (trapDamageHp > 0) {
+            const appliedDamageHp = applyDamageToPlayer(
+              trapDamageHp,
+              playerState.position,
+              'Trappola',
+            );
+            if (appliedDamageHp > 0) {
+              hud.showMessage('Una trappola ti colpisce!', 1600);
+              if ((currentPlayerHealth()?.hp ?? 0) <= 0) {
+                markSliceFailed(sliceState);
+                hud.showMessage('Sei stato abbattuto nella cripta.', 3200);
+              }
+            }
+          }
+        }
         // G-18: passi sulla sabbia — rate-limit 0.45s, solo se in movimento
         const horizontalSpeed = Math.hypot(playerState.velocity.x, playerState.velocity.z);
         if (playerState.grounded && horizontalSpeed > 0.6) {
@@ -3540,7 +3601,7 @@ export function createGameApplication(
         renderer = createThreeRenderer(backend, canvas, physicsWorld);
         await renderer.init();
         installPointerLockListeners();
-        renderer.setFloorLayout(sliceState.sceneLayout);
+        bindTrapSystemToFloor(sliceState.sceneLayout);
         renderer.setShovelPickup(shovelPickupPos);
         // QC-1: applica subito il profilo di qualità iniziale
         renderer.applyQualityProfile(quality.profile);

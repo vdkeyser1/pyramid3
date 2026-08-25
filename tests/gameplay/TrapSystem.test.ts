@@ -179,7 +179,8 @@ describe('TrapSystem – piastra a pressione', () => {
       expect(extendSlice[i]!).toBeGreaterThanOrEqual(extendSlice[i - 1]!);
     }
     // Durante HOLD l'animator deve restituire esattamente spikeHeightM.
-    const holdY = spikesYValues[1 + TRAPS.pressurePlate.extendTicks];
+    // Indice: [0]=primo tick EXTEND, [1..extendTicks]=tick lontani (l'ultimo è HOLD).
+    const holdY = spikesYValues[TRAPS.pressurePlate.extendTicks];
     expect(holdY).toBeCloseTo(TRAPS.pressurePlate.spikeHeightM);
   });
 });

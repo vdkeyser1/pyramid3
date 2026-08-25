@@ -59,6 +59,25 @@ export interface RendererObjectiveState {
   readonly completed: boolean;
 }
 
+/**
+ * Hook ART-006: il renderer costruisce i mesh e consegna setter di animazione
+ * (senza esporre Object3D) così GameApplication può registrarli in TrapSystem.
+ */
+export interface FloorLayoutTrapHooks {
+  readonly onPressurePlateReady?: (
+    trapId: string,
+    setSpikesY: (spikesGroupY: number) => void,
+  ) => void;
+  readonly onPendulumReady?: (
+    trapId: string,
+    setAngleRad: (angleRad: number) => void,
+  ) => void;
+  readonly onLeverReady?: (
+    leverId: string,
+    setPose: (handleAngleRad: number, sealY: number) => void,
+  ) => void;
+}
+
 export interface RendererPlacedTorchState {
   readonly x: number;
   readonly y: number;
@@ -154,8 +173,12 @@ export interface RendererHandle {
   /** Aggiorna lo stato visuale dell'uscita del vertical slice. */
   setObjectiveState(state: RendererObjectiveState): void;
 
-  /** Aggiorna il layout visuale derivato dal FloorModel. */
-  setFloorLayout(layout: FloorSceneLayout | null): void;
+  /**
+   * Aggiorna il layout visuale derivato dal FloorModel.
+   * `trapHooks` collega i mesh ART-006 a TrapSystem senza esporre Three.js
+   * all'orchestratore: il renderer consegna solo setter di pose.
+   */
+  setFloorLayout(layout: FloorSceneLayout | null, trapHooks?: FloorLayoutTrapHooks): void;
 
   /** G-10: applica la palette del piano (muri, pavimento, accenti, buio). */
   applyFloorPalette(palette: { readonly wallHex: number; readonly floorHex: number; readonly accentHex: number; readonly darknessFactor: number }): void;
