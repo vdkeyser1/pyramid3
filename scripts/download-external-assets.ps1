@@ -73,19 +73,32 @@ if (-not $SkipKenney) {
   Write-Step 'Kenney Mini Dungeon — SKIP'
 }
 
-# ── 2) Quaternius Ultimate Modular Ruins (CC0) — manuale ─────────────────────
+# ── 2) Quaternius Ultimate Modular Ruins (CC0) — import se path valido ───────
 Write-Step 'Quaternius Ultimate Modular Ruins (CC0)'
 
 $quaterniusDest = Join-Path $Root 'public\models\quaternius-ruins'
 New-Item -ItemType Directory -Force -Path $quaterniusDest | Out-Null
 
-if ($QuaterniusZip -and (Test-Path $QuaterniusZip)) {
+if ($QuaterniusZip) {
+  if (-not (Test-Path -LiteralPath $QuaterniusZip)) {
+    throw @"
+QuaterniusZip non trovato:
+  $QuaterniusZip
+
+Devi prima scaricare il pack nel browser, poi passare il path REALE del file.
+Esempi tipici dopo il download:
+  Get-ChildItem `$env:USERPROFILE\Downloads -Filter *.zip | Sort-Object LastWriteTime -Descending | Select-Object -First 10
+
+Poi:
+  pwsh -File scripts\download-external-assets.ps1 -SkipKenney -QuaterniusZip "`$env:USERPROFILE\Downloads\<nome-reale>.zip"
+"@
+  }
   Write-Host "Import da ZIP: $QuaterniusZip"
   $qx = Join-Path $Tmp 'quaternius-ruins-extract'
   if (Test-Path $qx) { Remove-Item $qx -Recurse -Force }
-  Expand-Archive -Path $QuaterniusZip -DestinationPath $qx -Force
-  $models = Get-ChildItem $qx -Recurse -Include *.glb,*.gltf,*.fbx,*.obj
-  Write-Host "Trovati $($models.Count) modelli. Copio GLB/GLTF (se presenti)…"
+  Expand-Archive -LiteralPath $QuaterniusZip -DestinationPath $qx -Force
+  $models = @(Get-ChildItem $qx -Recurse -Include *.glb,*.gltf,*.fbx,*.obj -File)
+  Write-Host "Trovati $($models.Count) modelli (glb/gltf/fbx/obj)."
   $n = 0
   foreach ($m in $models) {
     if ($m.Extension -in '.glb', '.gltf') {
@@ -94,49 +107,60 @@ if ($QuaterniusZip -and (Test-Path $QuaterniusZip)) {
     }
   }
   if ($n -eq 0) {
+    $fbxCount = @($models | Where-Object { $_.Extension -in '.fbx', '.obj' }).Count
     Write-Host @"
 
-ATTENZIONE: il pack Quaternius è in FBX/OBJ/Blend (non GLB).
-Converti con Blender o:
-  # esempio batch (richiede gltf-transform + asset già in glTF)
-  Get-ChildItem '$qx' -Recurse -Filter *.fbx
+ATTENZIONE: nessun .glb/.gltf nello ZIP ($fbxCount file FBX/OBJ).
+Ultimate Modular Ruins ufficiale è FBX/OBJ/Blend — serve conversione Blender:
+  Import FBX → Export glTF Binary (.glb) → cartella $quaterniusDest
 
-Oppure apri Blender → File → Import FBX → Export glTF Binary (.glb)
-poi copia i .glb in: $quaterniusDest
+Alternativa già in GLB: Poly Pizza Modular Dungeons
+  https://poly.pizza/bundle/Modular-Dungeons-Pack-HaFPqhAp3w → Download GLTF
+  poi: -QuaterniusZip o -QuaterniusFolder sul pack scaricato
 
 "@ -ForegroundColor Yellow
   } else {
     Write-Host "Quaternius: $n GLB/GLTF → $quaterniusDest" -ForegroundColor Green
   }
-} elseif ($QuaterniusFolder -and (Test-Path $QuaterniusFolder)) {
+} elseif ($QuaterniusFolder) {
+  if (-not (Test-Path -LiteralPath $QuaterniusFolder)) {
+    throw @"
+QuaterniusFolder non trovato:
+  $QuaterniusFolder
+
+Verifica il path (D:\Downloads non esiste su questa macchina).
+Elenca Downloads:
+  Get-ChildItem `$env:USERPROFILE\Downloads | Sort-Object LastWriteTime -Descending | Select-Object -First 20
+"@
+  }
   Write-Host "Import da cartella: $QuaterniusFolder"
-  $models = Get-ChildItem $QuaterniusFolder -Recurse -Include *.glb,*.gltf
+  $models = @(Get-ChildItem -LiteralPath $QuaterniusFolder -Recurse -Include *.glb,*.gltf -File)
   $n = 0
   foreach ($m in $models) {
     Copy-Item -Force $m.FullName (Join-Path $quaterniusDest $m.Name)
     $n++
   }
-  Write-Host "Quaternius: $n file → $quaterniusDest" -ForegroundColor Green
+  if ($n -eq 0) {
+    Write-Host "Nessun .glb/.gltf in $QuaterniusFolder (solo FBX? converti in Blender)." -ForegroundColor Yellow
+  } else {
+    Write-Host "Quaternius: $n file → $quaterniusDest" -ForegroundColor Green
+  }
 } else {
   Write-Host @"
 
-MANUALE (nessun URL diretto stabile — lightbox JS / Google Drive):
+MANUALE — scarica PRIMA, poi riesegui con il path reale:
 
-  1) Apri nel browser:
-     https://quaternius.com/packs/ultimatemodularruins.html
-     → Download (CC0)
+  1) https://quaternius.com/packs/ultimatemodularruins.html → Download
+     (oppure Drive: https://drive.google.com/drive/folders/1ETp2ldaHaP0BkS4FBmkT-g9Yf88T_cIX)
 
-  2) Mirror Drive (stesso pack, CC0):
-     https://drive.google.com/drive/folders/1ETp2ldaHaP0BkS4FBmkT-g9Yf88T_cIX
+  2) Meglio per GLB pronti:
+     https://poly.pizza/bundle/Modular-Dungeons-Pack-HaFPqhAp3w → Download GLTF
 
-  3) Pack alternativo già in GLB su Poly Pizza:
-     https://poly.pizza/bundle/Modular-Dungeons-Pack-HaFPqhAp3w
-     → Download GLTF
+  3) Trova il file:
+     Get-ChildItem `$env:USERPROFILE\Downloads -Filter *.zip | Sort LastWriteTime -Descending
 
-  4) Poi riesegui:
-     pwsh -File scripts/download-external-assets.ps1 -QuaterniusZip "`$env:USERPROFILE\Downloads\<file>.zip"
-     # oppure
-     pwsh -File scripts/download-external-assets.ps1 -QuaterniusFolder "D:\path\to\extracted"
+  4) Importa (salta Kenney se già fatto):
+     pwsh -File scripts\download-external-assets.ps1 -SkipKenney -QuaterniusZip "`$env:USERPROFILE\Downloads\<nome>.zip"
 
 "@ -ForegroundColor Yellow
 }
