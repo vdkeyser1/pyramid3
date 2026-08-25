@@ -30,6 +30,7 @@ import {
   loadPbrTextureSet,
 } from '@/rendering/Materials.js';
 import { createLogger } from '@/core/Logger.js';
+import { TRAPS } from '@/content/balance.js';
 import type { AssetLoader } from '@/rendering/AssetLoader.js';
 import type { ParticleBurst } from '@/rendering/Vfx.js';
 import type { PhysicsKinematicBox, PhysicsWorld } from '@/physics/PhysicsWorld.js';
@@ -1200,6 +1201,36 @@ export function createThreeRenderer(
             pivotGroup.rotation.z = angleRad;
           } else {
             pivotGroup.rotation.x = angleRad;
+          }
+        });
+      },
+      onDartLauncherMeshReady: (trapId, dartMesh, fireAxis) => {
+        const originX = dartMesh.position.x;
+        const originZ = dartMesh.position.z;
+        trapHooks?.onDartReady?.(trapId, (travel01, visible) => {
+          dartMesh.visible = visible;
+          const along = travel01 * TRAPS.dartLauncher.rangeM;
+          if (fireAxis === 'x') {
+            dartMesh.position.x = originX + along;
+            dartMesh.position.z = originZ;
+          } else {
+            dartMesh.position.x = originX;
+            dartMesh.position.z = originZ + along;
+          }
+        });
+      },
+      onRollingBoulderMeshReady: (trapId, boulderMesh, rollAxis) => {
+        const originX = boulderMesh.position.x;
+        const originZ = boulderMesh.position.z;
+        trapHooks?.onBoulderReady?.(trapId, (offsetM) => {
+          if (rollAxis === 'x') {
+            boulderMesh.position.x = originX + offsetM;
+            boulderMesh.position.z = originZ;
+            boulderMesh.rotation.z = -offsetM;
+          } else {
+            boulderMesh.position.x = originX;
+            boulderMesh.position.z = originZ + offsetM;
+            boulderMesh.rotation.x = offsetM;
           }
         });
       },

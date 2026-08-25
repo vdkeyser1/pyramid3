@@ -42,6 +42,19 @@ export type PressurePlateAnimator = (spikesGroupY: number) => void;
 export type PendulumAnimator = (angleRad: number) => void;
 
 /**
+ * Anima il dardo di un launcher.
+ * travel01: progresso del volo [0..1] (0 = alla bocca, 1 = fine portata).
+ * visible: false tra uno sparo e l'altro.
+ */
+export type DartAnimator = (travel01: number, visible: boolean) => void;
+
+/**
+ * Anima il masso rotolante.
+ * offsetM: scostamento dal centro lungo l'asse del corridoio.
+ */
+export type BoulderAnimator = (offsetM: number) => void;
+
+/**
  * Anima la leva e il sigillo di pietra.
  * handleAngleRad: rotazione del manico attorno all'asse Z (0 = riposo, π/2 = tirata).
  * sealY: posizione Y del centro del sigillo (sealDropM/2 = chiuso, –sealDropM/2 = aperto).
@@ -63,6 +76,8 @@ export class TrapSystem {
   /** Callback di animazione registrate dal renderer dopo la costruzione dei mesh. */
   private plateAnimators = new Map<string, PressurePlateAnimator>();
   private pendulumAnimators = new Map<string, PendulumAnimator>();
+  private dartAnimators = new Map<string, DartAnimator>();
+  private boulderAnimators = new Map<string, BoulderAnimator>();
   private leverAnimator: LeverAnimator | null = null;
 
   /**
@@ -73,6 +88,13 @@ export class TrapSystem {
 
   constructor(traps: readonly FloorSceneTrap[], leverPassage: FloorSceneLeverPassage | null) {
     for (const trap of traps) {
+      const half =
+        trap.kind === 'rollingBoulder'
+          ? Math.max(
+              1.2,
+              ((trap.corridorLengthM ?? TRAPS.rollingBoulder.defaultTravelHalfM * 2) / 2) - 1.0,
+            )
+          : 0;
       this.traps.set(trap.trapId, {
         trapId: trap.trapId,
         kind: trap.kind,
@@ -81,6 +103,7 @@ export class TrapSystem {
         posX: trap.position.x,
         posZ: trap.position.z,
         corridorAxis: trap.corridorAxis ?? 'x',
+        travelHalfM: half,
         lastDamageElapsed: -9999,
       });
     }
@@ -116,6 +139,16 @@ export class TrapSystem {
     this.pendulumAnimators.set(trapId, fn);
   }
 
+  /** GAME-ART-012: callback del dardo (travel01 + visible). */
+  registerDartAnimator(trapId: string, fn: DartAnimator): void {
+    this.dartAnimators.set(trapId, fn);
+  }
+
+  /** GAME-ART-012: callback del masso (offset lungo l'asse). */
+  registerBoulderAnimator(trapId: string, fn: BoulderAnimator): void {
+    this.boulderAnimators.set(trapId, fn);
+  }
+
   /**
    * Registra la callback di animazione per la leva + sigillo del piano.
    * Chiamata tipicamente nell'onLeverMeshReady di BuildDungeonLayoutOptions.
@@ -143,11 +176,19 @@ export class TrapSystem {
     let totalDamage = 0;
 
     for (const state of this.traps.values()) {
-      if (state.kind === 'pressurePlate') {
-        totalDamage += this.tickPressurePlate(state, playerX, playerZ);
-      } else {
-        // bladePendulum
-        totalDamage += this.tickBladePendulum(state, playerX, playerZ);
+      switch (state.kind) {
+        case 'pressurePlate':
+          totalDamage += this.tickPressurePlate(state, playerX, playerZ);
+          break;
+        case 'bladePendulum':
+          totalDamage += this.tickBladePendulum(state, playerX, playerZ);
+          break;
+        case 'dartLauncher':
+          totalDamage += this.tickDartLauncher(state, playerX, playerZ);
+          break;
+        case 'rollingBoulder':
+          totalDamage += this.tickRollingBoulder(state, playerX, playerZ);
+          break;
       }
     }
 
@@ -311,6 +352,58 @@ export class TrapSystem {
     }
 
     return 0;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Logica interna — GAME-ART-012: lanciatore di dardi
+  // ---------------------------------------------------------------------------
+
+  private tickDartLauncher(state: TrapRuntimeState, playerX: number, playerZ: number): number {
+    const def = TRAPS.dartLauncher;
+    const period = def.firePeriodTicks;
+    const phase = this.elapsedTicks % period;
+    const flying = phase < def.flightTicks;
+    const travel01 = flying ? phase / def.flightTicks : 0;
+
+    this.dartAnimators.get(state.trapId)?.(travel01, flying);
+
+    if (!flying) return 0;
+
+    const along = travel01 * def.rangeM;
+    const dartX = state.corridorAxis === 'x' ? state.posX + along : state.posX;
+    const dartZ = state.corridorAxis === 'z' ? state.posZ + along : state.posZ;
+    const dx = playerX - dartX;
+    const dz = playerZ - dartZ;
+    if (Math.sqrt(dx * dx + dz * dz) >= def.hitRadiusM) return 0;
+
+    const ticksSinceLastHit = this.elapsedTicks - state.lastDamageElapsed;
+    if (ticksSinceLastHit < def.hitCooldownTicks) return 0;
+    state.lastDamageElapsed = this.elapsedTicks;
+    return def.damageHp;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Logica interna — GAME-ART-012: masso rotolante
+  // ---------------------------------------------------------------------------
+
+  private tickRollingBoulder(state: TrapRuntimeState, playerX: number, playerZ: number): number {
+    const def = TRAPS.rollingBoulder;
+    const half = state.travelHalfM > 0 ? state.travelHalfM : def.defaultTravelHalfM;
+    const offset =
+      half * Math.sin((2 * Math.PI * this.elapsedTicks) / def.rollPeriodTicks);
+
+    this.boulderAnimators.get(state.trapId)?.(offset);
+
+    const boulderX = state.corridorAxis === 'x' ? state.posX + offset : state.posX;
+    const boulderZ = state.corridorAxis === 'z' ? state.posZ + offset : state.posZ;
+    const dx = playerX - boulderX;
+    const dz = playerZ - boulderZ;
+    if (Math.sqrt(dx * dx + dz * dz) >= def.hitRadiusM) return 0;
+
+    const ticksSinceLastHit = this.elapsedTicks - state.lastDamageElapsed;
+    if (ticksSinceLastHit < def.hitCooldownTicks) return 0;
+    state.lastDamageElapsed = this.elapsedTicks;
+    return def.damageHp;
   }
 
   // ---------------------------------------------------------------------------

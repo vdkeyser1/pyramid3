@@ -1328,6 +1328,12 @@ export function createGameApplication(
           onPendulumReady: (trapId, setAngleRad) => {
             trapSystem?.registerPendulumAnimator(trapId, setAngleRad);
           },
+          onDartReady: (trapId, setDart) => {
+            trapSystem?.registerDartAnimator(trapId, setDart);
+          },
+          onBoulderReady: (trapId, setOffsetM) => {
+            trapSystem?.registerBoulderAnimator(trapId, setOffsetM);
+          },
           onLeverReady: (_leverId, setPose) => {
             trapSystem?.registerLeverAnimator(setPose);
           },

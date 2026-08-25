@@ -498,3 +498,75 @@ describe('TrapSystem – comportamento con array di trappole vuoto', () => {
     expect(sys.getSnapshot().traps).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// GAME-ART-012 — dardi e masso
+// ---------------------------------------------------------------------------
+
+function makeDart(id = 'dart-1', axis: 'x' | 'z' = 'x'): FloorSceneTrap {
+  return {
+    trapId: id,
+    kind: 'dartLauncher',
+    position: { x: 0, y: 0, z: 0 },
+    corridorAxis: axis,
+    corridorLengthM: 8,
+  };
+}
+
+function makeBoulder(id = 'bou-1', axis: 'x' | 'z' = 'x'): FloorSceneTrap {
+  return {
+    trapId: id,
+    kind: 'rollingBoulder',
+    position: { x: 0, y: 0, z: 0 },
+    corridorAxis: axis,
+    corridorLengthM: 8,
+  };
+}
+
+describe('TrapSystem – dartLauncher', () => {
+  it('infligge danno quando il giocatore è sulla traiettoria durante il volo', () => {
+    const sys = new TrapSystem([makeDart()], null);
+    // phase 0: inizio volo, dardo ancora vicino al launcher (0,0)
+    expect(sys.tick(0, 0)).toBe(TRAPS.dartLauncher.damageHp);
+  });
+
+  it('rispetta il hitCooldown fra colpi', () => {
+    const sys = new TrapSystem([makeDart()], null);
+    expect(sys.tick(0, 0)).toBe(TRAPS.dartLauncher.damageHp);
+    expect(sys.tick(0, 0)).toBe(0);
+  });
+
+  it('chiama l’animator con visible=true durante il volo', () => {
+    const sys = new TrapSystem([makeDart()], null);
+    const calls: { t: number; v: boolean }[] = [];
+    sys.registerDartAnimator('dart-1', (travel01, visible) => {
+      calls.push({ t: travel01, v: visible });
+    });
+    sys.tick(10, 10);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.v).toBe(true);
+    expect(calls[0]!.t).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('TrapSystem – rollingBoulder', () => {
+  it('infligge danno al centro all’inizio del roll', () => {
+    const sys = new TrapSystem([makeBoulder()], null);
+    expect(sys.tick(0, 0)).toBe(TRAPS.rollingBoulder.damageHp);
+  });
+
+  it('non danneggia fuori dal raggio', () => {
+    const sys = new TrapSystem([makeBoulder()], null);
+    expect(sys.tick(20, 20)).toBe(0);
+  });
+
+  it('chiama l’animator con un offset numerico', () => {
+    const sys = new TrapSystem([makeBoulder()], null);
+    let last = Number.NaN;
+    sys.registerBoulderAnimator('bou-1', (offsetM) => {
+      last = offsetM;
+    });
+    sys.tick(20, 20);
+    expect(Number.isFinite(last)).toBe(true);
+  });
+});

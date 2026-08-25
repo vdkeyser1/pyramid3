@@ -82,22 +82,22 @@ export interface FloorSceneDoorway {
 }
 
 /**
- * ART-006: piastra a pressione o pendolo a lama.
+ * ART-006 / GAME-ART-012: trappola di piano (piastra, pendolo, dardi, masso).
  *
  * La posizione è il centro della trappola sul pavimento (y = 0).
- * corridorLengthM e corridorAxis servono solo ai pendoli: dimensionano
- * il braccio del pendolo e ne orientano l'oscillazione.
+ * corridorLengthM e corridorAxis servono a pendolo / dardi / masso.
  */
 export interface FloorSceneTrap {
   readonly trapId: string;
-  readonly kind: 'pressurePlate' | 'bladePendulum';
+  readonly kind: 'pressurePlate' | 'bladePendulum' | 'dartLauncher' | 'rollingBoulder';
   readonly position: SceneVector3;
-  /** Solo bladePendulum: lunghezza del corridoio ospite. */
+  /** Pendolo / masso / dardi: lunghezza utile del corridoio o stanza. */
   readonly corridorLengthM?: number;
   /**
-   * Solo bladePendulum: asse del corridoio.
-   * 'x' = corridoio est-ovest → la lama oscilla su Z.
-   * 'z' = corridoio nord-sud → la lama oscilla su X.
+   * Asse di movimento.
+   * Pendolo: asse del corridoio (oscillazione perpendicolare).
+   * Dardi: asse di fuoco dal launcher.
+   * Masso: asse di rotolamento lungo il corridoio.
    */
   readonly corridorAxis?: 'x' | 'z';
 }
@@ -268,17 +268,13 @@ function deriveBraziers(
 }
 
 /**
- * ART-006: piastre a pressione e pendoli per il piano.
+ * ART-006 / GAME-ART-012: trappole del piano.
  *
- * Regola di distribuzione — deterministico, nessun Math.random():
- *   Piastre: una ogni 5 stanze, selezionata per (roomId + floorIndex*3) % 5 === 0,
- *     escluse entrata ed uscita. Piani 1 e 2: nessuna.
- *   Pendoli: nei corridoi la cui lunghezza supera minCorridorLengthM (8 m).
- *     Piani 1 e 2: nessuno.
- *
- * L'offset floorIndex*3 sulla selezione delle stanze cambia il sottoinsieme
- * da piano a piano: lo stesso roomId non riceve sempre una piastra, il che
- * rende ogni discesa parzialmente imprevedibile senza richiedere casualità.
+ * Distribuzione deterministica (nessun Math.random):
+ *   Piastre: (roomId + floorIndex*3) % 5 === 0, esclusi ENTRY/EXIT; floor ≥ 2.
+ *   Pendoli: corridoi ≥ minCorridorLengthM (8 m); floor ≥ 2.
+ *   Dardi: (roomId + floorIndex*5) % 7 === 0, esclusi ENTRY/EXIT; floor ≥ 3.
+ *   Masso: corridoi ≥ 6 m e (from+to+floor) % 3 === 0, senza pendolo sullo stesso; floor ≥ 3.
  */
 function deriveTraps(
   floorId: string,
@@ -288,19 +284,16 @@ function deriveTraps(
   entryRoomId: RoomId,
   exitRoomId: RoomId,
 ): FloorSceneTrap[] {
-  // I piani iniziali non hanno trappole: il giocatore deve imparare il sistema.
   if (floorIndex < 2) return [];
 
   const traps: FloorSceneTrap[] = [];
+  const pendulumCorridorKeys = new Set<string>();
 
-  // Piastre a pressione nelle stanze intermedie.
   for (const room of rooms) {
     if (room.roomId === entryRoomId || room.roomId === exitRoomId) continue;
     const roomNum = Number(room.roomId);
-    // Modulo 5 sfasato per piano: stanze diverse da piano a piano.
     if ((roomNum + floorIndex * 3) % 5 !== 0) continue;
 
-    // Offset dal centro della stanza — derivato dall'id, non casuale.
     const xOff = ((roomNum * 7) % 5 - 2) * 0.55;
     const zOff = ((roomNum * 11) % 5 - 2) * 0.55;
 
@@ -315,7 +308,6 @@ function deriveTraps(
     });
   }
 
-  // Pendoli nei corridoi lunghi.
   for (const corridor of corridors) {
     const length = corridor.axis === 'x'
       ? corridor.bounds.maxX - corridor.bounds.minX
@@ -324,14 +316,76 @@ function deriveTraps(
 
     const centerX = (corridor.bounds.minX + corridor.bounds.maxX) / 2;
     const centerZ = (corridor.bounds.minZ + corridor.bounds.maxZ) / 2;
+    const key = `${String(corridor.fromRoomId)}-${String(corridor.toRoomId)}`;
+    pendulumCorridorKeys.add(key);
 
     traps.push({
-      trapId: `${floorId}:trap:pendulum:${String(corridor.fromRoomId)}-${String(corridor.toRoomId)}`,
+      trapId: `${floorId}:trap:pendulum:${key}`,
       kind: 'bladePendulum',
       position: { x: centerX, y: 0, z: centerZ },
       corridorLengthM: length,
       corridorAxis: corridor.axis,
     });
+  }
+
+  // GAME-ART-012: dardi da nicchia (piani ≥ 3).
+  if (floorIndex >= TRAPS.dartLauncher.minFloorIndex) {
+    for (const room of rooms) {
+      if (room.roomId === entryRoomId || room.roomId === exitRoomId) continue;
+      const roomNum = Number(room.roomId);
+      if ((roomNum + floorIndex * 5) % 7 !== 0) continue;
+
+      const width = room.bounds.maxX - room.bounds.minX;
+      const depth = room.bounds.maxZ - room.bounds.minZ;
+      const fireAlongX = width >= depth;
+      const inset = 0.55;
+      const position = fireAlongX
+        ? {
+            x: room.bounds.minX + inset,
+            y: 0,
+            z: room.center.z + ((roomNum % 3) - 1) * 0.4,
+          }
+        : {
+            x: room.center.x + ((roomNum % 3) - 1) * 0.4,
+            y: 0,
+            z: room.bounds.minZ + inset,
+          };
+
+      traps.push({
+        trapId: `${floorId}:trap:dart:${String(room.roomId)}`,
+        kind: 'dartLauncher',
+        position,
+        corridorAxis: fireAlongX ? 'x' : 'z',
+        corridorLengthM: fireAlongX ? width : depth,
+      });
+    }
+  }
+
+  // GAME-ART-012: masso nei corridoi medi/lunghi senza pendolo.
+  if (floorIndex >= TRAPS.rollingBoulder.minFloorIndex) {
+    for (const corridor of corridors) {
+      const length = corridor.axis === 'x'
+        ? corridor.bounds.maxX - corridor.bounds.minX
+        : corridor.bounds.maxZ - corridor.bounds.minZ;
+      if (length < TRAPS.rollingBoulder.minCorridorLengthM) continue;
+
+      const key = `${String(corridor.fromRoomId)}-${String(corridor.toRoomId)}`;
+      if (pendulumCorridorKeys.has(key)) continue;
+      const fromN = Number(corridor.fromRoomId);
+      const toN = Number(corridor.toRoomId);
+      if ((fromN + toN + floorIndex) % 3 !== 0) continue;
+
+      const centerX = (corridor.bounds.minX + corridor.bounds.maxX) / 2;
+      const centerZ = (corridor.bounds.minZ + corridor.bounds.maxZ) / 2;
+
+      traps.push({
+        trapId: `${floorId}:trap:boulder:${key}`,
+        kind: 'rollingBoulder',
+        position: { x: centerX, y: 0, z: centerZ },
+        corridorLengthM: length,
+        corridorAxis: corridor.axis,
+      });
+    }
   }
 
   return traps;

@@ -122,6 +122,53 @@ export function buildBladePendulumMesh(material: THREE.Material): {
 }
 
 // ---------------------------------------------------------------------------
+// GAME-ART-012: lanciatore di dardi
+// ---------------------------------------------------------------------------
+
+/**
+ * Nicchia a muro con dardo animabile lungo l'asse di fuoco.
+ * dartMesh.position.{x|z} viene spostato dal renderer in base a travel01 * rangeM.
+ */
+export function buildDartLauncherMesh(material: THREE.Material): {
+  housing: THREE.Mesh;
+  dartMesh: THREE.Mesh;
+} {
+  const housing = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.45, 0.35), material);
+  housing.position.y = 1.15;
+  housing.castShadow = true;
+  housing.receiveShadow = true;
+
+  const dartMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.035, 0.02, 0.55, 6),
+    new THREE.MeshStandardMaterial({ color: 0xc4a574, metalness: 0.35, roughness: 0.45 }),
+  );
+  dartMesh.rotation.z = Math.PI / 2;
+  dartMesh.position.set(0.2, 1.15, 0);
+  dartMesh.castShadow = true;
+  dartMesh.visible = false;
+
+  return { housing, dartMesh };
+}
+
+// ---------------------------------------------------------------------------
+// GAME-ART-012: masso rotolante
+// ---------------------------------------------------------------------------
+
+/**
+ * Sfera di pietra sul pavimento. Il renderer sposta boulderMesh lungo l'asse
+ * del corridoio secondo l'offset restituito da TrapSystem.
+ */
+export function buildRollingBoulderMesh(material: THREE.Material): {
+  boulderMesh: THREE.Mesh;
+} {
+  const boulderMesh = new THREE.Mesh(new THREE.SphereGeometry(0.72, 12, 10), material);
+  boulderMesh.position.y = 0.72;
+  boulderMesh.castShadow = true;
+  boulderMesh.receiveShadow = true;
+  return { boulderMesh };
+}
+
+// ---------------------------------------------------------------------------
 // Leva a muro
 // ---------------------------------------------------------------------------
 

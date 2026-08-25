@@ -72,6 +72,14 @@ export interface FloorLayoutTrapHooks {
     trapId: string,
     setAngleRad: (angleRad: number) => void,
   ) => void;
+  readonly onDartReady?: (
+    trapId: string,
+    setDart: (travel01: number, visible: boolean) => void,
+  ) => void;
+  readonly onBoulderReady?: (
+    trapId: string,
+    setOffsetM: (offsetM: number) => void,
+  ) => void;
   readonly onLeverReady?: (
     leverId: string,
     setPose: (handleAngleRad: number, sealY: number) => void,

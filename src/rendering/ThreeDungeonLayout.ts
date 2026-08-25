@@ -5,7 +5,8 @@ import {
   buildAltar, buildCanopicJar, buildSarcophagus, buildStatue, buildWell,
 } from '@/rendering/EgyptianLandmarks.js';
 import {
-  buildBladePendulumMesh, buildLeverMesh, buildPressurePlateMesh, buildSealMesh,
+  buildBladePendulumMesh, buildDartLauncherMesh, buildLeverMesh,
+  buildPressurePlateMesh, buildRollingBoulderMesh, buildSealMesh,
 } from '@/rendering/TrapMesh.js';
 import type { RoomBounds as CullBounds } from '@/rendering/FrustumCuller.js';
 import type {
@@ -118,6 +119,18 @@ export interface BuildDungeonLayoutOptions {
     trapId: string,
     pivotGroup: THREE.Object3D,
     corridorAxis: 'x' | 'z',
+  ) => void;
+  /** GAME-ART-012: dardo — travel01 + visible. */
+  readonly onDartLauncherMeshReady?: (
+    trapId: string,
+    dartMesh: THREE.Object3D,
+    fireAxis: 'x' | 'z',
+  ) => void;
+  /** GAME-ART-012: masso — offset lungo l'asse. */
+  readonly onRollingBoulderMeshReady?: (
+    trapId: string,
+    boulderMesh: THREE.Object3D,
+    rollAxis: 'x' | 'z',
   ) => void;
   /**
    * ART-006: callback invocata per il meccanismo leva+sigillo.
@@ -525,6 +538,26 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
     options.onPendulumMeshReady?.(trap.trapId, pivotGroup, trap.corridorAxis ?? 'x');
   }
 
+  function addDartLauncher(trap: FloorSceneTrap): void {
+    const { housing, dartMesh } = buildDartLauncherMesh(wallMaterial);
+    housing.position.set(trap.position.x, 0, trap.position.z);
+    dartMesh.position.set(trap.position.x, 1.15, trap.position.z);
+    const axis = trap.corridorAxis ?? 'x';
+    if (axis === 'z') {
+      dartMesh.rotation.set(Math.PI / 2, 0, 0);
+    }
+    dungeonRoot.add(housing);
+    dungeonRoot.add(dartMesh);
+    options.onDartLauncherMeshReady?.(trap.trapId, dartMesh, axis);
+  }
+
+  function addRollingBoulder(trap: FloorSceneTrap): void {
+    const { boulderMesh } = buildRollingBoulderMesh(wallMaterial);
+    boulderMesh.position.set(trap.position.x, 0.72, trap.position.z);
+    dungeonRoot.add(boulderMesh);
+    options.onRollingBoulderMeshReady?.(trap.trapId, boulderMesh, trap.corridorAxis ?? 'x');
+  }
+
   /**
    * ART-006: meccanismo leva + sigillo di pietra.
    *
@@ -583,12 +616,21 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
     addLandmark(landmark);
   }
 
-  // ART-006: trappole e meccanismo leva.
+  // ART-006 / GAME-ART-012: trappole e meccanismo leva.
   for (const trap of layout.traps) {
-    if (trap.kind === 'pressurePlate') {
-      addPressurePlate(trap);
-    } else {
-      addBladePendulum(trap);
+    switch (trap.kind) {
+      case 'pressurePlate':
+        addPressurePlate(trap);
+        break;
+      case 'bladePendulum':
+        addBladePendulum(trap);
+        break;
+      case 'dartLauncher':
+        addDartLauncher(trap);
+        break;
+      case 'rollingBoulder':
+        addRollingBoulder(trap);
+        break;
     }
   }
   if (layout.leverPassage) {

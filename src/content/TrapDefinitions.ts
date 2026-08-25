@@ -11,7 +11,11 @@
  * Failure mode: nessuno — solo tipi e interfacce statiche.
  */
 
-export type TrapKind = 'pressurePlate' | 'bladePendulum';
+export type TrapKind =
+  | 'pressurePlate'
+  | 'bladePendulum'
+  | 'dartLauncher'
+  | 'rollingBoulder';
 
 /**
  * Macchina a stati della piastra a pressione.
@@ -59,15 +63,19 @@ export interface TrapRuntimeState {
   /** Coordinate Z del centro della trappola nel sistema di riferimento scena. */
   readonly posZ: number;
   /**
-   * Asse del corridoio ospite (solo bladePendulum).
-   * 'x' = corridoio est-ovest → pendolo oscilla su Z.
-   * 'z' = corridoio nord-sud → pendolo oscilla su X.
+   * Asse di movimento (bladePendulum / dartLauncher / rollingBoulder).
+   * 'x' = corridoio est-ovest → oscilla/spara/rotola su Z o lungo X a seconda del kind.
+   * 'z' = corridoio nord-sud → analogo.
    */
   readonly corridorAxis: 'x' | 'z';
   /**
-   * Ultimo elapsed-tick in cui il pendolo ha inflitto danno.
-   * Impedisce che la lama colpisca ogni singolo tick mentre la punta
-   * transita nella zona del giocatore. Il cooldown è hitCooldownTicks.
+   * Semi-corsa del masso (solo rollingBoulder), in metri dal centro.
+   * 0 per gli altri kind.
+   */
+  readonly travelHalfM: number;
+  /**
+   * Ultimo elapsed-tick in cui la trappola ha inflitto danno.
+   * Impedisce colpi ogni tick mentre il giocatore resta nella zona.
    */
   lastDamageElapsed: number;
 }

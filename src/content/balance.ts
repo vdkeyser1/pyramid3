@@ -208,6 +208,45 @@ export const TRAPS = {
      */
     minCorridorLengthM: 8.0,
   },
+  /**
+   * GAME-ART-012: lanciatore di dardi da nicchia.
+   * Spara a intervalli fissi lungo un asse; il dardo è una hitbox corta
+   * che attraversa la stanza. Evitabile crouching / lateral step.
+   */
+  dartLauncher: {
+    damageHp: 12,
+    /** Intervallo fra due spari. */
+    firePeriodTicks: secondsToTicks(2.4),
+    /** Durata del volo del dardo (animazione + hit window). */
+    flightTicks: secondsToTicks(0.55),
+    /** Portata del dardo dal launcher. */
+    rangeM: 4.2,
+    /** Raggio di colpo intorno alla punta del dardo. */
+    hitRadiusM: 0.45,
+    /** Cooldown fra due colpi dello stesso launcher. */
+    hitCooldownTicks: secondsToTicks(2.0),
+    /** Piano minimo (dopo tutorial trappole base). */
+    minFloorIndex: 3,
+  },
+  /**
+   * GAME-ART-012: masso che rotola avanti/indietro nel corridoio.
+   * Occupazione ampia: forza sprint o rifugio laterale.
+   */
+  rollingBoulder: {
+    damageHp: 28,
+    /** Periodo di andata+ritorno. */
+    rollPeriodTicks: secondsToTicks(3.8),
+    /** Raggio di colpo dal centro del masso. */
+    hitRadiusM: 0.95,
+    /** Semi-corsa di default se il corridoio non fornisce lunghezza. */
+    defaultTravelHalfM: 3.0,
+    /** Cooldown fra colpi dello stesso masso. */
+    hitCooldownTicks: secondsToTicks(1.0),
+    /** Lunghezza minima corridoio per piazzarlo. */
+    minCorridorLengthM: 6.0,
+    /** Piano minimo. */
+    minFloorIndex: 3,
+  },
   lever: {
     /** Raggio entro cui il giocatore può interagire con la leva. */
     interactionRadiusM: 1.4,
