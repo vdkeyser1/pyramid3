@@ -150,6 +150,7 @@ import { deriveEventFeedback } from '@/app/AudioEventDirector.js';
 import {
   createBrazier,
   igniteBrazier,
+  igniteBrazierWithFlint,
   refillFromBrazier,
   type BrazierState,
 } from '@/gameplay/torch/BrazierSystem.js';
@@ -2157,9 +2158,15 @@ export function createGameApplication(
     }
 
     if (!nearby.state.lit) {
-      const ignition = igniteBrazier(nearby.state, torchRuntime.fuelSeconds);
+      let ignition = igniteBrazier(nearby.state, torchRuntime.fuelSeconds);
+      let usedFlint = false;
       if (!ignition) {
-        hud.showMessage('Serve una torcia accesa e abbastanza combustibile.', 1800);
+        // Fallback: pietra focaia d'emergenza
+        ignition = igniteBrazierWithFlint(nearby.state);
+        usedFlint = true;
+      }
+      if (!ignition) {
+        hud.showMessage('Impossibile accendere il braciere.', 1800);
         return true;
       }
       const previousRuntime = torchRuntime;
@@ -2177,7 +2184,12 @@ export function createGameApplication(
       // prima era solo un cambio di numeri nella HUD.
       renderer?.playTorchIgnite?.();
       syncTorchPresentation();
-      hud.showMessage('Braciere acceso. La stanza respira di nuovo.', 2200);
+      hud.showMessage(
+        usedFlint
+          ? 'Braciere acceso con pietra focaia! Premi di nuovo E per ricaricare la torcia.'
+          : 'Braciere acceso. La stanza respira di nuovo.',
+        2400,
+      );
       hud.showContextualHint({
         id: 'hint-brazier',
         text: "Braciere acceso: l'oscurità arretra e la mappa si rivela.",

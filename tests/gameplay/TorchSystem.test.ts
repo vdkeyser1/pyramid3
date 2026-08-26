@@ -27,10 +27,12 @@ describe('TorchSystem', () => {
     expect(off.state).toBe('OFF');
   });
 
-  it('TOGGLE non funziona senza combustibile', () => {
+  it('TOGGLE a secco accende la fiamma pilota d emergenza con pietra focaia', () => {
     const t: TorchRuntime = { ...createTorch(), fuelSeconds: 0 };
-    const { changed } = applyTorchCommand(t, { kind: 'TOGGLE' });
-    expect(changed).toBe(false);
+    const { changed, runtime } = applyTorchCommand(t, { kind: 'TOGGLE' });
+    expect(changed).toBe(true);
+    expect(runtime.state).toBe('LOW');
+    expect(runtime.fuelSeconds).toBe(15);
   });
 
   it('stato OFF non consuma combustibile', () => {

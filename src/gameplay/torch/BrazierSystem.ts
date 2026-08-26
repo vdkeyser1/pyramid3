@@ -51,6 +51,25 @@ export function igniteBrazier(
 }
 
 /**
+ * Accensione d'emergenza con pietra focaia (quando la torcia è a secco).
+ */
+export function igniteBrazierWithFlint(
+  brazier: BrazierState,
+): { fuelCost: number; effects: readonly BrazierEffect[] } | null {
+  if (brazier.lit) return null;
+  brazier.lit = true;
+
+  return {
+    fuelCost: 0,
+    effects: [
+      { kind: 'BRAZIER_LIT', brazierId: brazier.brazierId, roomId: brazier.roomId, value: 1 },
+      { kind: 'DARKNESS_RELIEF', brazierId: brazier.brazierId, roomId: brazier.roomId, value: TORCH.brazierDarknessDebtRelief },
+      { kind: 'MAP_REVEAL', brazierId: brazier.brazierId, roomId: brazier.roomId, value: 1 },
+    ],
+  };
+}
+
+/**
  * Tenta di ricaricare la torcia da un braciere acceso.
  * Max una volta per braciere, fino a brazierRefillCapSeconds.
  */

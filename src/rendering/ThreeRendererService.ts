@@ -2593,9 +2593,18 @@ export function createThreeRenderer(
      * diverse dal khopesh, che lasciava le mani vuote.
      */
     setActiveWeaponViewmodel(weaponId: string): void {
-      const next = weaponViewmodels.get(weaponId);
-      for (const [id, model] of weaponViewmodels) {
-        model.setVisible(id === weaponId);
+      let targetKey = weaponId;
+      if (!weaponViewmodels.has(targetKey)) {
+        if (targetKey.includes('spear')) targetKey = 'staff';
+        else if (targetKey.includes('khopesh') || targetKey.includes('sickle')) targetKey = 'khopesh';
+        else if (targetKey.includes('staff')) targetKey = 'staff';
+        else if (targetKey.includes('shovel')) targetKey = 'shovel';
+        else if (targetKey.includes('fist')) targetKey = 'fists';
+        else targetKey = 'khopesh';
+      }
+      const next = weaponViewmodels.get(targetKey) ?? weaponViewmodels.get('khopesh') ?? weaponViewmodels.get('fists');
+      for (const model of weaponViewmodels.values()) {
+        model.setVisible(model === next);
       }
       if (next) weaponViewmodel = next;
     },
