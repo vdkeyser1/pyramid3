@@ -118,6 +118,10 @@ import {
   type DeathOverlay,
 } from '@/ui/DeathOverlay.js';
 import {
+  createRunSummaryOverlay,
+  type RunSummaryOverlay,
+} from '@/ui/RunSummaryOverlay.js';
+import {
   createDebugOverlay,
 } from '@/ui/DebugOverlay.js';
 import {
@@ -324,6 +328,7 @@ export function createGameApplication(
   const settingsMenu = createSettingsMenu();
   const progressionOverlay: ProgressionOverlay = createProgressionOverlay();
   const deathOverlay: DeathOverlay = createDeathOverlay();
+  const runSummaryOverlay: RunSummaryOverlay = createRunSummaryOverlay();
   // G-01: schermata meta-progressione permanente (IndexedDB).
   let metaProgressionScreen: MetaProgressionScreen | null = null;
   // Debug overlay (v2): F3/Backquote — profiling in-game (draw calls, ms, seed).
@@ -1016,6 +1021,11 @@ export function createGameApplication(
       colorBlindMode: config.accessibility.colorBlindMode,
     });
     deathOverlay.applyPresentation({
+      textScale: config.accessibility.textScale,
+      highContrast: config.accessibility.highContrast,
+      colorBlindMode: config.accessibility.colorBlindMode,
+    });
+    runSummaryOverlay.applyPresentation({
       textScale: config.accessibility.textScale,
       highContrast: config.accessibility.highContrast,
       colorBlindMode: config.accessibility.colorBlindMode,
@@ -2265,6 +2275,22 @@ export function createGameApplication(
   async function descendToNextFloor(): Promise<boolean> {
     const nextIndex = currentFloorIndex + 1;
     if (nextIndex > MAX_FLOORS) {
+      runStats = { ...runStats, floorsCleared: MAX_FLOORS };
+      settingsMenu.hide();
+      progressionOverlay.hide();
+      localPause('death');
+      runSummaryOverlay.show({
+        victory: true,
+        floorsCleared: MAX_FLOORS,
+        totalFloors: MAX_FLOORS,
+        enemiesDefeated: runStats.enemiesDefeated,
+        goldEarned: runStats.goldEarned + runtimeGameplayState.goldCoins,
+        kaEarnedThisRun: runStats.kaEarnedThisRun,
+        runDurationMs: Date.now() - runStats.runStartMs,
+        seed: sliceState?.floor.seed ?? 42,
+      });
+      hud.showMessage('☥ PIRAMIDE COMPLETATA! TRIONFO NELLA NECROPOLI ☥', 5000);
+      audio.play({ name: 'fragment_pickup', volume: 0.9 });
       return false;
     }
     // Run summary (v2): il piano corrente è stato completato
@@ -3055,7 +3081,14 @@ export function createGameApplication(
         position: { x: hitBox.centerX, y: hitBox.centerY, z: hitBox.centerZ },
       }
       : { name: 'attack_hit', volume: 0.5 });
-    renderer?.addCameraShake(0.14);
+    renderer?.addCameraShake(lastHitCritical ? 0.22 : 0.14);
+    if (hitBox && renderer) {
+      renderer.emitSparks(
+        { x: hitBox.centerX, y: hitBox.centerY, z: hitBox.centerZ },
+        lastHitCritical ? 0xff3a1a : 0xffd27a,
+        lastHitCritical ? 24 : 12,
+      );
+    }
     // v2: hitmarker differenziale — oro su colpo (critico = rosso)
     hud.showHitmarker(lastHitCritical ? 'crit' : 'hit');
     // NEW-1: hitstop — 4 tick di pausa del loop fisico (il rendering continua):
@@ -4021,6 +4054,15 @@ export function createGameApplication(
       });
     }
 
+    // GFX-02: adattamento dinamico delle performance per garantire 60 FPS stabili
+    if (deltaMs > 0) {
+      const prevTier = quality.profile.tier;
+      quality.adaptTo(deltaMs);
+      if (quality.profile.tier !== prevTier && renderer) {
+        renderer.applyQualityProfile(quality.profile);
+      }
+    }
+
     // Render
     renderer?.render(deltaMs);
 
@@ -4260,6 +4302,7 @@ export function createGameApplication(
         settingsMenu.mount(parent);
         progressionOverlay.mount(parent);
         deathOverlay.mount(parent);
+        runSummaryOverlay.mount(parent);
         debugOverlay.mount(parent);
         mainMenu = createMainMenu();
         mainMenu.mount(parent);
@@ -4333,6 +4376,25 @@ export function createGameApplication(
         window.location.reload();
       };
       deathOverlay.applyPresentation({
+        textScale: config.accessibility.textScale,
+        highContrast: config.accessibility.highContrast,
+        colorBlindMode: config.accessibility.colorBlindMode,
+      });
+      runSummaryOverlay.onRetry = () => {
+        window.location.reload();
+      };
+      runSummaryOverlay.onReturnToMenu = () => {
+        runSummaryOverlay.hide();
+        localPause('menu');
+        if (mainMenu && saveData) {
+          mainMenu.show({
+            fragments: saveData.payload.fragments,
+            pyramidsUnlocked: saveData.payload.pyramidsUnlocked,
+            bestiaryEntries: saveData.payload.bestiaryEntries.length,
+          });
+        }
+      };
+      runSummaryOverlay.applyPresentation({
         textScale: config.accessibility.textScale,
         highContrast: config.accessibility.highContrast,
         colorBlindMode: config.accessibility.colorBlindMode,
@@ -4441,6 +4503,7 @@ export function createGameApplication(
       settingsMenu.dispose();
       progressionOverlay.dispose();
       deathOverlay.dispose();
+      runSummaryOverlay.dispose();
       mainMenu?.dispose();
       mainMenu = null;
       metaProgressionScreen?.dispose();

@@ -182,11 +182,19 @@ function attachViewmodelBehavior(
         group.rotation.z = THREE.MathUtils.lerp(restRotation.z, 0.0, t);
         group.position.y = THREE.MathUtils.lerp(restPosition.y, restPosition.y + 0.18, t);
       } else {
-        // Ritorno elastico alla posa di riposo.
-        group.position.lerp(restPosition, 0.25);
-        group.rotation.x += (restRotation.x - group.rotation.x) * 0.25;
+        // Ritorno elastico alla posa di riposo con idle sway & breathing procedurale
+        const tSec = clockMs * 0.001;
+        const idleY = Math.sin(tSec * 1.8) * 0.008;
+        const idleX = Math.cos(tSec * 0.9) * 0.005;
+        const targetPos = new THREE.Vector3(
+          restPosition.x + idleX,
+          restPosition.y + idleY,
+          restPosition.z,
+        );
+        group.position.lerp(targetPos, 0.25);
+        group.rotation.x += (restRotation.x + Math.sin(tSec * 1.8) * 0.02 - group.rotation.x) * 0.25;
         group.rotation.y += (restRotation.y - group.rotation.y) * 0.25;
-        group.rotation.z += (restRotation.z - group.rotation.z) * 0.25;
+        group.rotation.z += (restRotation.z + Math.cos(tSec * 0.9) * 0.015 - group.rotation.z) * 0.25;
       }
     },
   };
