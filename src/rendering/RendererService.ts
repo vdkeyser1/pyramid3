@@ -38,6 +38,7 @@ export type RendererEnemyKind =
   | 'SHABTI'
   | 'PRIEST'
   | 'SOBEK_SPAWN'
+  | 'ANUBIS_EXECUTIONER'
   | 'WITNESS';
 
 export interface RendererEnemyState {

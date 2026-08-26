@@ -121,9 +121,96 @@ export const WEAPON_SHOVEL: WeaponDefinition = {
   ],
 };
 
+export const WEAPON_SPEAR_OF_RA: WeaponDefinition = {
+  id: 'spear_of_ra' as WeaponId,
+  name: 'Lancia Solare di Ra',
+  damageHp: WEAPONS.spear.damageHp,
+  intervalTicks: WEAPONS.spear.intervalTicks,
+  reachM: WEAPONS.spear.reachM,
+  durability: WEAPONS.spear.durability,
+  durabilityUnit: 'HITS',
+  attacks: [
+    {
+      id: 'spear_thrust',
+      anticipationTicks: secondsToTicks(0.20),
+      activeTicks: secondsToTicks(0.12),
+      recoveryTicks: secondsToTicks(0.38),
+      damage: WEAPONS.spear.damageHp,
+      stagger: 0.7,
+      shape: { kind: 'ARC', radiusM: WEAPONS.spear.reachM, arcDeg: 40 },
+      interruptibleUntilTick: secondsToTicks(0.12),
+      audioCue: 'sfx_khopesh_slash',
+      effectCue: 'vfx_slash_trail',
+      punishWindowTicks: 0,
+      parryable: true,
+      knockbackDirectionLocal: { x: 0, z: -1 },
+      knockbackForce: 2.2,
+    },
+  ],
+};
+
+export const WEAPON_GOLDEN_KHOPESH: WeaponDefinition = {
+  id: 'golden_khopesh' as WeaponId,
+  name: 'Khopesh Faraonico',
+  damageHp: WEAPONS.golden_khopesh.damageHp,
+  intervalTicks: WEAPONS.golden_khopesh.intervalTicks,
+  reachM: WEAPONS.golden_khopesh.reachM,
+  durability: WEAPONS.golden_khopesh.durability,
+  durabilityUnit: 'HITS',
+  attacks: [
+    {
+      id: 'golden_slash',
+      anticipationTicks: secondsToTicks(0.22),
+      activeTicks: secondsToTicks(0.14),
+      recoveryTicks: secondsToTicks(0.32),
+      damage: WEAPONS.golden_khopesh.damageHp,
+      stagger: 0.5,
+      shape: { kind: 'ARC', radiusM: WEAPONS.golden_khopesh.reachM, arcDeg: 130 },
+      interruptibleUntilTick: secondsToTicks(0.14),
+      audioCue: 'sfx_khopesh_slash',
+      effectCue: 'vfx_slash_trail',
+      punishWindowTicks: 0,
+      parryable: true,
+      knockbackDirectionLocal: { x: 0, z: -1 },
+      knockbackForce: 1.8,
+    },
+  ],
+};
+
+export const WEAPON_ANUBIS_SICKLE: WeaponDefinition = {
+  id: 'anubis_sickle' as WeaponId,
+  name: 'Falce di Anubi',
+  damageHp: WEAPONS.anubis_sickle.damageHp,
+  intervalTicks: WEAPONS.anubis_sickle.intervalTicks,
+  reachM: WEAPONS.anubis_sickle.reachM,
+  durability: WEAPONS.anubis_sickle.durability,
+  durabilityUnit: 'HITS',
+  attacks: [
+    {
+      id: 'anubis_reap',
+      anticipationTicks: secondsToTicks(0.19),
+      activeTicks: secondsToTicks(0.13),
+      recoveryTicks: secondsToTicks(0.30),
+      damage: WEAPONS.anubis_sickle.damageHp,
+      stagger: 0.6,
+      shape: { kind: 'ARC', radiusM: WEAPONS.anubis_sickle.reachM, arcDeg: 110 },
+      interruptibleUntilTick: secondsToTicks(0.13),
+      audioCue: 'sfx_khopesh_slash',
+      effectCue: 'vfx_slash_trail',
+      punishWindowTicks: 0,
+      parryable: true,
+      knockbackDirectionLocal: { x: 0, z: -1 },
+      knockbackForce: 1.4,
+    },
+  ],
+};
+
 export const ALL_WEAPONS: readonly WeaponDefinition[] = [
   WEAPON_FISTS,
   WEAPON_KHOPESH,
   WEAPON_STAFF,
   WEAPON_SHOVEL,
+  WEAPON_SPEAR_OF_RA,
+  WEAPON_GOLDEN_KHOPESH,
+  WEAPON_ANUBIS_SICKLE,
 ];
