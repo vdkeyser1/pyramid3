@@ -103,20 +103,28 @@ export function buildBladePendulumMesh(material: THREE.Material): {
   arm.castShadow = true;
   pivotGroup.add(arm);
 
-  // Lama: piatta, larga quanto indicato in balance.ts, in acciaio opaco.
-  // La lama è in fondo al braccio.
+  // Lama: mezzaluna cerimoniale egizia affilata a rasoio in bronzo dorato
   const bladeMaterial = new THREE.MeshStandardMaterial({
-    color: 0x9a9a9a,
-    metalness: 0.88,
-    roughness: 0.18,
+    color: 0xc49b5f,
+    metalness: 0.92,
+    roughness: 0.22,
+    emissive: 0x3a2608,
+    emissiveIntensity: 0.25,
   });
-  const blade = new THREE.Mesh(
-    new THREE.BoxGeometry(def.bladeWidthM, 0.06, 0.20),
-    bladeMaterial,
-  );
-  blade.position.y = -def.armLengthM;
-  blade.castShadow = true;
-  pivotGroup.add(blade);
+
+  const crescentGeo = new THREE.TorusGeometry(def.bladeWidthM * 0.45, 0.08, 6, 16, Math.PI);
+  const crescent = new THREE.Mesh(crescentGeo, bladeMaterial);
+  crescent.rotation.z = Math.PI / 2;
+  crescent.position.y = -def.armLengthM;
+  crescent.castShadow = true;
+  pivotGroup.add(crescent);
+
+  // Mozzo centrale con disco solare
+  const hubMat = new THREE.MeshStandardMaterial({ color: 0x8a6a3b, metalness: 0.8 });
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.16, 12), hubMat);
+  hub.rotation.x = Math.PI / 2;
+  hub.position.y = 0;
+  pivotGroup.add(hub);
 
   return { pivotGroup, mountMesh };
 }
