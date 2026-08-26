@@ -68,6 +68,7 @@ import {
   readSavedRuntimeSettings,
   writeRuntimeSettingsToSave,
 } from '@/app/RuntimeSettingsPersistence.js';
+import { AssetViewerModal } from '@/ui/AssetViewerModal.js';
 import { applyViewportMetrics } from '@/app/ViewportSizing.js';
 import {
   emitBrazierEvents,
@@ -815,6 +816,21 @@ export function createGameApplication(
       });
     };
 
+    const assetViewer = new AssetViewerModal();
+    const handleGlobalKeydown = (e: KeyboardEvent) => {
+      if (e.code === 'F3') {
+        e.preventDefault();
+        if (assetViewer.isVisible()) {
+          assetViewer.hide();
+        } else {
+          assetViewer.show();
+        }
+      } else if (e.code === 'Escape' && assetViewer.isVisible()) {
+        assetViewer.hide();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeydown);
+
     window.addEventListener('resize', scheduleResize);
     window.addEventListener('orientationchange', scheduleResize);
     viewport?.addEventListener('resize', scheduleResize);
@@ -824,6 +840,7 @@ export function createGameApplication(
     }
 
     detachViewportListeners = () => {
+      window.removeEventListener('keydown', handleGlobalKeydown);
       window.removeEventListener('resize', scheduleResize);
       window.removeEventListener('orientationchange', scheduleResize);
       viewport?.removeEventListener('resize', scheduleResize);
