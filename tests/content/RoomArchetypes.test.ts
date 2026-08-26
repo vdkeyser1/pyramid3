@@ -6,9 +6,9 @@ import {
 } from '@/content/RoomArchetypes.js';
 import type { RoomRole } from '@/procedural/FloorValidator.js';
 
-describe('RoomArchetypes — Sistema dei 30 Archetipi della Piramide (P08)', () => {
-  it('contiene esattamente 30 archetipi di stanza definiti', () => {
-    expect(ROOM_ARCHETYPES.length).toBe(30);
+describe('RoomArchetypes — Sistema dei 32 Archetipi della Piramide (G-22)', () => {
+  it('contiene esattamente 32 archetipi di stanza definiti', () => {
+    expect(ROOM_ARCHETYPES.length).toBe(32);
   });
 
   it('tutti gli archetipi hanno ID e nomi univoci', () => {
@@ -46,7 +46,7 @@ describe('RoomArchetypes — Sistema dei 30 Archetipi della Piramide (P08)', () 
     expect(pharaoh?.name).toBe('Sala del Faraone');
     expect(pharaoh?.gpuCost).toBe('HIGH');
 
-    const unknown = getRoomArchetypeById('NOT_EXISTING');
-    expect(unknown).toBeUndefined();
+    expect(getRoomArchetypeById('ANUBIS_JUDGMENT_HALL')?.rarity).toBe('BOSS');
+    expect(getRoomArchetypeById('BOSS_ANTECHAMBER')?.rarity).toBe('UNIQUE');
   });
 });

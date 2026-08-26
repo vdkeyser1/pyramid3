@@ -1,5 +1,5 @@
 /**
- * Scopo: registro dei 30 archetipi di stanza della piramide egizia (§11).
+ * Scopo: registro dei 32 archetipi di stanza della piramide egizia (§11, G-22).
  *        Fornisce varietà estrema, credibilità storica/mitologica e
  *        differenziazione deterministica basata su seed, piano e ruolo.
  * Ownership: content (puro, nessuna dipendenza da DOM o Three.js).
@@ -9,7 +9,7 @@ import type { RoomRole } from '@/procedural/FloorValidator.js';
 import type { CeilingVariant, FloorVariant, PropDensity, RoomTheme } from '@/content/RoomThemes.js';
 
 export type GpuCostTier = 'LOW' | 'MEDIUM' | 'HIGH';
-export type ArchetypeRarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'LEGENDARY';
+export type ArchetypeRarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'LEGENDARY' | 'UNIQUE' | 'BOSS';
 
 export interface RoomArchetype {
   readonly id: string;
@@ -447,6 +447,34 @@ export const ROOM_ARCHETYPES: readonly RoomArchetype[] = [
     description: 'Stanza segreta inviolata per millenni con reliquiari d oro puro e amuleti Ankh intatti.',
     environmentalClues: ['Nessun granello di polvere sopra l oro', 'Aureola di luce attorno all altare', 'Amuleti di lapislazzuli'],
   },
+  {
+    id: 'BOSS_ANTECHAMBER',
+    name: 'Anticamera del Boia',
+    theme: 'ROYAL',
+    compatibleRoles: ['EXIT', 'COMBAT', 'JUNCTION'],
+    ceiling: 'HIGH_VAULT',
+    floor: 'SLABS',
+    props: 'DENSE',
+    lightScale: 1.15,
+    gpuCost: 'HIGH',
+    rarity: 'UNIQUE',
+    description: 'Anticamera monumentale del giudizio: architravi ciclopici, senso di pericolo imminente e props narrativi del rito.',
+    environmentalClues: ['Bracieri spenti da secoli', 'Orme di sciacallo nella polvere', 'Sigillo di Anubi incrinato'],
+  },
+  {
+    id: 'ANUBIS_JUDGMENT_HALL',
+    name: 'Sala del Giudizio di Anubi',
+    theme: 'SACRED',
+    compatibleRoles: ['EXIT', 'COMBAT'],
+    ceiling: 'HIGH_VAULT',
+    floor: 'SLABS',
+    props: 'DENSE',
+    lightScale: 1.3,
+    gpuCost: 'HIGH',
+    rarity: 'BOSS',
+    description: 'Sala del Giudizio: bilancia di Maat, guardie shabti e il Boia di Anubi in trono. Boss room.',
+    environmentalClues: ['Piuma di Maat sull altare', 'Cuori di pietra sulla bilancia', 'Trono dello sciacallo vuoto'],
+  },
 ];
 
 /** Mappa indicizzata per id. */
@@ -489,7 +517,11 @@ export function resolveRoomArchetype(
   const h = hash(floorIndex * 1013 + roomId, roomId * 43 + floorIndex);
   const index = h % safePool.length;
 
-  return safePool[index] ?? ROOM_ARCHETYPES[0]!;
+  const fallback = ROOM_ARCHETYPES[0];
+  if (!fallback) {
+    throw new Error('ROOM_ARCHETYPES deve contenere almeno un archetipo');
+  }
+  return safePool[index] ?? fallback;
 }
 
 /** Recupera un archetipo per ID. */

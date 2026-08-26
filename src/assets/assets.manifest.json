@@ -67,6 +67,15 @@
       "status": "production"
     },
     {
+      "id": "anubis_executioner",
+      "category": "enemy",
+      "path": "assets/enemies/anubis_executioner.glb",
+      "source": "Smithsonian Anubis statue CC0 (boss reuse)",
+      "license": "CC0",
+      "tris": 3400,
+      "status": "production"
+    },
+    {
       "id": "statue_anubis",
       "category": "landmark",
       "path": "assets/landmarks/statue_anubis.glb",
@@ -213,6 +222,23 @@
       "source": "WebAudioEngine Pure Synthesis",
       "license": "Project Code",
       "status": "production"
+    },
+    {
+      "category": "ambience_loops",
+      "path": "audio/ambience/*.ogg",
+      "count": 2,
+      "source": "Procedural synth fallback (freesound CC0 when present)",
+      "license": "Project Code / CC0",
+      "status": "production"
+    }
+  ],
+  "hdri": [
+    {
+      "id": "desert_road_puresky",
+      "path": "hdri/desert_road_puresky_1k.hdr",
+      "source": "Poly Haven CC0",
+      "license": "CC0",
+      "status": "optional"
     }
   ]
 }

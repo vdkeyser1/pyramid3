@@ -4,7 +4,7 @@
  */
 
 import { type GameConfig, DEFAULT_CONFIG, GameConfigSchema } from '@/config/GameConfig.js';
-import { detectCapabilities, selectBackend } from '@/config/PerformanceTiers.js';
+import { detectCapabilities, selectBackend, selectTierConfig } from '@/config/PerformanceTiers.js';
 import { type FixedStepClock, createFixedStepClock } from '@/core/FixedStepClock.js';
 import { type Simulation, createSimulation } from '@/simulation/Simulation.js';
 import { TICK_HZ, PLAYER, TORCH, WEAPONS } from '@/content/balance.js';
@@ -215,6 +215,11 @@ import type { PhysicsEnemyProxy } from '@/physics/PhysicsWorld.js';
 import { generateInscription } from '@/content/inscriptions.js';
 import { findPath } from '@/ai/navigation/GridNavigator.js';
 import {
+  bakeNavMeshFromBounds,
+  firstWaypoint,
+  type RecastNavMeshHandle,
+} from '@/ai/navigation/RecastNavMesh.js';
+import {
   buildNavGridFromBounds,
   regionsFromSceneLayout,
   type FloorNavGrid,
@@ -225,6 +230,19 @@ import {
   DEFAULT_SCARAB_SWARM_CONFIG,
   type SwarmAgent,
 } from '@/ai/steering/SwarmSteering.js';
+import {
+  createYukaEnemyAI,
+  yukaStateFromRuntime,
+  type YukaEnemyAI,
+  type YukaEnemyHandle,
+} from '@/ai/steering/YukaEnemyAI.js';
+import { RoomStreamingManager, adjacencyFromCorridors } from '@/dungeon/RoomStreamingManager.js';
+import { getRoomNarrative } from '@/gameplay/RoomNarrativeDirector.js';
+import { resolveRoomArchetype } from '@/content/RoomArchetypes.js';
+import { createRoomNarrativeOverlay, type RoomNarrativeOverlay } from '@/ui/RoomNarrativeOverlay.js';
+import { ambienceKindForTheme } from '@/audio/AmbienceTheme.js';
+import { createAnimationSystem } from '@/simulation/systems/AnimationSystem.js';
+import { ANIM_STATE, animStateFromRuntime } from '@/ecs/components/AnimationStore.js';
 import { resolveDamage } from '@/gameplay/combat/DamageResolver.js';
 import { PARRY_IFRAME_MS, PARRY_WINDOW_MS, parryWindowActive } from '@/gameplay/combat/ParryResolver.js';
 import type { MusicState } from '@/audio/MusicPreset.js';
@@ -321,6 +339,14 @@ export function createGameApplication(
   let runTimer: RunTimer | null = null;
   let touchControls: TouchControls | null = null;
   let floorNavGrid: FloorNavGrid | null = null;
+  let recastNav: RecastNavMeshHandle | null = null;
+  let roomStreaming: RoomStreamingManager | null = null;
+  let lastNarrativeRoomId: string | null = null;
+  let roomNarrativeOverlay: RoomNarrativeOverlay | null = null;
+  let yukaAI: YukaEnemyAI | null = null;
+  let yukaHandle: YukaEnemyHandle | null = null;
+  const appFeatureFlags = resolveFeatureFlags();
+  const tierConfig = selectTierConfig(caps, typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
   let synergyEffects: readonly SynergyEffect[] = [];
   let scarabStates: ScarabEncounterState[] = [];
   const physicsSleepBridge: PhysicsSleepBridge = createPhysicsSleepBridge();
@@ -1614,9 +1640,46 @@ export function createGameApplication(
   function syncAmbienceRoomReverb(playerX: number, playerZ: number): void {
     if (!sliceState) return;
     const next = resolveAudioRoomType(sliceState.sceneLayout, playerX, playerZ);
-    if (next === lastAudioRoomType) return;
-    lastAudioRoomType = next;
-    audio.setRoomType(next);
+    if (next !== lastAudioRoomType) {
+      lastAudioRoomType = next;
+      audio.setRoomType(next);
+    }
+
+    const currentRoom = sliceState.sceneLayout.rooms.find(
+      (r) =>
+        playerX >= r.bounds.minX && playerX <= r.bounds.maxX &&
+        playerZ >= r.bounds.minZ && playerZ <= r.bounds.maxZ,
+    );
+    if (!currentRoom) return;
+    const roomKey = String(currentRoom.roomId);
+    if (roomKey === lastNarrativeRoomId) return;
+    lastNarrativeRoomId = roomKey;
+
+    const archetype = resolveRoomArchetype(
+      currentFloorIndex,
+      Number(currentRoom.roomId),
+      currentRoom.role,
+      currentRoom.theme,
+    );
+    const narrative = getRoomNarrative(
+      sliceState.floor.seed,
+      currentFloorIndex,
+      Number(currentRoom.roomId),
+      currentRoom.theme,
+      archetype.environmentalClues,
+    );
+    roomNarrativeOverlay?.show(narrative);
+
+    audio.setAmbienceTheme(ambienceKindForTheme(currentRoom.theme));
+
+    if (roomStreaming && appFeatureFlags.roomStreaming) {
+      const graph = adjacencyFromCorridors(
+        sliceState.sceneLayout.rooms.map((r) => String(r.roomId)),
+        sliceState.sceneLayout.corridors,
+      );
+      const result = roomStreaming.onPlayerEnterRoom(roomKey, graph);
+      renderer?.setStreamedRoomIds?.(result.needed);
+    }
   }
 
   function showFloorInscription(seed: number, floorIndex: number, theme?: string): void {
@@ -1635,6 +1698,50 @@ export function createGameApplication(
 
   function rebuildFloorNavGrid(layout: FloorSceneLayout): void {
     floorNavGrid = buildNavGridFromBounds(regionsFromSceneLayout(layout));
+    recastNav?.dispose();
+    recastNav = null;
+    if (appFeatureFlags.recastNavmesh) {
+      void bakeNavMeshFromBounds(regionsFromSceneLayout(layout)).then((handle) => {
+        recastNav = handle;
+      });
+    }
+    if (appFeatureFlags.roomStreaming) {
+      roomStreaming = new RoomStreamingManager({
+        maxHop: tierConfig.maxRoomHops,
+        maxLoaded: 12,
+      });
+    }
+  }
+
+  function bindYukaToGeneric(state: GenericEncounterState | null): void {
+    if (!appFeatureFlags.yukaSteering) return;
+    yukaAI ??= createYukaEnemyAI();
+    yukaAI.clear();
+    yukaHandle = null;
+    if (!state) return;
+    yukaHandle = yukaAI.spawn(state.entityId, state.position, state.def.speedMps);
+    simulation.world.animation.set(
+      state.entityId,
+      ANIM_STATE.IDLE,
+    );
+  }
+
+  function tickYukaForGeneric(
+    playerPos: { readonly x: number; readonly y: number; readonly z: number },
+    usedRecast: boolean,
+  ): void {
+    if (!appFeatureFlags.yukaSteering || !yukaAI || !yukaHandle || !genericEnemyState) return;
+    yukaAI.setPlayerPosition(playerPos);
+    yukaHandle.setState(yukaStateFromRuntime(genericEnemyState.runtime.state));
+    yukaHandle.setPosition(genericEnemyState.position);
+    yukaAI.update(1 / TICK_HZ);
+    if (!usedRecast && genericEnemyState.runtime.state === 'PURSUING') {
+      yukaHandle.syncTo(genericEnemyState.position);
+    }
+    simulation.world.animation.set(
+      genericEnemyState.entityId,
+      animStateFromRuntime(genericEnemyState.runtime.state),
+    );
   }
 
   function bindTrapSystemToFloor(layout: FloorSceneLayout): void {
@@ -2413,6 +2520,7 @@ export function createGameApplication(
         const r = genericEnemyState.archetype === 'COBRA' ? 0.3 : 0.55;
         const h = genericEnemyState.archetype === 'COBRA' ? 0.7 : 1.75;
         registerEnemyPhysicsProxy(entityId, genericEnemyState.position, r, h, 'DORMANT');
+        bindYukaToGeneric(genericEnemyState);
       }
       log.info('Director: spawn iniziale del nuovo piano', { enemyType: encounterPlan.enemyType });
     }
@@ -3833,7 +3941,14 @@ export function createGameApplication(
         if (genericEnemyState && isGenericEnemyAlive(genericEnemyState)) {
           const genericPosition = genericEnemyState.position;
           let pursuitTarget: { x: number; z: number } | null = null;
-          if (floorNavGrid) {
+          const recastPath = recastNav?.computePath(
+            { x: genericPosition.x, y: genericPosition.y, z: genericPosition.z },
+            { x: playerState.position.x, y: playerState.position.y, z: playerState.position.z },
+          );
+          const recastNext = recastPath ? firstWaypoint(recastPath) : null;
+          if (recastNext) {
+            pursuitTarget = { x: recastNext.x, z: recastNext.z };
+          } else if (floorNavGrid) {
             const start = floorNavGrid.worldToCell(genericPosition.x, genericPosition.z);
             const goal = floorNavGrid.worldToCell(
               playerState.position.x,
@@ -3878,6 +3993,7 @@ export function createGameApplication(
               : null,
             pursuitTarget,
           });
+          tickYukaForGeneric(playerState.position, recastNext !== null);
           if (genericTick.parried) {
             audio.play({
               name: 'parry_success', volume: 0.7,
@@ -4325,6 +4441,7 @@ export function createGameApplication(
         }),
       );
       simulation.scheduler.register(createPhysicsSystem(physicsWorld));
+      simulation.scheduler.register(createAnimationSystem(simulation.world));
 
       // Input system: attach to canvas
       onStatus?.('Collegamento controlli...');
@@ -4340,6 +4457,7 @@ export function createGameApplication(
         attackDirectionIndicator = new AttackDirectionIndicator(parent);
         runTimer = new RunTimer(parent);
         runTimer.start();
+        roomNarrativeOverlay = createRoomNarrativeOverlay(parent);
         if (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) {
           touchControls = createTouchControls();
           touchControls.mount(parent);
@@ -4552,6 +4670,13 @@ export function createGameApplication(
       floorNavGrid = null;
       synergyEffects = [];
       hud.dispose();
+      roomNarrativeOverlay?.dispose();
+      roomNarrativeOverlay = null;
+      recastNav?.dispose();
+      recastNav = null;
+      yukaAI?.clear();
+      yukaAI = null;
+      yukaHandle = null;
       cinematicOverlay?.dispose();
       settingsMenu.dispose();
       progressionOverlay.dispose();

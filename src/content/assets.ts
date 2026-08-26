@@ -59,6 +59,7 @@ export const ENEMY_ASSETS: readonly EnemyAssetEntry[] = [
   { archetype: 'PRIEST', modelPath: 'assets/enemies/priest.glb', scale: 1.05, yOffset: 0, animated: true },
   { archetype: 'SOBEK_SPAWN', modelPath: 'assets/enemies/sobek.glb', scale: 1.3, yOffset: 0, animated: false },
   { archetype: 'ROYAL_MUMMY', modelPath: 'assets/enemies/royal_mummy.glb', scale: 1.2, yOffset: 0, animated: true },
+  { archetype: 'ANUBIS_EXECUTIONER', modelPath: 'assets/enemies/anubis_executioner.glb', scale: 1.55, yOffset: 0, animated: true },
   // WITNESS: non attaccabile, nessun asset dedicato — fallback alla primitiva.
   { archetype: 'WITNESS', modelPath: null, scale: 1.0, yOffset: 0, animated: false },
 ];
@@ -105,7 +106,7 @@ export function landmarkAssetFor(landmarkId: string): LandmarkAssetEntry | null 
 export function validateAssetManifest(): readonly string[] {
   const problems: string[] = [];
   const enemyArchetypes = new Set<EnemyArchetype>([
-    'SCARAB', 'MUMMY', 'COBRA', 'SHABTI', 'PRIEST', 'SOBEK_SPAWN', 'ROYAL_MUMMY', 'WITNESS',
+    'SCARAB', 'MUMMY', 'COBRA', 'SHABTI', 'PRIEST', 'SOBEK_SPAWN', 'ROYAL_MUMMY', 'ANUBIS_EXECUTIONER', 'WITNESS',
   ]);
   const covered = new Set<string>();
   for (const entry of ENEMY_ASSETS) {

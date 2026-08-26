@@ -75,6 +75,13 @@ export const AUDIO_ASSET_MAP: Readonly<Record<string, readonly string[]>> = {
   torch_ignite: [
     'audio/effects/torch_ignite.ogg',
   ],
+  // G-26: loop ambientali (file opzionali — fallback sintetico se assenti).
+  desert_wind: [
+    'audio/ambience/desert_wind.ogg',
+  ],
+  tomb_drip: [
+    'audio/ambience/tomb_drip.ogg',
+  ],
 };
 
 /** Invarianti della mappa (usata dai test). */

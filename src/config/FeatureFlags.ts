@@ -28,6 +28,12 @@ export interface FeatureFlags {
   readonly shadowMapOpt: boolean;
   /** GAME-ART-003/010: pavimenti a InstancedMesh (1 draw call). */
   readonly instancedFloors: boolean;
+  /** G-28: navmesh Recast (fallback GridNavigator se WASM assente). */
+  readonly recastNavmesh: boolean;
+  /** G-32: steering Yuka per nemici in ENGAGE/SEARCH/FLEE. */
+  readonly yukaSteering: boolean;
+  /** G-31: unload visivo delle stanze oltre MAX_HOP. */
+  readonly roomStreaming: boolean;
 }
 
 type MutableFeatureFlags = {
@@ -43,6 +49,9 @@ export const DEFAULT_FEATURE_FLAGS: Readonly<FeatureFlags> = {
   meshLod: true,
   shadowMapOpt: true,
   instancedFloors: true,
+  recastNavmesh: true,
+  yukaSteering: true,
+  roomStreaming: true,
 } as const;
 
 /**

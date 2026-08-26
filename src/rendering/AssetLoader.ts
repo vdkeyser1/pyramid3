@@ -41,22 +41,9 @@ loader.setDRACOLoader(dracoLoader);
 /** Cache delle Promise: path → modello caricato (o null su errore). */
 const cache = new Map<string, Promise<GLTF | null>>();
 
-function loadInternal(path: string): Promise<GLTF | null> {
-  return new Promise((resolve) => {
-    loader.load(
-      path,
-      (gltf: GLTF) => {
-        resolve(gltf);
-      },
-      undefined,
-      (error: unknown) => {
-        // Silenzioso ma tracciabile: il fallback alle primitive è il design.
-        console.warn(`[AssetLoader] caricamento fallito: ${path}`, error);
-        resolve(null);
-      },
-    );
-  });
-}
+export type AssetLoadProgress = (loaded: number, total: number, path: string) => void;
+
+let progressCallback: AssetLoadProgress | null = null;
 
 export interface AssetLoader {
   /** Carica un modello .glb (cache). Ritorna null se assente/fallito. */
@@ -67,6 +54,37 @@ export interface AssetLoader {
   has(path: string): boolean;
   /** Svuota la cache (per cambi piano / test). */
   clear(): void;
+  /** GAME-ART-001: callback progresso per loading screen. */
+  setProgressCallback(cb: AssetLoadProgress | null): void;
+}
+
+function loadInternal(path: string): Promise<GLTF | null> {
+  return new Promise((resolve) => {
+    loader.load(
+      path,
+      (gltf: GLTF) => {
+        resolve(gltf);
+      },
+      (event: ProgressEvent) => {
+        if (progressCallback && event.lengthComputable) {
+          progressCallback(event.loaded, event.total, path);
+        }
+      },
+      (error: unknown) => {
+        // Silenzioso ma tracciabile: il fallback alle primitive è il design.
+        console.warn(`[AssetLoader] caricamento fallito: ${path}`, error);
+        resolve(null);
+      },
+    );
+  });
+}
+
+/** Singleton condiviso (KTX2/DRACOLoader worker unico). */
+let singleton: AssetLoader | null = null;
+
+export function getAssetLoader(): AssetLoader {
+  singleton ??= createAssetLoader();
+  return singleton;
 }
 
 export function createAssetLoader(): AssetLoader {
@@ -82,7 +100,13 @@ export function createAssetLoader(): AssetLoader {
     },
 
     async preload(paths: readonly string[]): Promise<void> {
-      await Promise.all(paths.map((path) => this.load(path)));
+      let done = 0;
+      const total = paths.length;
+      await Promise.all(paths.map(async (path) => {
+        await this.load(path);
+        done += 1;
+        progressCallback?.(done, total, path);
+      }));
     },
 
     has(path: string): boolean {
@@ -91,6 +115,10 @@ export function createAssetLoader(): AssetLoader {
 
     clear(): void {
       cache.clear();
+    },
+
+    setProgressCallback(cb: AssetLoadProgress | null): void {
+      progressCallback = cb;
     },
   };
 }

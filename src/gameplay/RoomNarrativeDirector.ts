@@ -108,14 +108,26 @@ export function getRoomNarrative(
   floorIndex: number,
   roomId: number,
   theme: RoomTheme,
+  environmentalClues?: readonly string[],
 ): RoomNarrativeEntry {
-  const narratives = THEME_NARRATIVES[theme] ?? THEME_NARRATIVES.SACRED;
+  const narratives = THEME_NARRATIVES[theme];
+  const pool = narratives.length > 0 ? narratives : THEME_NARRATIVES.SACRED;
   const h = hash32(seed * 521 + floorIndex * 67 + roomId * 19, 0x4f1b);
-  const selected = narratives[h % narratives.length] ?? narratives[0]!;
+  const selected = pool[h % pool.length] ?? pool[0];
+  if (!selected) {
+    return {
+      title: `Camera — Piano ${floorIndex}`,
+      description: 'Pietra nuda e silenzio.',
+      atmosphericClue: environmentalClues?.[0] ?? 'L eco dei passi si perde nelle gallerie.',
+    };
+  }
+  const clueFromArchetype = environmentalClues && environmentalClues.length > 0
+    ? environmentalClues[h % environmentalClues.length]
+    : undefined;
 
   return {
     title: `${selected.title} — Piano ${floorIndex}`,
     description: selected.desc,
-    atmosphericClue: selected.clue,
+    atmosphericClue: clueFromArchetype ?? selected.clue,
   };
 }

@@ -22,6 +22,22 @@ export interface Capabilities {
   readonly detectedTier: QualityTier;
 }
 
+/** Risoluzione HDRI per IBL: 0 = colore statico (tier LOW). */
+export type HdriResolution = 0 | 512 | 1024 | 2048;
+
+/**
+ * GAME-ART audit: flags di qualità derivati dal tier rilevato.
+ * SSAO solo su HIGH; HDRI assente su LOW; hop di streaming scalati.
+ */
+export interface TierConfig {
+  readonly hdriResolution: HdriResolution;
+  readonly ssaoEnabled: boolean;
+  readonly shadowMapSize: 0 | 512 | 1024 | 2048;
+  readonly maxRoomHops: 2 | 3 | 4;
+  readonly bloomStrength: number;
+  readonly dpr: number;
+}
+
 export function detectCapabilities(): Capabilities {
   const gpu = (navigator as { gpu?: unknown }).gpu;
   const webgpuAvailable = typeof gpu !== 'undefined';
@@ -64,4 +80,46 @@ export function selectBackend(caps: Capabilities, preferred: RenderBackend): Ren
   if (preferred === 'webgpu' && caps.webgpuAvailable) return 'webgpu';
   if (caps.webgl2Available) return 'webgl2';
   throw new Error('Nessun backend di rendering disponibile. WebGPU e WebGL2 richiesti.');
+}
+
+/**
+ * Profilo visivo/streaming per il tier. Usato da renderer, HDRI e RoomStreaming.
+ */
+export function selectTierConfig(caps: Capabilities, devicePixelRatio = 1): TierConfig {
+  const t = caps.detectedTier;
+  if (t === 'low') {
+    return {
+      hdriResolution: 0,
+      ssaoEnabled: false,
+      shadowMapSize: 0,
+      maxRoomHops: 2,
+      bloomStrength: 0,
+      dpr: 0.75,
+    };
+  }
+  if (t === 'high') {
+    return {
+      hdriResolution: 2048,
+      ssaoEnabled: true,
+      shadowMapSize: 1024,
+      maxRoomHops: 4,
+      bloomStrength: 0.6,
+      dpr: Math.min(devicePixelRatio, 2),
+    };
+  }
+  return {
+    hdriResolution: 512,
+    ssaoEnabled: false,
+    shadowMapSize: 512,
+    maxRoomHops: 3,
+    bloomStrength: 0.4,
+    dpr: 1.0,
+  };
+}
+
+/** Path HDRI Poly Haven desert in base alla risoluzione del tier. */
+export function hdriUrlForResolution(resolution: HdriResolution): string | null {
+  if (resolution === 0) return null;
+  if (resolution >= 2048) return '/hdri/desert_road_puresky_2k.hdr';
+  return '/hdri/desert_road_puresky_1k.hdr';
 }

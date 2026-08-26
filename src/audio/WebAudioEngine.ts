@@ -15,6 +15,7 @@ import {
 import { MUSIC_PRESET, type MusicState } from '@/audio/MusicPreset.js';
 import { AUDIO_ASSET_MAP } from '@/audio/AudioAssetLibrary.js';
 import { createReverbEngine, type ReverbEngine } from '@/audio/ReverbEngine.js';
+import { wantsDesertWind, wantsTombDrip, type AmbienceKind } from '@/audio/AmbienceTheme.js';
 
 const log = createLogger('Audio');
 
@@ -54,6 +55,10 @@ export interface AudioEngine {
   playFootstep(stepIndex: number): void;
   /** W-3: vento desertico sintetico on/off. */
   setDesertWindActive(active: boolean): void;
+  /** G-26: stillicidio da cripta (tomb drip) on/off. */
+  setTombDripActive(active: boolean): void;
+  /** G-26: crossfade ambientale in base al tema della stanza. */
+  setAmbienceTheme(kind: import('@/audio/AmbienceTheme.js').AmbienceKind): void;
   /** W-4: espone il contesto audio per MusicStateMachine (null prima di unlock). */
   getAudioContext(): AudioContext | null;
   suspend(): Promise<void>;
@@ -176,6 +181,54 @@ export function createAudioEngine(): AudioEngine {
     setTimeout(() => {
       try { nodes.source.stop(); } catch { /* già fermato */ }
     }, 1600);
+  }
+
+  // G-26: stillicidio da cripta — burst periodici di rumore filtrato.
+  let tombDripTimer: ReturnType<typeof setInterval> | null = null;
+  let tombDripGain: GainNode | null = null;
+
+  function playTombDripBurst(ctxRef: AudioContext): void {
+    const buf = getNoiseBuffer(ctxRef, 0.18);
+    const src = ctxRef.createBufferSource();
+    src.buffer = buf;
+    const bp = ctxRef.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1800 + Math.random() * 900;
+    bp.Q.value = 4;
+    const burstGain = ctxRef.createGain();
+    const now = ctxRef.currentTime;
+    burstGain.gain.setValueAtTime(0, now);
+    burstGain.gain.linearRampToValueAtTime(0.045, now + 0.02);
+    burstGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    const dest = tombDripGain ?? buses.get('ambience') ?? ctxRef.destination;
+    src.connect(bp);
+    bp.connect(burstGain);
+    burstGain.connect(dest);
+    src.start();
+    src.stop(now + 0.2);
+  }
+
+  function startTombDrip(ctxRef: AudioContext): void {
+    if (tombDripTimer) return;
+    const gainNode = ctxRef.createGain();
+    gainNode.gain.value = 1;
+    const ambienceBus = buses.get('ambience') ?? buses.get('master');
+    gainNode.connect(ambienceBus ?? ctxRef.destination);
+    tombDripGain = gainNode;
+    playTombDripBurst(ctxRef);
+    tombDripTimer = setInterval(() => {
+      if (!ctx || disposed) return;
+      playTombDripBurst(ctx);
+    }, 2800 + Math.random() * 2200);
+  }
+
+  function stopTombDrip(): void {
+    if (tombDripTimer) {
+      clearInterval(tombDripTimer);
+      tombDripTimer = null;
+    }
+    tombDripGain?.disconnect();
+    tombDripGain = null;
   }
 
   // G-18: drone ambientale persistente (2 oscillatori per layer, detuned).
@@ -791,6 +844,21 @@ export function createAudioEngine(): AudioEngine {
       }
     },
 
+    setTombDripActive(active: boolean): void {
+      if (!ctx || !unlocked || disposed) return;
+      if (active) {
+        startTombDrip(ctx);
+      } else {
+        stopTombDrip();
+      }
+    },
+
+    setAmbienceTheme(kind: AmbienceKind): void {
+      if (!ctx || !unlocked || disposed) return;
+      this.setDesertWindActive(wantsDesertWind(kind));
+      this.setTombDripActive(wantsTombDrip(kind));
+    },
+
     getAudioContext(): AudioContext | null {
       return ctx;
     },
@@ -810,6 +878,7 @@ export function createAudioEngine(): AudioEngine {
       stopArpeggiator();
       stopTorchCrackle(ctx);
       stopDesertWind(ctx);
+      stopTombDrip();
       disposeAmbience(ctx);
       disposeMusic(ctx);
       reverb?.dispose();

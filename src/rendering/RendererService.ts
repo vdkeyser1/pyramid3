@@ -211,7 +211,15 @@ export interface RendererHandle {
     readonly resolutionScale: number;
     readonly shadowMapSize: number;
     readonly usePostFx: boolean;
+    readonly ssaoEnabled?: boolean;
+    readonly bloomStrength?: number;
   }): void;
+
+  /**
+   * G-31: limita le stanze visibili al set entro MAX_HOP dal player.
+   * `null` = tutte le stanze registrate nel FrustumCuller.
+   */
+  setStreamedRoomIds?(ids: ReadonlySet<string> | null): void;
 
   /** G-05: mostra/nasconde il reliquiario del tesoro dissotterrato (loot fisico). */
   setLootReliquary(position: { readonly x: number; readonly y: number; readonly z: number } | null): void;

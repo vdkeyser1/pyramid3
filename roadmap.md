@@ -170,6 +170,4 @@
 5. **Header JSDoc** su ogni nuovo file (Scopo/Ownership/Invarianti/Failure mode).
 6. **Ogni passo chiude con `npm run verify` verde** prima di passare al successivo.
 
----
-
-*Fine documento. Aggiornare §2 (stato passi) e §3 (registro) ad ogni implementazione.*
+| 2026-08-26 | **Audit GAME-ART G-22→G-33** | 🔄 **Remediation code** | AssetLoader progress+singleton (G-27); AnimationStore ECS + Mixamo clip names (G-24); 32 archetipi + ProceduralDecorator + clue overlay (G-22/010/012/013); Recast navmesh + Yuka steering (G-28/G-32); RoomStreaming hop-BFS (G-31); HDRI desert (goegap_road CC0, file in public/hdri) + SSAO HIGH-only (G-25/G-29); ANUBIS_EXECUTIONER mesh (G-30); PBR aliases sandstone/limestone (G-33); ambience theme wind/drip (G-26); script PS1 Mixamo/HDRI/manifest. Mixamo clip FBX e pack Sonniss restano da scaricare (account/esterni). |

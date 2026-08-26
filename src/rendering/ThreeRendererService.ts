@@ -223,7 +223,7 @@ export function createThreeRenderer(
   // Bloom WebGPU: RenderPipeline + BloomNode TSL (r183+).
   let webgpuPipeline: { render(): void; dispose(): void } | null = null;
   // SSAO-1: ambient occlusion screen-space (solo WebGL2, per ambienti di pietra).
-  let ssaoPass: { dispose(): void; setSize(width: number, height: number): void } | null = null;
+  let ssaoPass: { dispose(): void; setSize(width: number, height: number): void; enabled?: boolean; kernelRadius?: number } | null = null;
   // W-7: sandstorm post-processing controller (heat shimmer + grain).
   let sandStormController: import('@/rendering/SandStormPass.js').SandStormController | null = null;
   // QC-1: post-fx (bloom+SSAO) attivo? Controllato da applyQualityProfile.
@@ -282,9 +282,9 @@ export function createThreeRenderer(
     // Se un asset manca, l'AssetLoader fallisce a null e il renderer usa le
     // primitive placeholder — mai un blocco del bootstrap.
     void (async () => {
-      const { createAssetLoader } = await import('@/rendering/AssetLoader.js');
+      const { getAssetLoader } = await import('@/rendering/AssetLoader.js');
       const { ENEMY_ASSETS, LANDMARK_ASSETS } = await import('@/content/assets.js');
-      assetLoader = createAssetLoader();
+      assetLoader = getAssetLoader();
       const paths = [
         ...ENEMY_ASSETS.map((entry) => entry.modelPath),
         ...LANDMARK_ASSETS.map((entry) => entry.modelPath),
@@ -294,21 +294,26 @@ export function createThreeRenderer(
         log.info('Asset preload completato', { assets: paths.length, caricate: paths.filter((p) => assetLoader?.has(p) ?? false).length });
       }
 
-      // W-1: HDRI Poly Haven CC0 — migliora l'IBL su tutti i MeshStandardMaterial.
-      // Sostituisce l'env map procedurale se il file è disponibile.
+      // G-25: HDRI Poly Haven desert_road_puresky — IBL su MeshStandardMaterial.
+      // Tier LOW resta sul colore statico / env procedurale.
       if (backend === 'webgl2' && !disposed) {
-        const { loadHDRI } = await import('@/rendering/HDRILoader.js');
-        const hdri = await loadHDRI(renderer as THREE.WebGLRenderer, '/hdri/sahara_2k.hdr');
-        // `disposed` può cambiare durante l'await (dispose() concorrente): TS non
-        // modella la mutazione attraverso il confine async e crede sia sempre false,
-        // ma il controllo è una guardia reale contro l'uso dopo il rilascio.
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (hdri && !disposed) {
-          envMapTexture?.dispose();
-          scene.environment = hdri.envMap;
-          scene.environmentIntensity = 0.2;
-          envMapTexture = hdri.envMap;
-          log.info('HDRI Poly Haven caricato');
+        const { hdriUrlForResolution } = await import('@/config/PerformanceTiers.js');
+        const { detectCapabilities } = await import('@/config/PerformanceTiers.js');
+        const { selectTierConfig } = await import('@/config/PerformanceTiers.js');
+        const tier = selectTierConfig(detectCapabilities(), window.devicePixelRatio || 1);
+        const hdriUrl = hdriUrlForResolution(tier.hdriResolution);
+        if (hdriUrl) {
+          const { loadHDRI } = await import('@/rendering/HDRILoader.js');
+          const hdri = await loadHDRI(renderer as THREE.WebGLRenderer, hdriUrl);
+          // `disposed` può cambiare durante l'await (dispose() concorrente).
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+          if (hdri && !disposed) {
+            envMapTexture?.dispose();
+            scene.environment = hdri.envMap;
+            scene.environmentIntensity = 0.2;
+            envMapTexture = hdri.envMap;
+            log.info('HDRI Poly Haven desert caricato', { url: hdriUrl });
+          }
         }
       }
     })();
@@ -443,7 +448,11 @@ export function createThreeRenderer(
         // SSAO-1: ambient occlusion screen-space per ambienti di pietra
         // credibili (profondità percepita senza geometria extra). Solo WebGL2.
         const ssao = new SSAOPass(scene, camera, canvas.clientWidth, canvas.clientHeight);
-        ssao.output = 1; // SSAOOutputPass? 1 = default SSAO blend
+        ssao.output = 1;
+        const ssaoTuned = ssao as typeof ssao & { kernelRadius: number; minDistance: number; maxDistance: number };
+        ssaoTuned.kernelRadius = 0.4;
+        ssaoTuned.minDistance = 0.005;
+        ssaoTuned.maxDistance = 0.1;
         composition.addPass(ssao);
         const bloom = new UnrealBloomPass(
           new THREE.Vector2(canvas.clientWidth, canvas.clientHeight),
@@ -878,6 +887,8 @@ export function createThreeRenderer(
     readonly resolutionScale: number;
     readonly shadowMapSize: number;
     readonly usePostFx: boolean;
+    readonly ssaoEnabled?: boolean;
+    readonly bloomStrength?: number;
   }): void {
     if (!initialized) return;
 
@@ -891,7 +902,7 @@ export function createThreeRenderer(
     // Threshold più alto su medium → meno bloom su superfici litte (torch).
     if (bloomPass) {
       const strength = profile.usePostFx
-        ? (profile.tier === 'medium' ? 0.32 : profile.tier === 'high' ? 0.55 : 0)
+        ? (profile.bloomStrength ?? (profile.tier === 'medium' ? 0.32 : profile.tier === 'high' ? 0.55 : 0))
         : 0;
       bloomPass.strength = strength;
       bloomPass.threshold = profile.tier === 'medium' ? 0.55 : 0.42;
@@ -905,6 +916,10 @@ export function createThreeRenderer(
     // (SSAOPass non ha un toggle runtime semplice e ri-crearlo è costoso).
     _qualityWantsPostFx = profile.usePostFx && profile.tier !== 'low';
     postFxEnabled = _qualityWantsPostFx && !_motionReduced;
+    if (ssaoPass) {
+      // G-29: SSAO solo su tier HIGH (audit performance).
+      ssaoPass.enabled = profile.ssaoEnabled ?? profile.tier === 'high';
+    }
     if (ssaoPass && composer) {
       // Mantieni i target dell'SSAO allineati al canvas corrente
       composer.setSize(canvas.clientWidth, canvas.clientHeight);
@@ -2694,6 +2709,9 @@ export function createThreeRenderer(
     setFloorLayout,
     applyFloorPalette,
     applyQualityProfile,
+    setStreamedRoomIds(ids: ReadonlySet<string> | null): void {
+      frustumCuller.setActiveRoomIds(ids);
+    },
     setLootReliquary,
     setShovelPickup,
     getDebugStats,
