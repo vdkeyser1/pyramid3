@@ -1979,6 +1979,12 @@ export function createThreeRenderer(
             const proc = buildProceduralMummyGroup(kind === 'ROYAL_MUMMY');
             enemyModelCache.set(kind, proc);
             mountEnemyModel(visual, proc, 0);
+          } else if (kind === 'ANUBIS_PRIEST' || kind === 'SHABTI_GUARDIAN') {
+            const { createEgyptianPriestMesh } = await import('@/rendering/EgyptianPriestMesh.js');
+            if (disposed) return;
+            const proc = createEgyptianPriestMesh({ scale: 1.15, eyeIntensity: 2.0 });
+            enemyModelCache.set(kind, proc);
+            mountEnemyModel(visual, proc, 0);
           }
           return;
         }
@@ -1994,16 +2000,17 @@ export function createThreeRenderer(
           description: null,
           source: 'procedural',
         });
-        // `disposed` può diventare true durante l'await del GLB: TS non
-        // modella la mutazione attraverso il confine async e lo crede sempre
-        // false, ma senza questa guardia si aggiungerebbe un modello a una
-        // scena già rilasciata.
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (!model || disposed) {
           if (kind === 'MUMMY' || kind === 'ROYAL_MUMMY') {
             const { buildProceduralMummyGroup } = await import('@/rendering/EgyptianMummyMesh.js');
             if (disposed) return;
             const proc = buildProceduralMummyGroup(kind === 'ROYAL_MUMMY');
+            enemyModelCache.set(kind, proc);
+            mountEnemyModel(visual, proc, 0);
+          } else if (kind === 'ANUBIS_PRIEST' || kind === 'SHABTI_GUARDIAN') {
+            const { createEgyptianPriestMesh } = await import('@/rendering/EgyptianPriestMesh.js');
+            if (disposed) return;
+            const proc = createEgyptianPriestMesh({ scale: 1.15, eyeIntensity: 2.0 });
             enemyModelCache.set(kind, proc);
             mountEnemyModel(visual, proc, 0);
           }
@@ -2013,12 +2020,23 @@ export function createThreeRenderer(
         enemyModelOffsets.set(kind, entry.yOffset);
         mountEnemyModel(visual, model, entry.yOffset);
       } catch {
-        // GLB assente o corrotto: monta il modello procedurale antropomorfo
+        // Fallback garantito
         if (kind === 'MUMMY' || kind === 'ROYAL_MUMMY') {
           try {
             const { buildProceduralMummyGroup } = await import('@/rendering/EgyptianMummyMesh.js');
             if (!disposed) {
               const proc = buildProceduralMummyGroup(kind === 'ROYAL_MUMMY');
+              enemyModelCache.set(kind, proc);
+              mountEnemyModel(visual, proc, 0);
+            }
+          } catch {
+            // No-op fallback
+          }
+        } else if (kind === 'ANUBIS_PRIEST' || kind === 'SHABTI_GUARDIAN') {
+          try {
+            const { createEgyptianPriestMesh } = await import('@/rendering/EgyptianPriestMesh.js');
+            if (!disposed) {
+              const proc = createEgyptianPriestMesh({ scale: 1.15, eyeIntensity: 2.0 });
               enemyModelCache.set(kind, proc);
               mountEnemyModel(visual, proc, 0);
             }

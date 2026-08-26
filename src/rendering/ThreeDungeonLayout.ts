@@ -12,6 +12,7 @@ import {
   createInstancedDungeonGroup,
   type TileTransform,
 } from '@/rendering/InstancedDungeonRenderer.js';
+import { createEgyptianCeiling } from '@/rendering/EgyptianCeilings.js';
 import { resolveFeatureFlags } from '@/config/FeatureFlags.js';
 import type { RoomBounds as CullBounds } from '@/rendering/FrustumCuller.js';
 import type {
@@ -343,11 +344,27 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
     } else if (ceilingKind === 'HIGH_VAULT') {
       // Volta monumentale: quota elevata con architravi perimetrali e costoloni di supporto
       addDungeonBox(fullW, CEILING_THICKNESS_M, fullD, room.center.x, ceilingY, room.center.z, ceilingMat);
-      const archY = (WALL_HEIGHT_M + ceilingY) / 2;
-      const archThick = 0.45;
-      // Imposte laterali che raccordano le pareti alla volta
-      addDungeonBox(fullW, 0.4, archThick, room.center.x, archY, room.center.z - depth / 2, wallMaterial);
-      addDungeonBox(fullW, 0.4, archThick, room.center.x, archY, room.center.z + depth / 2, wallMaterial);
+      const vaultGroup = createEgyptianCeiling({
+        width: fullW,
+        depth: fullD,
+        height: 0,
+        style: 'corbelled_vault',
+      });
+      vaultGroup.position.set(room.center.x, WALL_HEIGHT_M - 0.1, room.center.z);
+      if (_roomGroup) _roomGroup.add(vaultGroup);
+      else dungeonRoot.add(vaultGroup);
+    } else if (ceilingKind === 'STARRY') {
+      // Soffitto stellato in lapislazzuli con costellazioni d'oro e disco solare
+      addDungeonBox(fullW, CEILING_THICKNESS_M, fullD, room.center.x, ceilingY, room.center.z, ceilingMat);
+      const starlitGroup = createEgyptianCeiling({
+        width: fullW,
+        depth: fullD,
+        height: 0,
+        style: 'starlit_lapis',
+      });
+      starlitGroup.position.set(room.center.x, ceilingY - CEILING_THICKNESS_M / 2, room.center.z);
+      if (_roomGroup) _roomGroup.add(starlitGroup);
+      else dungeonRoot.add(starlitGroup);
     } else {
       // Copre anche lo spessore delle pareti: dal basso non si vede alcuna
       // fessura verso il vuoto esterno.
