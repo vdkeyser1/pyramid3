@@ -2853,10 +2853,22 @@ export function createGameApplication(
     from: { readonly x: number; readonly y: number; readonly z: number },
     to: { readonly x: number; readonly y: number; readonly z: number },
   ): boolean {
+    const dist = Math.hypot(to.x - from.x, to.z - from.z);
+    if (dist <= 2.8) {
+      // In mischia ravvicinata il fendente passa sempre a meno di un muro alto
+      if (physicsWorld) {
+        return physicsWorld.hasLineOfSight(
+          { x: from.x, y: from.y + 1.1, z: from.z },
+          { x: to.x, y: to.y + 1.1, z: to.z },
+        );
+      }
+      return true;
+    }
+
     if (physicsWorld) {
       return physicsWorld.hasLineOfSight(
-        { x: from.x, y: from.y + 0.35, z: from.z },
-        { x: to.x, y: to.y + 0.35, z: to.z },
+        { x: from.x, y: from.y + 1.1, z: from.z },
+        { x: to.x, y: to.y + 1.1, z: to.z },
       );
     }
 

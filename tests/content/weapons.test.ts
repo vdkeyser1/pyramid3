@@ -16,7 +16,7 @@ describe('weapons — Definizione dell arsenale egizio esteso', () => {
   });
 
   it('Lancia di Ra ha portata estesa e attacchi validi', () => {
-    expect(WEAPON_SPEAR_OF_RA.reachM).toBe(3.1);
+    expect(WEAPON_SPEAR_OF_RA.reachM).toBe(3.5);
     expect(WEAPON_SPEAR_OF_RA.damageHp).toBeGreaterThan(WEAPON_FISTS.damageHp);
     expect(WEAPON_SPEAR_OF_RA.attacks.length).toBeGreaterThan(0);
   });
@@ -32,7 +32,7 @@ describe('weapons — Definizione dell arsenale egizio esteso', () => {
   });
 
   it('Falce di Anubi ha portata e velocità ottimali', () => {
-    expect(WEAPON_ANUBIS_SICKLE.reachM).toBe(2.0);
+    expect(WEAPON_ANUBIS_SICKLE.reachM).toBe(2.6);
     expect(WEAPON_ANUBIS_SICKLE.damageHp).toBe(22);
   });
 

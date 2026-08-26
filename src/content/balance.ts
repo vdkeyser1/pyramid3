@@ -103,13 +103,13 @@ export const STAIRCASE = {
 } as const;
 
 export const WEAPONS = {
-  fists:          { damageHp: 3,  intervalTicks: secondsToTicks(0.65), reachM: 1.5, durability: Number.POSITIVE_INFINITY },
-  khopesh:        { damageHp: 18, intervalTicks: secondsToTicks(0.78), reachM: 2.1, durability: 120 },
-  staff:          { damageHp: 11, intervalTicks: secondsToTicks(0.55), reachM: 2.6, durability: 180 },
-  shovel:         { damageHp: 7,  intervalTicks: secondsToTicks(1.0),  reachM: 1.9, durability: 3   }, // in scavi
-  spear:          { damageHp: 16, intervalTicks: secondsToTicks(0.70), reachM: 3.1, durability: 140 },
-  golden_khopesh: { damageHp: 24, intervalTicks: secondsToTicks(0.68), reachM: 2.2, durability: 220 },
-  anubis_sickle:  { damageHp: 22, intervalTicks: secondsToTicks(0.62), reachM: 2.0, durability: 160 },
+  fists:          { damageHp: 3,  intervalTicks: secondsToTicks(0.65), reachM: 2.0, durability: Number.POSITIVE_INFINITY },
+  khopesh:        { damageHp: 18, intervalTicks: secondsToTicks(0.78), reachM: 2.7, durability: 120 },
+  staff:          { damageHp: 11, intervalTicks: secondsToTicks(0.55), reachM: 3.2, durability: 180 },
+  shovel:         { damageHp: 7,  intervalTicks: secondsToTicks(1.0),  reachM: 2.5, durability: 3   }, // in scavi
+  spear:          { damageHp: 16, intervalTicks: secondsToTicks(0.70), reachM: 3.5, durability: 140 },
+  golden_khopesh: { damageHp: 24, intervalTicks: secondsToTicks(0.68), reachM: 2.8, durability: 220 },
+  anubis_sickle:  { damageHp: 22, intervalTicks: secondsToTicks(0.62), reachM: 2.6, durability: 160 },
 } as const;
 
 export const DIGGING = {

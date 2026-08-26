@@ -53,7 +53,7 @@ export const WEAPON_KHOPESH: WeaponDefinition = {
       recoveryTicks: secondsToTicks(0.38),
       damage: WEAPONS.khopesh.damageHp,
       stagger: 0.4,
-      shape: { kind: 'ARC', radiusM: WEAPONS.khopesh.reachM, arcDeg: 120 },
+      shape: { kind: 'ARC', radiusM: WEAPONS.khopesh.reachM, arcDeg: 140 },
       interruptibleUntilTick: secondsToTicks(0.15),
       audioCue: 'sfx_khopesh_slash',
       effectCue: 'vfx_slash_trail',
