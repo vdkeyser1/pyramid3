@@ -934,53 +934,79 @@ export function createThreeRenderer(
     if (!position || !initialized) return;
 
     const group = new THREE.Group();
-    // Cofanetto: base cubica + coperchio piramidale, oro con emissive
-    // Oro dalla libreria materiali. L'emissive va alzato rispetto al default:
-    // il reliquiario deve attirare l'occhio nel buio, non solo riflettere.
+
+    // 1. Cratere di scavo nella sabbia (fossa scavata nel suolo)
+    const craterGeo = new THREE.CylinderGeometry(0.75, 0.45, 0.22, 16);
+    const sandCraterMat = new THREE.MeshStandardMaterial({
+      color: 0x3d2812, // Terra scura e umida sotterranea
+      roughness: 0.96,
+      metalness: 0.05,
+    });
+    const crater = new THREE.Mesh(craterGeo, sandCraterMat);
+    crater.position.y = -0.09;
+    group.add(crater);
+
+    // Bordo rialzato di sabbia smossa scavata attorno alla buca
+    const moundGeo = new THREE.TorusGeometry(0.78, 0.12, 8, 16);
+    const sandMoundMat = new THREE.MeshStandardMaterial({
+      color: 0x8a6a3b,
+      roughness: 0.92,
+    });
+    const mound = new THREE.Mesh(moundGeo, sandMoundMat);
+    mound.rotation.x = Math.PI / 2;
+    mound.position.y = 0.02;
+    group.add(mound);
+
+    // 2. Forziere del Faraone: base con rilievi dorati e coperchio piramidale
     const goldMaterial = createGoldMaterial();
-    goldMaterial.emissive.setHex(0x4a2f00);
-    goldMaterial.emissiveIntensity = 0.6;
-    const base = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.28, 0.5), goldMaterial);
-    base.position.y = 0.14;
+    goldMaterial.emissive.setHex(0x5a3f10);
+    goldMaterial.emissiveIntensity = 0.85;
+
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.32, 0.58), goldMaterial);
+    base.position.y = 0.16;
     base.castShadow = true;
     base.receiveShadow = true;
-    const lid = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.22, 4), goldMaterial);
-    lid.position.y = 0.39;
+
+    const lid = new THREE.Mesh(new THREE.ConeGeometry(0.48, 0.26, 4), goldMaterial);
+    lid.position.y = 0.44;
     lid.rotation.y = Math.PI / 4;
     lid.castShadow = true;
-    group.add(base, lid);
 
-    // V6: god ray del tesoro — cono volumetrico additivo (raggio di luce
-    // ascendente) + bagliore pulsante. Fake volumetric: funziona su WebGL2
-    // e WebGPU senza ray-marching TSL.
+    // Gemma sacra di diaspro in cima al forziere
+    const gemMat = new THREE.MeshStandardMaterial({
+      color: 0x00d8ff,
+      emissive: 0x0099ff,
+      emissiveIntensity: 1.6,
+      roughness: 0.15,
+      metalness: 0.5,
+    });
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.09), gemMat);
+    gem.position.y = 0.62;
+    group.add(base, lid, gem);
+
+    // Luce calda radiante del tesoro
+    const chestLight = new THREE.PointLight(0xffbe44, 14.0, 6.0);
+    chestLight.position.y = 0.75;
+    group.add(chestLight);
+
+    // 3. Colonna di luce dorata ascendente
     const beamMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffd48a,
+      color: 0xffe29a,
       transparent: true,
-      opacity: 0.16,
+      opacity: 0.28,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    const beam = new THREE.Mesh(new THREE.ConeGeometry(0.55, 2.6, 12, 1, true), beamMaterial);
-    beam.position.y = 1.5;
+    const beam = new THREE.Mesh(new THREE.ConeGeometry(0.65, 3.2, 14, 1, true), beamMaterial);
+    beam.position.y = 1.6;
     beam.renderOrder = 2;
     group.add(beam);
-    // Bagliore alla base del raggio
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffd48a,
-      transparent: true,
-      opacity: 0.35,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 8), glowMaterial);
-    glow.position.y = 0.3;
-    group.add(glow);
 
     group.position.set(position.x, position.y + 0.02, position.z);
     brazierRoot.add(group);
     lootReliquary = group;
-    log.info('Reliquiario del tesoro appare', { x: position.x, z: position.z });
+    log.info('Reliquiario del tesoro appare con cratere di scavo', { x: position.x, z: position.z });
   }
 
   function setShovelPickup(
