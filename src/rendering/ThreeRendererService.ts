@@ -1104,6 +1104,12 @@ export function createThreeRenderer(
           const x = alongZ ? cx + side * AISLE_HALF_WIDTH_M : cx + offset;
           const z = alongZ ? cz + offset : cz + side * AISLE_HALF_WIDTH_M;
 
+          // Non piazzare colonne davanti o a ridosso dei passaggi/porte
+          const nearDoorway = layout.doorways.some(
+            (d) => Math.hypot(d.center.x - x, d.center.z - z) < 2.2,
+          );
+          if (nearDoorway) continue;
+
           // Il tipo di capitello deriva dalla stanza, non dalla posizione:
           // una sala ha colonne coerenti fra loro, come nelle sale ipostile.
           const roomSeed = Number(room.roomId) || 0;
@@ -1940,7 +1946,16 @@ export function createThreeRenderer(
         ]);
         const entry = ENEMY_ASSETS.find((e) => e.archetype === kind);
         // modelPath null è legittimo (es. WITNESS): resta la primitiva.
-        if (!entry?.modelPath || disposed) return;
+        if (!entry?.modelPath || disposed) {
+          if (kind === 'MUMMY' || kind === 'ROYAL_MUMMY') {
+            const { buildProceduralMummyGroup } = await import('@/rendering/EgyptianMummyMesh.js');
+            if (disposed) return;
+            const proc = buildProceduralMummyGroup(kind === 'ROYAL_MUMMY');
+            enemyModelCache.set(kind, proc);
+            mountEnemyModel(visual, proc, 0);
+          }
+          return;
+        }
 
         const model = await loadArtifact({
           id: `enemy_${kind}`,
@@ -1958,12 +1973,33 @@ export function createThreeRenderer(
         // false, ma senza questa guardia si aggiungerebbe un modello a una
         // scena già rilasciata.
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (!model || disposed) return;
+        if (!model || disposed) {
+          if (kind === 'MUMMY' || kind === 'ROYAL_MUMMY') {
+            const { buildProceduralMummyGroup } = await import('@/rendering/EgyptianMummyMesh.js');
+            if (disposed) return;
+            const proc = buildProceduralMummyGroup(kind === 'ROYAL_MUMMY');
+            enemyModelCache.set(kind, proc);
+            mountEnemyModel(visual, proc, 0);
+          }
+          return;
+        }
         enemyModelCache.set(kind, model);
         enemyModelOffsets.set(kind, entry.yOffset);
         mountEnemyModel(visual, model, entry.yOffset);
       } catch {
-        // GLB assente o corrotto: resta la capsula, nessun crash.
+        // GLB assente o corrotto: monta il modello procedurale antropomorfo
+        if (kind === 'MUMMY' || kind === 'ROYAL_MUMMY') {
+          try {
+            const { buildProceduralMummyGroup } = await import('@/rendering/EgyptianMummyMesh.js');
+            if (!disposed) {
+              const proc = buildProceduralMummyGroup(kind === 'ROYAL_MUMMY');
+              enemyModelCache.set(kind, proc);
+              mountEnemyModel(visual, proc, 0);
+            }
+          } catch {
+            // No-op fallback
+          }
+        }
       }
     })();
   }

@@ -296,8 +296,8 @@ function collectRoomPlacements(
   const pool: readonly DecorType[] = moodIndex === 1
     ? ['bones', 'bones', 'skeleton', 'offeringBowl', 'candle', 'jar', 'altar', 'obelisk']
     : moodIndex === 2
-      ? ['jar', 'jar', 'amphora', 'column', 'candle', 'sandpile', 'floorGlyph', 'scarabTile']
-      : ['jar', 'amphora', 'candle', 'column', 'sandpile', 'bones', 'skeleton',
+      ? ['jar', 'jar', 'amphora', 'offeringBowl', 'candle', 'sandpile', 'floorGlyph', 'scarabTile']
+      : ['jar', 'amphora', 'candle', 'sandpile', 'bones', 'skeleton',
          'offeringBowl', 'altar', 'obelisk', 'floorGlyph', 'scarabTile'];
 
   const slotCountBase = width >= 12 && depth >= 12 ? 6
