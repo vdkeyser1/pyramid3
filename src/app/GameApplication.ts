@@ -3269,20 +3269,24 @@ export function createGameApplication(
           hud.showMessage('Serve una Pala per scavare. Cercane una nella cripta.', 2200);
           hud.showContextualHint({
             id: 'hint-need-shovel',
-            text: 'La pala è raccoglibile (E) nelle stanze. Una volta raccolta, equipaggiala con il tasto 4.',
+            text: 'Trova una pala nel dungeon e premi [E] o [G] vicino al marcatore di scavo.',
           });
-        } else if (currentWeaponIndex !== 3) {
-          hud.showMessage(`Equipaggia la Pala con [4] per scavare (${String(shovelDigs)} usi rimasti).`, 2000);
-          _frame.consume(ActionKind.Interact);
         } else {
+          // Auto-equipaggia la pala se non ancora in mano
+          if (currentWeaponIndex !== 3) {
+            currentWeaponIndex = 3;
+            weaponName = `Pala (${String(shovelDigs)} usi)`;
+            renderer?.setActiveWeaponViewmodel?.('shovel');
+          }
+          renderer?.playWeaponSwing();
           hud.showContextualHint({
             id: 'hint-dig',
-            text: 'Tieni premuto E per scavare: la sabbia può nascondere tesori e mappe.',
+            text: 'Tieni premuto [E] o [G] per scavare la terra e rivelare il tesoro nascosto.',
           });
           hud.showMessage(
             torchRuntime.state === 'OFF'
               ? 'Serve una torcia accesa per scavare.'
-              : `Mantieni E per scavare (${String(shovelDigs)} usi rimasti).`,
+              : `Scavo in corso con la Pala (${String(shovelDigs)} usi)... tieni premuto!`,
             1600,
           );
         }
@@ -3707,7 +3711,15 @@ export function createGameApplication(
             footstepCooldownMs = 450;
           }
         }
-        if (digSite && !digSite.completed && currentWeaponIndex === 3 && shovelDigs > 0 && input.frame.isDown(ActionKind.Interact) && isNearDigSite(playerState.position)) {
+        const isDigKeyDown = input.frame.isDown(ActionKind.Interact) || input.frame.isDown(ActionKind.Dig) || input.frame.isDown(ActionKind.WeaponSlot4);
+        if (digSite && !digSite.completed && shovelDigs > 0 && isDigKeyDown && isNearDigSite(playerState.position)) {
+          if (currentWeaponIndex !== 3) {
+            currentWeaponIndex = 3;
+            weaponName = `Pala (${String(shovelDigs)} usi)`;
+            renderer?.setActiveWeaponViewmodel?.('shovel');
+          }
+          // Riproduce l'affondo della pala nel terreno
+          renderer?.playWeaponSwing();
           const digEvent = tickDig(digSite, torchRuntime.state !== 'OFF');
           if (digEvent) {
             emitDigEvents(simulation.events, digEvent, {

@@ -37,7 +37,8 @@ export const ActionKind = {
   TorchWave: 'TorchWave',
   KaEcho: 'KaEcho',
 
-  // Armi
+  // Armi & Attrezzi
+  Dig: 'Dig',
   WeaponSlot1: 'WeaponSlot1',
   WeaponSlot2: 'WeaponSlot2',
   WeaponSlot3: 'WeaponSlot3',
@@ -158,6 +159,7 @@ const DEFAULT_ENTRIES: readonly ActionEntry[] = [
   { action: ActionKind.TorchPlace,    label: 'Posa Torcia',    bindings: [key(KeyCode.KeyG)] },
   { action: ActionKind.TorchWave,     label: 'Agita Torcia',   bindings: [key(KeyCode.KeyQ)] },
   { action: ActionKind.KaEcho,        label: 'Eco del Ka',     bindings: [key(KeyCode.KeyR)] },
+  { action: ActionKind.Dig,           label: 'Scava con Pala', bindings: [key(KeyCode.KeyG), key(KeyCode.Digit4)] },
   { action: ActionKind.WeaponSlot1,   label: 'Arma 1',         bindings: [key(KeyCode.Digit1)] },
   { action: ActionKind.WeaponSlot2,   label: 'Arma 2',         bindings: [key(KeyCode.Digit2)] },
   { action: ActionKind.WeaponSlot3,   label: 'Arma 3',         bindings: [key(KeyCode.Digit3)] },
