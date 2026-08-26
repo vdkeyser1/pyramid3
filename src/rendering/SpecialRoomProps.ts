@@ -12,6 +12,7 @@ import type { FloorSceneSpecialProp } from '@/world/FloorSceneLayout.js';
 import {
   buildAltar,
   buildCanopicJar,
+  buildHorusStatue,
   buildSarcophagus,
   buildStatue,
 } from '@/rendering/EgyptianLandmarks.js';
@@ -225,6 +226,14 @@ function objectForProp(propId: string, wallMaterial: THREE.Material): THREE.Obje
           ? 'OPEN'
           : 'CLOSED';
     return wrapScaled(buildSarcophagus(mat, variant), 0.7);
+  }
+  if (propId.includes('HORUS') || propId.includes('FALCON')) {
+    const variant = propId.includes('GOLD')
+      ? 'GOLD'
+      : propId.includes('BASALT')
+        ? 'BASALT'
+        : 'SANDSTONE';
+    return wrapScaled(buildHorusStatue(mat, variant), 0.75);
   }
   if (propId.includes('STATUE') || propId.includes('PHARAOH')) {
     return wrapScaled(buildStatue(mat), 0.75);

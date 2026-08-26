@@ -294,3 +294,85 @@ export function buildAltar(material: THREE.Material): THREE.Group {
   }
   return g;
 }
+
+export type HorusMaterialVariant = 'SANDSTONE' | 'BASALT' | 'GOLD';
+
+/**
+ * Statua monumentale di Horus, dio Falco protettore dei faraoni.
+ * Silhouette con ali ripiegate, becco ricurvo e corona sacra Pschent.
+ */
+export function buildHorusStatue(
+  material: THREE.Material,
+  variant: HorusMaterialVariant = 'SANDSTONE',
+): THREE.Group {
+  const g = new THREE.Group();
+
+  let activeMat = material;
+  if (variant === 'BASALT') {
+    activeMat = new THREE.MeshStandardMaterial({
+      color: 0x181716,
+      roughness: 0.35,
+      metalness: 0.25,
+    });
+  } else if (variant === 'GOLD') {
+    activeMat = new THREE.MeshStandardMaterial({
+      color: 0xd4a05a,
+      roughness: 0.3,
+      metalness: 0.8,
+    });
+  }
+
+  // Basamento a gradino doppio
+  const base1 = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.3, 1.4), activeMat);
+  base1.position.y = 0.15;
+  g.add(base1);
+
+  const base2 = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.25, 1.1), activeMat);
+  base2.position.y = 0.425;
+  g.add(base2);
+
+  // Corpo eretto da rapace
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.48, 1.4, 8), activeMat);
+  body.position.set(0, 1.25, 0);
+  g.add(body);
+
+  // Ali ripiegate ai lati
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.1, 0.55), activeMat);
+    wing.position.set(side * 0.42, 1.15, -0.05);
+    wing.rotation.z = side * 0.12;
+    g.add(wing);
+  }
+
+  // Petto pronunciato
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6), activeMat);
+  chest.position.set(0, 1.45, 0.22);
+  g.add(chest);
+
+  // Testa di falco
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.36, 0.38), activeMat);
+  head.position.set(0, 2.05, 0.05);
+  g.add(head);
+
+  // Becco ricurvo affilato
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.35, 5), activeMat);
+  beak.position.set(0, 1.96, 0.38);
+  beak.rotation.x = Math.PI / 2 + 0.3;
+  g.add(beak);
+
+  // Corona Pschent dell Alto e Basso Egitto
+  const crownBase = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.35, 6), activeMat);
+  crownBase.position.set(0, 2.35, 0.02);
+  g.add(crownBase);
+
+  const crownSpire = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.65, 5), activeMat);
+  crownSpire.position.set(0, 2.80, -0.04);
+  g.add(crownSpire);
+
+  for (const child of g.children) {
+    child.castShadow = true;
+    child.receiveShadow = true;
+  }
+  return g;
+}
+
