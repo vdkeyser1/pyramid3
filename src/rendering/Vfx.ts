@@ -1,12 +1,13 @@
 /**
- * Scopo: effetti visivi procedurali del gioco (G-15) — fiamma della torcia,
- *        scintille, polvere. Nessun asset esterno: tutto geometry + materiali
- *        emissivi animati via update(deltaMs).
+ * Scopo: effetti visivi procedurali del gioco (G-15 / P02) — fiamma della torcia,
+ *        scintille, polvere, fumo e polvere ambientale. Nessun asset esterno:
+ *        tutto geometry + materiali emissivi/traslucenti animati via update(deltaMs).
  * Ownership: rendering. Consumato da ThreeRendererService.
  * Invarianti:
  *   - update() deve essere chiamato ogni frame con deltaMs;
  *   - le animazioni usano performance.now() (tempo reale, non simulazione);
- *   - visibile/attached sono gestiti dal chiamante.
+ *   - visibile/attached sono gestiti dal chiamante;
+ *   - fumo e polvere usano pool pre-allocati (zero allocazioni a runtime).
  */
 
 import * as THREE from 'three';
@@ -142,6 +143,11 @@ export function createWeaponTrail(): WeaponTrail {
       return false;
     }
     lifeMs -= deltaMs;
+    if (lifeMs <= 0) {
+      mesh.visible = false;
+      material.opacity = 0;
+      return false;
+    }
     material.opacity = Math.max(0, (lifeMs / TRAIL_LIFE_MS) * 0.85);
     return true;
   }
@@ -255,4 +261,202 @@ export function createParticleBurst(): ParticleBurst {
       return !points.visible;
     },
   };
+}
+
+// ── Fumo dei bracieri e fuochi rituali (P02) ────────────────────────────────
+
+export interface SmokePlume {
+  readonly points: THREE.Points;
+  /** Aggiorna l'animazione di salita e dispersione del fumo. */
+  update(deltaMs: number): void;
+  /** Imposta intensità (0 = spento/invisibile, 1 = braciere attivo). */
+  setIntensity(intensity: number): void;
+  dispose(): void;
+}
+
+const SMOKE_PARTICLE_COUNT = 32;
+
+/**
+ * Crea una colonna di fumo scuro/incenso procedurale che sale lentamente
+ * sopra bracieri egiziani, lampade ad olio e fuochi rituali.
+ * Buffer statico pre-allocato, zero GC allocazioni per frame.
+ */
+export function createSmokePlume(basePosition: { readonly x: number; readonly y: number; readonly z: number }): SmokePlume {
+  const positions = new Float32Array(SMOKE_PARTICLE_COUNT * 3);
+  const ages = new Float32Array(SMOKE_PARTICLE_COUNT);
+  const maxAges = new Float32Array(SMOKE_PARTICLE_COUNT);
+  const wanderOffsets = new Float32Array(SMOKE_PARTICLE_COUNT * 2);
+
+  for (let i = 0; i < SMOKE_PARTICLE_COUNT; i++) {
+    ages[i] = (i / SMOKE_PARTICLE_COUNT) * 2.8; // distribuite nel tempo
+    maxAges[i] = 2.4 + (i % 5) * 0.2;
+    wanderOffsets[i * 2] = (Math.sin(i * 1.7) * 0.15);
+    wanderOffsets[i * 2 + 1] = (Math.cos(i * 2.3) * 0.15);
+    positions[i * 3] = basePosition.x;
+    positions[i * 3 + 1] = basePosition.y;
+    positions[i * 3 + 2] = basePosition.z;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  const material = new THREE.PointsMaterial({
+    color: 0x6a6054, // grigio cenere / fumo incenso egizio
+    size: 0.28,
+    transparent: true,
+    opacity: 0.35,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+  });
+
+  const points = new THREE.Points(geometry, material);
+  points.frustumCulled = false;
+
+  let currentIntensity = 1.0;
+
+  function update(deltaMs: number): void {
+    if (currentIntensity <= 0.01) {
+      points.visible = false;
+      return;
+    }
+    points.visible = true;
+    const dt = Math.min(0.05, deltaMs / 1000);
+
+    for (let i = 0; i < SMOKE_PARTICLE_COUNT; i++) {
+      let age = (ages[i] ?? 0) + dt;
+      const maxAge = maxAges[i] ?? 2.5;
+      if (age >= maxAge) {
+        age = 0;
+      }
+      ages[i] = age;
+
+      const progress = age / maxAge; // 0..1
+      const riseY = progress * 1.8; // sale di 1.8 metri
+      const spread = progress * 0.45; // si allarga salendo
+
+      const idx = i * 3;
+      const wX = wanderOffsets[i * 2] ?? 0;
+      const wZ = wanderOffsets[i * 2 + 1] ?? 0;
+
+      // Movimento vorticoso verso l'alto
+      const driftAngle = age * 1.5 + i;
+      positions[idx] = basePosition.x + wX + Math.sin(driftAngle) * spread;
+      positions[idx + 1] = basePosition.y + riseY;
+      positions[idx + 2] = basePosition.z + wZ + Math.cos(driftAngle) * spread;
+    }
+
+    material.opacity = 0.3 * currentIntensity;
+    (geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
+  }
+
+  function setIntensity(intensity: number): void {
+    currentIntensity = Math.max(0, Math.min(1, intensity));
+  }
+
+  function dispose(): void {
+    geometry.dispose();
+    material.dispose();
+  }
+
+  return { points, update, setIntensity, dispose };
+}
+
+// ── Polvere tombale millenaria (P02 Dust Motes) ────────────────────────────
+
+export interface DustMotes {
+  readonly points: THREE.Points;
+  /** Aggiorna il moto browniano/sospensione delle particelle attorno alla camera. */
+  update(deltaMs: number, centerPos: { readonly x: number; readonly y: number; readonly z: number }): void;
+  dispose(): void;
+}
+
+const DUST_MOTE_COUNT = 96;
+const DUST_BOUNDS_RADIUS = 7.0; // raggio di influenza attorno alla camera
+
+/**
+ * Crea un volume di pulviscolo sabbioso millenario dorato sospeso nell'aria
+ * delle cripte e corridoi della piramide, visibile controluce alla torcia.
+ */
+export function createDustMotes(): DustMotes {
+  const positions = new Float32Array(DUST_MOTE_COUNT * 3);
+  const phases = new Float32Array(DUST_MOTE_COUNT * 3);
+
+  // Inizializza particelle sparse in un volume cubico
+  for (let i = 0; i < DUST_MOTE_COUNT; i++) {
+    const idx = i * 3;
+    positions[idx] = (Math.sin(i * 7.1) * 2 - 1) * DUST_BOUNDS_RADIUS;
+    positions[idx + 1] = 0.5 + Math.abs(Math.cos(i * 3.7)) * 3.0;
+    positions[idx + 2] = (Math.cos(i * 11.3) * 2 - 1) * DUST_BOUNDS_RADIUS;
+
+    phases[idx] = i * 0.37;
+    phases[idx + 1] = i * 0.51;
+    phases[idx + 2] = i * 0.29;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  const material = new THREE.PointsMaterial({
+    color: 0xdfbe82, // sabbia dorata egizia
+    size: 0.045,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const points = new THREE.Points(geometry, material);
+  points.frustumCulled = false;
+
+  let elapsedSeconds = 0;
+
+  function update(
+    deltaMs: number,
+    centerPos: { readonly x: number; readonly y: number; readonly z: number },
+  ): void {
+    const dt = Math.min(0.05, deltaMs / 1000);
+    elapsedSeconds += dt;
+
+    for (let i = 0; i < DUST_MOTE_COUNT; i++) {
+      const idx = i * 3;
+      const phX = phases[idx] ?? 0;
+      const phY = phases[idx + 1] ?? 0;
+      const phZ = phases[idx + 2] ?? 0;
+
+      // Micro fluttuazione sinusoidale lenta
+      const ox = Math.sin(elapsedSeconds * 0.4 + phX) * 0.003;
+      const oy = (Math.sin(elapsedSeconds * 0.3 + phY) * 0.002) - 0.001; // tendenza a scendere dolcemente
+      const oz = Math.cos(elapsedSeconds * 0.35 + phZ) * 0.003;
+
+      let px = (positions[idx] ?? 0) + ox;
+      let py = (positions[idx + 1] ?? 0) + oy;
+      let pz = (positions[idx + 2] ?? 0) + oz;
+
+      // Wrap-around toroidale attorno al player per non disperdere la polvere
+      const dx = px - centerPos.x;
+      const dz = pz - centerPos.z;
+
+      if (dx > DUST_BOUNDS_RADIUS) px -= DUST_BOUNDS_RADIUS * 2;
+      else if (dx < -DUST_BOUNDS_RADIUS) px += DUST_BOUNDS_RADIUS * 2;
+
+      if (dz > DUST_BOUNDS_RADIUS) pz -= DUST_BOUNDS_RADIUS * 2;
+      else if (dz < -DUST_BOUNDS_RADIUS) pz += DUST_BOUNDS_RADIUS * 2;
+
+      if (py < 0.1) py = 3.5;
+      else if (py > 4.2) py = 0.2;
+
+      positions[idx] = px;
+      positions[idx + 1] = py;
+      positions[idx + 2] = pz;
+    }
+
+    (geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
+  }
+
+  function dispose(): void {
+    geometry.dispose();
+    material.dispose();
+  }
+
+  return { points, update, dispose };
 }

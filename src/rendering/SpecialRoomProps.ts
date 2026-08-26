@@ -217,7 +217,14 @@ function objectForProp(propId: string, wallMaterial: THREE.Material): THREE.Obje
     return wrapScaled(buildAltar(mat), 0.55);
   }
   if (propId.includes('SARCOPHAGUS')) {
-    return wrapScaled(buildSarcophagus(mat), 0.7);
+    const variant = propId.includes('GOLD')
+      ? 'ROYAL_GOLD'
+      : propId.includes('BROKEN')
+        ? 'BROKEN'
+        : propId.includes('OPEN')
+          ? 'OPEN'
+          : 'CLOSED';
+    return wrapScaled(buildSarcophagus(mat, variant), 0.7);
   }
   if (propId.includes('STATUE') || propId.includes('PHARAOH')) {
     return wrapScaled(buildStatue(mat), 0.75);

@@ -305,6 +305,49 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
           ceilingMat,
         );
       }
+      // Blocchi di macerie/conci pendenti dal bordo della breccia
+      addDungeonBox(0.9, 0.45, 0.7, room.center.x - holeW * 0.4, ceilingY - 0.25, room.center.z - holeD * 0.45, wallMaterial);
+      addDungeonBox(0.7, 0.5, 0.85, room.center.x + holeW * 0.35, ceilingY - 0.28, room.center.z + holeD * 0.4, wallMaterial);
+      addDungeonBox(0.8, 0.4, 0.6, room.center.x + holeW * 0.42, ceilingY - 0.2, room.center.z - holeD * 0.35, wallMaterial);
+    } else if (ceilingKind === 'COFFERED') {
+      // Soffitto a cassettoni egizio: lastra superiore + reticolo di architravi a gradino incassati
+      addDungeonBox(fullW, CEILING_THICKNESS_M, fullD, room.center.x, ceilingY, room.center.z, ceilingMat);
+      const gridCountX = Math.max(2, Math.floor(width / 3.2));
+      const gridCountZ = Math.max(2, Math.floor(depth / 3.2));
+      const beamThick = 0.32;
+      const beamDrop = 0.26;
+      const beamY = ceilingY - CEILING_THICKNESS_M / 2 - beamDrop / 2;
+
+      // Travi longitudinali X
+      for (let i = 1; i < gridCountZ; i++) {
+        const offsetZ = -depth / 2 + (i * depth) / gridCountZ;
+        addDungeonBox(width, beamDrop, beamThick, room.center.x, beamY, room.center.z + offsetZ, wallMaterial);
+      }
+      // Travi trasversali Z
+      for (let j = 1; j < gridCountX; j++) {
+        const offsetX = -width / 2 + (j * width) / gridCountX;
+        addDungeonBox(beamThick, beamDrop, depth, room.center.x + offsetX, beamY, room.center.z, wallMaterial);
+      }
+    } else if (ceilingKind === 'BEAMED') {
+      // Grande galleria: architravi monolitici massicci in pietra posati a intervalli regolari
+      addDungeonBox(fullW, CEILING_THICKNESS_M, fullD, room.center.x, ceilingY, room.center.z, ceilingMat);
+      const beamCount = Math.max(2, Math.floor(depth / 2.6));
+      const beamWidth = 0.55;
+      const beamHeight = 0.42;
+      const beamY = ceilingY - CEILING_THICKNESS_M / 2 - beamHeight / 2;
+
+      for (let i = 0; i <= beamCount; i++) {
+        const offsetZ = -depth / 2 + (i * depth) / Math.max(1, beamCount);
+        addDungeonBox(width, beamHeight, beamWidth, room.center.x, beamY, room.center.z + offsetZ, wallMaterial);
+      }
+    } else if (ceilingKind === 'HIGH_VAULT') {
+      // Volta monumentale: quota elevata con architravi perimetrali e costoloni di supporto
+      addDungeonBox(fullW, CEILING_THICKNESS_M, fullD, room.center.x, ceilingY, room.center.z, ceilingMat);
+      const archY = (WALL_HEIGHT_M + ceilingY) / 2;
+      const archThick = 0.45;
+      // Imposte laterali che raccordano le pareti alla volta
+      addDungeonBox(fullW, 0.4, archThick, room.center.x, archY, room.center.z - depth / 2, wallMaterial);
+      addDungeonBox(fullW, 0.4, archThick, room.center.x, archY, room.center.z + depth / 2, wallMaterial);
     } else {
       // Copre anche lo spessore delle pareti: dal basso non si vede alcuna
       // fessura verso il vuoto esterno.

@@ -1,0 +1,218 @@
+{
+  "version": "1.0.0",
+  "project": "La Piramide Perduta",
+  "theme": "Ancient Egyptian Pyramid Roguelike FPS",
+  "models": [
+    {
+      "id": "mummy",
+      "category": "enemy",
+      "path": "assets/enemies/mummy.glb",
+      "source": "Custom / Procedural base",
+      "license": "CC0",
+      "tris": 1840,
+      "status": "production"
+    },
+    {
+      "id": "royal_mummy",
+      "category": "enemy",
+      "path": "assets/enemies/royal_mummy.glb",
+      "source": "Custom / Procedural base",
+      "license": "CC0",
+      "tris": 2680,
+      "status": "production"
+    },
+    {
+      "id": "scarab",
+      "category": "enemy",
+      "path": "assets/enemies/scarab.glb",
+      "source": "Custom / Procedural base",
+      "license": "CC0",
+      "tris": 920,
+      "status": "production"
+    },
+    {
+      "id": "cobra",
+      "category": "enemy",
+      "path": "assets/enemies/cobra.glb",
+      "source": "Custom / Procedural base",
+      "license": "CC0",
+      "tris": 1140,
+      "status": "production"
+    },
+    {
+      "id": "priest",
+      "category": "enemy",
+      "path": "assets/enemies/priest.glb",
+      "source": "Custom / Procedural base",
+      "license": "CC0",
+      "tris": 2100,
+      "status": "production"
+    },
+    {
+      "id": "shabti",
+      "category": "enemy",
+      "path": "assets/enemies/shabti.glb",
+      "source": "Custom / Procedural base",
+      "license": "CC0",
+      "tris": 1650,
+      "status": "production"
+    },
+    {
+      "id": "sobek",
+      "category": "enemy",
+      "path": "assets/enemies/sobek.glb",
+      "source": "Custom / Procedural base",
+      "license": "CC0",
+      "tris": 2890,
+      "status": "production"
+    },
+    {
+      "id": "statue_anubis",
+      "category": "landmark",
+      "path": "assets/landmarks/statue_anubis.glb",
+      "source": "Smithsonian / Sketchfab CC0 Scan",
+      "license": "CC0",
+      "tris": 3400,
+      "status": "production"
+    },
+    {
+      "id": "sarcophagus",
+      "category": "landmark",
+      "path": "assets/landmarks/sarcophagus.glb",
+      "source": "Custom Egyptian Scan",
+      "license": "CC0",
+      "tris": 2150,
+      "status": "production"
+    },
+    {
+      "id": "obelisk",
+      "category": "landmark",
+      "path": "assets/landmarks/obelisk.glb",
+      "source": "Custom Egyptian Asset",
+      "license": "CC0",
+      "tris": 840,
+      "status": "production"
+    },
+    {
+      "id": "brazier",
+      "category": "landmark",
+      "path": "assets/landmarks/brazier.glb",
+      "source": "Custom Egyptian Asset",
+      "license": "CC0",
+      "tris": 1280,
+      "status": "production"
+    },
+    {
+      "id": "glyph_hieroglyphs",
+      "category": "landmark",
+      "path": "assets/landmarks/glyph_hieroglyphs.glb",
+      "source": "Custom Egyptian Asset",
+      "license": "CC0",
+      "tris": 320,
+      "status": "production"
+    },
+    {
+      "id": "column_decorated",
+      "category": "prop",
+      "path": "assets/props/pillar_decorated.glb",
+      "source": "Custom Egyptian Asset",
+      "license": "CC0",
+      "tris": 1420,
+      "status": "production"
+    },
+    {
+      "id": "wall_pillar",
+      "category": "prop",
+      "path": "assets/props/wall_pillar.glb",
+      "source": "Custom Egyptian Asset",
+      "license": "CC0",
+      "tris": 760,
+      "status": "production"
+    },
+    {
+      "id": "chest_gold",
+      "category": "prop",
+      "path": "assets/props/chest_gold.glb",
+      "source": "Custom Egyptian Asset",
+      "license": "CC0",
+      "tris": 1180,
+      "status": "production"
+    },
+    {
+      "id": "torch_mounted",
+      "category": "prop",
+      "path": "assets/props/torch_mounted.glb",
+      "source": "Custom Egyptian Asset",
+      "license": "CC0",
+      "tris": 580,
+      "status": "production"
+    }
+  ],
+  "textures": [
+    {
+      "id": "sandstone_wall",
+      "type": "pbr_set",
+      "basePath": "textures/sandstone_wall",
+      "formats": ["ktx2", "jpg"],
+      "maps": ["color", "normal", "roughness", "ao"],
+      "source": "ambientCG / Poly Haven",
+      "license": "CC0",
+      "status": "production"
+    },
+    {
+      "id": "sandstone_dark",
+      "type": "pbr_set",
+      "basePath": "textures/sandstone_dark",
+      "formats": ["ktx2", "jpg"],
+      "maps": ["color", "normal", "roughness", "ao"],
+      "source": "ambientCG / Poly Haven",
+      "license": "CC0",
+      "status": "production"
+    },
+    {
+      "id": "stone_floor",
+      "type": "pbr_set",
+      "basePath": "textures/stone_floor",
+      "formats": ["ktx2", "jpg"],
+      "maps": ["color", "normal", "roughness", "ao"],
+      "source": "ambientCG / Poly Haven",
+      "license": "CC0",
+      "status": "production"
+    },
+    {
+      "id": "hieroglyphs_atlas",
+      "type": "emissive_atlas",
+      "basePath": "textures/hieroglyphs_atlas_all",
+      "formats": ["ktx2", "png"],
+      "source": "OpenGameArt CC0 / Noto Egyptian Hieroglyphs",
+      "license": "CC0",
+      "status": "production"
+    }
+  ],
+  "audio": [
+    {
+      "category": "sfx_kenney",
+      "path": "audio/sfx_*.ogg",
+      "count": 17,
+      "source": "Kenney CC0 Audio",
+      "license": "CC0",
+      "status": "production"
+    },
+    {
+      "category": "foley_real",
+      "path": "audio/real_*.ogg",
+      "count": 13,
+      "source": "Kenney RPG Audio / Freesound CC0",
+      "license": "CC0",
+      "status": "production"
+    },
+    {
+      "category": "procedural_synth",
+      "module": "src/audio/ProceduralCueLibrary.ts",
+      "count": 32,
+      "source": "WebAudioEngine Pure Synthesis",
+      "license": "Project Code",
+      "status": "production"
+    }
+  ]
+}

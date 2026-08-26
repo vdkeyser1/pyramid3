@@ -36,7 +36,7 @@ import { createLodManager, type LodManager } from '@/rendering/LodManager.js';
 import { createPlacedOilLamp } from '@/rendering/EgyptianOilLamp.js';
 import { ShadowMapOptimizer } from '@/rendering/ShadowMapOptimizer.js';
 import type { AssetLoader } from '@/rendering/AssetLoader.js';
-import type { ParticleBurst } from '@/rendering/Vfx.js';
+import type { ParticleBurst, SmokePlume, DustMotes } from '@/rendering/Vfx.js';
 import type { PhysicsKinematicBox, PhysicsWorld } from '@/physics/PhysicsWorld.js';
 import type { FloorSceneLayout } from '@/world/FloorSceneLayout.js';
 import { createFrustumCuller } from '@/rendering/FrustumCuller.js';
@@ -112,6 +112,9 @@ export function createThreeRenderer(
   let sparkBurst: ParticleBurst | null = null;
   // G-15 V2: trail a falce per i colpi corpo-a-corpo.
   let weaponTrail: { mesh: THREE.Mesh; slash(position: { readonly x: number; readonly y: number; readonly z: number }, yaw: number): void; update(deltaMs: number): boolean } | null = null;
+  // P02: fumo d'incenso per bracieri e pulviscolo dorato tombale
+  const brazierSmokePlumes = new Map<string, SmokePlume>();
+  let dustMotes: DustMotes | null = null;
   /** Un viewmodel per tipo d'arma; solo quello attivo è visibile. */
   const weaponViewmodels = new Map<string, {
     readonly group: THREE.Group;
@@ -728,10 +731,16 @@ export function createThreeRenderer(
 
     // G-15: fiamme procedurali — la fiamma in mano segue la camera (viewmodel),
     // quella posata segue il mesh della torcia posata.
-    const { createTorchFlame, createParticleBurst, createWeaponTrail } = await import('@/rendering/Vfx.js');
+    const { createTorchFlame, createParticleBurst, createWeaponTrail, createDustMotes } = await import('@/rendering/Vfx.js');
+    const { enableMeshBvhExtension } = await import('@/rendering/MeshBvhHelper.js');
+    enableMeshBvhExtension();
     const hand = createTorchFlame();
     hand.group.visible = false;
     handFlame = hand;
+
+    // P02: pulviscolo dorato millenario sospeso nelle camere della piramide
+    dustMotes = createDustMotes();
+    scene.add(dustMotes.points);
 
     // Braccio con la torcia: prima la fiamma fluttuava davanti alla camera
     // senza nulla che la reggesse. Ora è agganciata in cima al bastone, così
@@ -1274,6 +1283,8 @@ export function createThreeRenderer(
     lodManager?.clear();
     shadowMapOptimizer?.forceUpdate();
     brazierRoot.clear();
+    for (const smoke of brazierSmokePlumes.values()) smoke.dispose();
+    brazierSmokePlumes.clear();
     brazierLights.clear();
     brazierMaterials.clear();
     digSiteMarker = null;
@@ -1551,6 +1562,21 @@ export function createThreeRenderer(
 
       brazierLights.set(brazier.brazierId, light);
       brazierMaterials.set(brazier.brazierId, brazierMaterial);
+
+      // P02: pennacchio di fumo d'incenso che sale dal braciere egizio
+      try {
+        const { createSmokePlume } = await import('@/rendering/Vfx.js');
+        const smoke = createSmokePlume({
+          x: brazier.position.x,
+          y: brazier.position.y + 0.88,
+          z: brazier.position.z,
+        });
+        smoke.setIntensity(0.08); // fumo leggero prima dell'accensione
+        brazierRoot.add(smoke.points);
+        brazierSmokePlumes.set(brazier.brazierId, smoke);
+      } catch {
+        // Fallback silenzioso
+      }
     }
 
     if (layout.digSite) {
@@ -1731,6 +1757,10 @@ export function createThreeRenderer(
 
     sparkBurst?.update(deltaMs);
     weaponTrail?.update(deltaMs);
+    dustMotes?.update(deltaMs, camera.position);
+    for (const smoke of brazierSmokePlumes.values()) {
+      smoke.update(deltaMs);
+    }
 
     // G-05: il reliquiario fluttua e ruota lentamente (attira l'occhio)
     if (lootReliquary) {
@@ -2404,6 +2434,10 @@ export function createThreeRenderer(
     bloomPass = null;
     webgpuPipeline?.dispose();
     webgpuPipeline = null;
+    dustMotes?.dispose();
+    dustMotes = null;
+    for (const smoke of brazierSmokePlumes.values()) smoke.dispose();
+    brazierSmokePlumes.clear();
     renderer.dispose();
     scene.clear();
     log.info('Three.js renderer disposed');
@@ -2453,6 +2487,7 @@ export function createThreeRenderer(
       for (const state of states) {
         const light = brazierLights.get(state.brazierId);
         const material = brazierMaterials.get(state.brazierId);
+        const smoke = brazierSmokePlumes.get(state.brazierId);
         if (light) {
           light.position.set(state.x, state.y + 0.72, state.z);
           light.visible = state.lit;
@@ -2460,6 +2495,9 @@ export function createThreeRenderer(
         }
         if (material) {
           material.emissiveIntensity = state.lit ? (state.refillUsed ? 0.7 : 1.05) : 0.22;
+        }
+        if (smoke) {
+          smoke.setIntensity(state.lit ? (state.refillUsed ? 0.65 : 1.0) : 0.08);
         }
       }
     },

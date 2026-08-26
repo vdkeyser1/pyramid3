@@ -76,33 +76,110 @@ export function buildStatue(material: THREE.Material): THREE.Group {
   return g;
 }
 
-/**
- * Sarcofago antropomorfo: cassa rastremata con la testa più larga dei piedi,
- * come le bare egizie reali. Sostituisce una BoxGeometry uniforme.
- */
-export function buildSarcophagus(material: THREE.Material): THREE.Group {
-  const g = new THREE.Group();
+export type SarcophagusVariant = 'CLOSED' | 'OPEN' | 'BROKEN' | 'ROYAL_GOLD';
 
-  // Cassa: usa un cilindro a 8 lati schiacciato per ottenere la rastremazione
-  // (larga alle spalle, stretta ai piedi) senza geometria custom.
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.34, 2.05, 8), material);
+/**
+ * Sarcofago egizio antropomorfo procedurale con 4 varianti:
+ *  - CLOSED: cassa sigillata intatta;
+ *  - OPEN: coperchio scoperchiato di sbieco con cavità interna;
+ *  - BROKEN: cassa spaccata e frammenti di pietra sparsi;
+ *  - ROYAL_GOLD: cassa dorata con maschera funeraria, barba cerimoniale e scettro.
+ */
+export function buildSarcophagus(
+  material: THREE.Material,
+  variant: SarcophagusVariant = 'CLOSED',
+  goldMaterial?: THREE.Material,
+): THREE.Group {
+  const g = new THREE.Group();
+  const mat = material;
+  const accentMat = goldMaterial ?? material;
+
+  // Cassa principale rastremata
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.34, 2.05, 8), mat);
   body.rotation.z = Math.PI / 2;
   body.scale.set(1, 1, 0.62);
   body.position.y = 0.34;
   g.add(body);
 
-  // Coperchio bombato, leggermente più corto della cassa.
-  const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.30, 1.95, 8, 1, false, 0, Math.PI), material);
-  lid.rotation.set(0, 0, Math.PI / 2);
-  lid.scale.set(1, 1, 0.62);
-  lid.position.y = 0.60;
-  g.add(lid);
+  if (variant === 'OPEN') {
+    // Coperchio scoperchiato e traslato di sbieco
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.30, 1.95, 8, 1, false, 0, Math.PI), mat);
+    lid.rotation.set(0.12, 0.25, Math.PI / 2);
+    lid.scale.set(1, 1, 0.62);
+    lid.position.set(0.2, 0.62, 0.38);
+    g.add(lid);
 
-  // Testa scolpita all'estremità larga: è il dettaglio che dice "antropomorfo".
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), material);
-  head.scale.set(1, 1.15, 0.75);
-  head.position.set(-0.92, 0.62, 0);
-  g.add(head);
+    // Testa scolpita sul coperchio traslato
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), mat);
+    head.scale.set(1, 1.15, 0.75);
+    head.position.set(-0.72, 0.64, 0.38);
+    g.add(head);
+
+    // Cavità interna scura
+    const cavityMat = new THREE.MeshBasicMaterial({ color: 0x070605 });
+    const cavity = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.48), cavityMat);
+    cavity.rotation.x = -Math.PI / 2;
+    cavity.position.set(0, 0.42, 0);
+    g.add(cavity);
+  } else if (variant === 'BROKEN') {
+    // Coperchio spezzato a metà
+    const halfLid = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.38, 0.95, 8, 1, false, 0, Math.PI), mat);
+    halfLid.rotation.set(-0.15, 0.1, Math.PI / 2);
+    halfLid.scale.set(1, 1, 0.62);
+    halfLid.position.set(0.45, 0.52, 0.12);
+    g.add(halfLid);
+
+    // Frammenti di pietra sparsi attorno
+    for (let i = 0; i < 4; i++) {
+      const shard = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.12, 0.28), mat);
+      const angle = (i * Math.PI) / 2 + 0.3;
+      shard.position.set(Math.cos(angle) * 0.85, 0.06, Math.sin(angle) * 0.55);
+      shard.rotation.set(0.2 * i, 0.5 * i, 0.1 * i);
+      g.add(shard);
+    }
+  } else if (variant === 'ROYAL_GOLD') {
+    // Coperchio intatto con maschera dorata
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.30, 1.95, 8, 1, false, 0, Math.PI), accentMat);
+    lid.rotation.set(0, 0, Math.PI / 2);
+    lid.scale.set(1, 1, 0.62);
+    lid.position.y = 0.60;
+    g.add(lid);
+
+    // Maschera funeraria faraonica (Nemes)
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), accentMat);
+    head.scale.set(1.1, 1.25, 0.85);
+    head.position.set(-0.92, 0.64, 0);
+    g.add(head);
+
+    // Barba cerimoniale faraonica
+    const beard = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.02, 0.28, 6), accentMat);
+    beard.rotation.z = Math.PI / 2 + 0.25;
+    beard.position.set(-1.18, 0.52, 0);
+    g.add(beard);
+
+    // Scettri regali incrociati sul petto (Flagello e Bastone pastorale)
+    const scepter1 = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.65, 6), accentMat);
+    scepter1.rotation.set(0.4, 0, 0.6);
+    scepter1.position.set(-0.45, 0.72, 0);
+    g.add(scepter1);
+
+    const scepter2 = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.65, 6), accentMat);
+    scepter2.rotation.set(-0.4, 0, 0.6);
+    scepter2.position.set(-0.45, 0.72, 0);
+    g.add(scepter2);
+  } else {
+    // CLOSED standard
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.30, 1.95, 8, 1, false, 0, Math.PI), mat);
+    lid.rotation.set(0, 0, Math.PI / 2);
+    lid.scale.set(1, 1, 0.62);
+    lid.position.y = 0.60;
+    g.add(lid);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), mat);
+    head.scale.set(1, 1.15, 0.75);
+    head.position.set(-0.92, 0.62, 0);
+    g.add(head);
+  }
 
   for (const child of g.children) {
     child.castShadow = true;

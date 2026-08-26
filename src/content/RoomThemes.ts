@@ -40,10 +40,16 @@ export type RoomTheme =
   /** Sacra: altari, simmetria, silenzio, luce dorata. */
   | 'SACRED'
   /** Infestata: scarabei, ragnatele, ossa. */
-  | 'INFESTED';
+  | 'INFESTED'
+  /** Astronomica: volta stellata, costellazioni egizie, geroglifici solari. */
+  | 'ASTRONOMICAL'
+  /** Cripta del tesoro: soffitto a cassettoni, lastroni squadrati e decorati. */
+  | 'TREASURE_VAULT'
+  /** Grande galleria: architravi monolitici in pietra a intervalli regolari. */
+  | 'GREAT_GALLERY';
 
 /** Variante del soffitto. */
-export type CeilingVariant = 'FLAT_STONE' | 'STARRY' | 'COLLAPSED' | 'HIGH_VAULT';
+export type CeilingVariant = 'FLAT_STONE' | 'STARRY' | 'COLLAPSED' | 'HIGH_VAULT' | 'COFFERED' | 'BEAMED';
 /** Variante del pavimento. */
 export type FloorVariant = 'SAND' | 'SLABS' | 'RUBBLE' | 'DEEP_SAND';
 /** Densità delle decorazioni. */
@@ -101,6 +107,18 @@ const PRESETS: Record<RoomTheme, ThemePreset> = {
     theme: 'INFESTED', ceiling: 'FLAT_STONE', floor: 'RUBBLE', props: 'DENSE',
     lightScale: 0.6, columns: true, label: 'Camera infestata',
   },
+  ASTRONOMICAL: {
+    theme: 'ASTRONOMICAL', ceiling: 'STARRY', floor: 'SLABS', props: 'NORMAL',
+    lightScale: 1.2, columns: true, label: 'Camera astronomica',
+  },
+  TREASURE_VAULT: {
+    theme: 'TREASURE_VAULT', ceiling: 'COFFERED', floor: 'SLABS', props: 'DENSE',
+    lightScale: 1.1, columns: true, label: 'Cripta del tesoro',
+  },
+  GREAT_GALLERY: {
+    theme: 'GREAT_GALLERY', ceiling: 'BEAMED', floor: 'SLABS', props: 'NORMAL',
+    lightScale: 1.05, columns: true, label: 'Grande galleria',
+  },
 };
 
 /**
@@ -112,17 +130,17 @@ const PRESETS: Record<RoomTheme, ThemePreset> = {
  * perché sono la maggioranza e vanno differenziate il più possibile.
  */
 const ALLOWED: Record<RoomRole, readonly RoomTheme[]> = {
-  ENTRY:    ['PLAIN', 'SACRED'],
-  EXIT:     ['PLAIN', 'ROYAL', 'SACRED'],
-  SAFE:     ['PLAIN', 'SACRED'],
-  COMBAT:   ['PLAIN', 'FUNERARY', 'COLLAPSED', 'SAND_FILLED', 'PLUNDERED', 'INFESTED'],
+  ENTRY:    ['PLAIN', 'SACRED', 'GREAT_GALLERY'],
+  EXIT:     ['PLAIN', 'ROYAL', 'SACRED', 'GREAT_GALLERY'],
+  SAFE:     ['PLAIN', 'SACRED', 'ASTRONOMICAL'],
+  COMBAT:   ['PLAIN', 'GREAT_GALLERY', 'FUNERARY', 'PLUNDERED', 'COLLAPSED', 'SAND_FILLED', 'INFESTED'],
   TOOL:     ['PLAIN', 'PLUNDERED', 'COLLAPSED'],
-  MAP:      ['PLAIN', 'FUNERARY', 'SACRED'],
-  TREASURE: ['ROYAL', 'FUNERARY', 'PLUNDERED'],
+  MAP:      ['PLAIN', 'FUNERARY', 'SACRED', 'ASTRONOMICAL'],
+  TREASURE: ['ROYAL', 'TREASURE_VAULT', 'FUNERARY', 'PLUNDERED'],
   FORGE:    ['PLAIN', 'SACRED'],
-  OPTIONAL: ['COLLAPSED', 'SAND_FILLED', 'INFESTED', 'PLUNDERED'],
-  JUNCTION: ['PLAIN', 'SAND_FILLED', 'COLLAPSED'],
-  STAIR:    ['PLAIN', 'COLLAPSED'],
+  OPTIONAL: ['COLLAPSED', 'SAND_FILLED', 'INFESTED', 'PLUNDERED', 'ASTRONOMICAL', 'TREASURE_VAULT'],
+  JUNCTION: ['PLAIN', 'GREAT_GALLERY', 'SAND_FILLED', 'COLLAPSED'],
+  STAIR:    ['PLAIN', 'GREAT_GALLERY', 'COLLAPSED'],
 };
 
 /** Hash intero a 32 bit, stessa famiglia usata altrove nel progetto. */
@@ -139,28 +157,28 @@ function hash(a: number, b: number): number {
  *
  * Scendendo, i temi di abbandono diventano più probabili: i piani alti sono
  * le zone nobili della piramide, quelli profondi sono cripte dimenticate.
- * L'inclinazione si ottiene scartando il primo tema ammesso (sempre il più
- * "in ordine") con probabilità crescente, non con una tabella per piano.
+ * L'inclinazione si ottiene scartando i primi temi integri a favore dei successivi.
  */
 export function themeForRoom(
   floorIndex: number,
   roomId: number,
   role: RoomRole,
 ): RoomTheme {
-  // ALLOWED copre tutti i valori di RoomRole (unione chiusa), quindi non
-  // serve un ramo per ruolo sconosciuto: TypeScript lo garantisce.
   const allowed = ALLOWED[role];
   if (allowed.length === 1) return allowed[0] ?? 'PLAIN';
 
   const h = hash(floorIndex * 977 + roomId, roomId * 31 + floorIndex);
   let index = h % allowed.length;
 
-  // Bias di profondità: sui piani bassi il primo tema (quello "integro")
-  // viene scartato più spesso a favore dei successivi.
+  // Bias di profondità: sui piani profondi i temi integri (primi indici)
+  // lasciano il posto ai temi di rovina/abbandono (ultimi indici).
   const depth = Math.max(0, Math.min(1, (floorIndex - 1) / 9));
-  if (index === 0 && depth > 0.35) {
+  if (depth > 0.15) {
     const roll = ((h >>> 8) % 100) / 100;
-    if (roll < depth) index = 1 + ((h >>> 16) % (allowed.length - 1));
+    if (index < Math.floor(allowed.length / 2) && roll < depth * 0.85) {
+      const ruinedStart = Math.floor(allowed.length / 2);
+      index = ruinedStart + ((h >>> 16) % (allowed.length - ruinedStart));
+    }
   }
 
   return allowed[index] ?? 'PLAIN';

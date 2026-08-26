@@ -410,6 +410,83 @@ export function getProceduralCueProfile(name: string): ProceduralCueProfile {
         noise: true,
         noiseLowpassHz: 420,
       };
+    // ── Trappole e ambienti della piramide (P04) ───────────────────────────
+    case 'trap_blade_whoosh':
+      // Pendolo a lama: fendente sibilante nell'aria del corridoio
+      return {
+        waveform: 'sawtooth',
+        frequencyHz: 420,
+        endFrequencyHz: 180,
+        durationSeconds: 0.35,
+        attackSeconds: 0.02,
+        releaseSeconds: 0.22,
+        gain: 0.14,
+        noise: true,
+        noiseLowpassHz: 1600,
+      };
+    case 'trap_spikes_extend':
+      // Piastra a pressione: scatto fulmineo di punte in bronzo
+      return {
+        waveform: 'square',
+        frequencyHz: 680,
+        endFrequencyHz: 120,
+        durationSeconds: 0.16,
+        attackSeconds: 0.003,
+        releaseSeconds: 0.1,
+        gain: 0.16,
+        noise: true,
+        noiseLowpassHz: 2200,
+      };
+    case 'trap_boulder_rumble':
+      // Masso rotolante: rombo cupo e continuativo sulla pietra
+      return {
+        waveform: 'sawtooth',
+        frequencyHz: 64,
+        endFrequencyHz: 48,
+        durationSeconds: 0.9,
+        attackSeconds: 0.08,
+        releaseSeconds: 0.45,
+        gain: 0.18,
+        noise: true,
+        noiseLowpassHz: 320,
+      };
+    case 'trap_lever_pull':
+      // Leva: scatto di contrappeso e attrito del sigillo di pietra
+      return {
+        waveform: 'triangle',
+        frequencyHz: 220,
+        endFrequencyHz: 90,
+        durationSeconds: 0.6,
+        attackSeconds: 0.01,
+        releaseSeconds: 0.35,
+        gain: 0.13,
+        noise: true,
+        noiseLowpassHz: 750,
+      };
+    case 'relic_chime':
+      // Manufatto sacro / canopo: risonanza armonica dorata
+      return {
+        waveform: 'sine',
+        frequencyHz: 784, // Sol5
+        endFrequencyHz: 1568, // Sol6
+        durationSeconds: 1.2,
+        attackSeconds: 0.005,
+        releaseSeconds: 0.75,
+        gain: 0.15,
+      };
+    case 'sand_pour':
+      // Sabbia che filtra dal soffitto: fruscio granulare delicato
+      return {
+        waveform: 'triangle',
+        frequencyHz: 160,
+        endFrequencyHz: 110,
+        durationSeconds: 0.8,
+        attackSeconds: 0.08,
+        releaseSeconds: 0.4,
+        gain: 0.06,
+        noise: true,
+        noiseLowpassHz: 1100,
+      };
     default:
       return DEFAULT_CUE;
   }
