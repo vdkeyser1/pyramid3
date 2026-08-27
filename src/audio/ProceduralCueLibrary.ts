@@ -195,6 +195,7 @@ export function getProceduralCueProfile(name: string): ProceduralCueProfile {
         gain: 0.14,
       };
     case 'door_creak':
+    case 'stone_door':
       return {
         waveform: 'sawtooth',
         frequencyHz: 90,
@@ -205,6 +206,75 @@ export function getProceduralCueProfile(name: string): ProceduralCueProfile {
         gain: 0.09,
         noise: true,
         noiseLowpassHz: 500,
+      };
+    case 'trap_trigger':
+      return {
+        waveform: 'square',
+        frequencyHz: 140,
+        endFrequencyHz: 70,
+        durationSeconds: 0.28,
+        attackSeconds: 0.005,
+        releaseSeconds: 0.14,
+        gain: 0.16,
+        noise: true,
+        noiseLowpassHz: 1400,
+      };
+    case 'torch_ignite':
+      return {
+        waveform: 'triangle',
+        frequencyHz: 180,
+        endFrequencyHz: 420,
+        durationSeconds: 0.5,
+        attackSeconds: 0.01,
+        releaseSeconds: 0.22,
+        gain: 0.15,
+        noise: true,
+        noiseLowpassHz: 1800,
+      };
+    case 'desert_wind':
+      return {
+        waveform: 'sawtooth',
+        frequencyHz: 70,
+        durationSeconds: 4.0,
+        attackSeconds: 0.4,
+        releaseSeconds: 0.8,
+        gain: 0.07,
+        noise: true,
+        noiseLowpassHz: 700,
+      };
+    case 'tomb_drip':
+      return {
+        waveform: 'sine',
+        frequencyHz: 1900,
+        endFrequencyHz: 900,
+        durationSeconds: 0.22,
+        attackSeconds: 0.01,
+        releaseSeconds: 0.16,
+        gain: 0.08,
+        noise: true,
+        noiseLowpassHz: 2400,
+      };
+    case 'sacred_hum':
+      return {
+        waveform: 'sine',
+        frequencyHz: 110,
+        endFrequencyHz: 165,
+        durationSeconds: 3.5,
+        attackSeconds: 0.5,
+        releaseSeconds: 0.8,
+        gain: 0.06,
+      };
+    case 'infested_chitter':
+      return {
+        waveform: 'square',
+        frequencyHz: 420,
+        endFrequencyHz: 880,
+        durationSeconds: 0.18,
+        attackSeconds: 0.005,
+        releaseSeconds: 0.08,
+        gain: 0.05,
+        noise: true,
+        noiseLowpassHz: 3200,
       };
     case 'ui_click':
       return {

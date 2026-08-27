@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { walkableAreaM2 } from '@/ai/navigation/RecastNavMesh.js';
+import { walkableAreaM2, bakeNavMeshFromSurfaces } from '@/ai/navigation/RecastNavMesh.js';
 import { hdriUrlForResolution, selectTierConfig, type Capabilities } from '@/config/PerformanceTiers.js';
-import { ambienceKindForTheme, wantsDesertWind, wantsTombDrip } from '@/audio/AmbienceTheme.js';
+import { ambienceKindForTheme, ambienceCueForKind, wantsDesertWind, wantsTombDrip } from '@/audio/AmbienceTheme.js';
 
 function caps(tier: 'low' | 'medium' | 'high'): Capabilities {
   return {
@@ -39,6 +39,10 @@ describe('RecastNavMesh helpers (G-28)', () => {
       { minX: 0, minZ: 0, maxX: 2, maxZ: 2 },
     ])).toBe(44);
   });
+
+  it('bakeNavMeshFromSurfaces con lista vuota ritorna null', async () => {
+    expect(await bakeNavMeshFromSurfaces([])).toBeNull();
+  });
 });
 
 describe('AmbienceTheme (G-26)', () => {
@@ -47,5 +51,12 @@ describe('AmbienceTheme (G-26)', () => {
     expect(wantsDesertWind('desert')).toBe(true);
     expect(wantsTombDrip('tomb')).toBe(true);
     expect(ambienceKindForTheme('FUNERARY')).toBe('tomb');
+  });
+
+  it('assegna un cue play() per ogni kind', () => {
+    expect(ambienceCueForKind('desert')).toBe('desert_wind');
+    expect(ambienceCueForKind('tomb')).toBe('tomb_drip');
+    expect(ambienceCueForKind('sacred')).toBe('sacred_hum');
+    expect(ambienceCueForKind('infested')).toBe('infested_chitter');
   });
 });

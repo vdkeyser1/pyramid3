@@ -43,4 +43,16 @@ describe('RoomStreamingManager (G-31)', () => {
     expect(visible.get('a')).toBe(true);
     expect(visible.get('d')).toBe(false);
   });
+
+  it('register popola loadedCount e has()', () => {
+    const manager = new RoomStreamingManager({ maxHop: 2, maxLoaded: 12 });
+    expect(manager.loadedCount).toBe(0);
+    manager.register({
+      id: 'a',
+      setVisible() { /* no-op */ },
+      dispose() { /* no-op */ },
+    });
+    expect(manager.has('a')).toBe(true);
+    expect(manager.loadedCount).toBe(1);
+  });
 });

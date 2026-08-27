@@ -44,6 +44,10 @@ export class RoomStreamingManager {
     return this.loaded.size;
   }
 
+  has(id: string): boolean {
+    return this.loaded.has(id);
+  }
+
   register(handle: StreamedRoomHandle): void {
     this.loaded.set(handle.id, handle);
   }
@@ -78,10 +82,9 @@ export class RoomStreamingManager {
       const extra = [...this.loaded.entries()]
         .filter(([id]) => !needed.has(id))
         .slice(0, this.loaded.size - this.maxLoaded);
-      for (const [id, handle] of extra) {
+      for (const [, handle] of extra) {
         handle.setVisible(false);
         handle.dispose();
-        this.loaded.delete(id);
       }
     }
 

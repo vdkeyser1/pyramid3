@@ -216,6 +216,7 @@ import { generateInscription } from '@/content/inscriptions.js';
 import { findPath } from '@/ai/navigation/GridNavigator.js';
 import {
   bakeNavMeshFromBounds,
+  bakeNavMeshFromSurfaces,
   firstWaypoint,
   type RecastNavMeshHandle,
 } from '@/ai/navigation/RecastNavMesh.js';
@@ -508,6 +509,7 @@ export function createGameApplication(
   let mummyHitFlashUntilMs = 0;
   // G-18: cooldown dei passi sulla sabbia (ms).
   let footstepCooldownMs = 0;
+  let trapSfxCooldownMs = 0;
   const BRAZIER_INTERACT_RADIUS_M = 2.35;
   const DIG_SITE_INTERACT_RADIUS_M = 1.85;
   const PLACED_TORCH_PICKUP_RADIUS_M = 2.2;
@@ -1307,6 +1309,7 @@ export function createGameApplication(
     syncTorchPresentation();
     hud.showMessage('Torcia in pugno. La discesa comincia.', 2000);
     audio.play({ name: 'brazier_ignite', volume: 0.5 });
+    audio.play({ name: 'torch_ignite', volume: 0.45 });
     if (dailyContext) {
       const modNames = dailyContext.payload.modifiers
         .map((m: DailyModifier) => {
@@ -1700,16 +1703,12 @@ export function createGameApplication(
     floorNavGrid = buildNavGridFromBounds(regionsFromSceneLayout(layout));
     recastNav?.dispose();
     recastNav = null;
-    if (appFeatureFlags.recastNavmesh) {
-      void bakeNavMeshFromBounds(regionsFromSceneLayout(layout)).then((handle) => {
-        recastNav = handle;
-      });
-    }
     if (appFeatureFlags.roomStreaming) {
       roomStreaming = new RoomStreamingManager({
         maxHop: tierConfig.maxRoomHops,
         maxLoaded: 12,
       });
+      renderer?.bindRoomStreaming?.(roomStreaming);
     }
   }
 
@@ -1768,6 +1767,14 @@ export function createGameApplication(
         }
       : undefined;
     renderer?.setFloorLayout(layout, hooks);
+    if (appFeatureFlags.recastNavmesh) {
+      void renderer?.whenFloorLayoutReady?.().then(async () => {
+        const surfaces = renderer?.getNavBakeSurfaces?.() ?? [];
+        recastNav = surfaces.length > 0
+          ? await bakeNavMeshFromSurfaces(surfaces)
+          : await bakeNavMeshFromBounds(regionsFromSceneLayout(layout));
+      });
+    }
   }
 
   function tryHandleLeverInteract(
@@ -1779,6 +1786,7 @@ export function createGameApplication(
     if (!activated) return false;
     hud.showMessage('Leva tirata — il sigillo di pietra scende.', 2600);
     audio.play({ name: 'door_creak', volume: 0.7 });
+    audio.play({ name: 'stone_door', volume: 0.65 });
     return true;
   }
 
@@ -3268,6 +3276,10 @@ export function createGameApplication(
           name: 'door_creak', volume: 0.6,
           position: sliceState.sceneLayout.exitPosition,
         });
+        audio.play({
+          name: 'stone_door', volume: 0.55,
+          position: sliceState.sceneLayout.exitPosition,
+        });
         simulation.events.emit({
           kind: 'FLOOR_COMPLETE',
           data: {
@@ -3284,6 +3296,10 @@ export function createGameApplication(
         renderer?.interactDoor();
         audio.play({
           name: 'door_creak', volume: 0.6,
+          position: sliceState.sceneLayout.exitPosition,
+        });
+        audio.play({
+          name: 'stone_door', volume: 0.55,
           position: sliceState.sceneLayout.exitPosition,
         });
         hud.showContextualHint({
@@ -3781,7 +3797,12 @@ export function createGameApplication(
         // ART-006: trappole e leva — danno + animazioni mesh ogni tick fisso.
         if (trapSystem) {
           const trapDamageHp = trapSystem.tick(playerState.position.x, playerState.position.z);
+          trapSfxCooldownMs = Math.max(0, trapSfxCooldownMs - clock.tickDurationMs);
           if (trapDamageHp > 0) {
+            if (trapSfxCooldownMs <= 0) {
+              audio.play({ name: 'trap_trigger', volume: 0.55 });
+              trapSfxCooldownMs = 900;
+            }
             if (synergyHasTrapImmunity(synergyEffects)) {
               hud.showMessage('Sinergia: la trappola non ti tocca.', 900);
             } else {

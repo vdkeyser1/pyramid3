@@ -93,8 +93,39 @@ export async function bakeNavMeshFromMeshes(
 }
 
 /**
- * Bake da bounds 2D (stanze/corridoi) senza mesh di scena: un piano per regione.
+ * Bake da superfici pavimento reali (lastre visibili + gradini), non solo AABB.
  */
+export async function bakeNavMeshFromSurfaces(
+  surfaces: readonly {
+    readonly x: number;
+    readonly y: number;
+    readonly z: number;
+    readonly width: number;
+    readonly depth: number;
+  }[],
+): Promise<RecastNavMeshHandle | null> {
+  if (surfaces.length === 0) return null;
+  if (!recastReady && !(await initRecastRuntime())) return null;
+
+  try {
+    const THREE = await import('three');
+    const meshes: import('three').Mesh[] = [];
+    for (const s of surfaces) {
+      const w = Math.max(0.2, s.width);
+      const d = Math.max(0.2, s.depth);
+      const geo = new THREE.PlaneGeometry(w, d);
+      geo.rotateX(-Math.PI / 2);
+      const mesh = new THREE.Mesh(geo);
+      mesh.position.set(s.x, s.y, s.z);
+      mesh.updateMatrixWorld(true);
+      meshes.push(mesh);
+    }
+    return await bakeNavMeshFromMeshes(meshes);
+  } catch (error) {
+    log.warn('Bake Recast da superfici fallito', { error: String(error) });
+    return null;
+  }
+}
 export async function bakeNavMeshFromBounds(
   regions: readonly NavBounds[],
 ): Promise<RecastNavMeshHandle | null> {

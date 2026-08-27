@@ -195,6 +195,17 @@ export function createThreeRenderer(
   let initialized = false;
   let activeFloorLayout: FloorSceneLayout | null = null;
   let pendingTrapHooks: FloorLayoutTrapHooks | null = null;
+  let lastRoomBounds: import('@/rendering/FrustumCuller.js').RoomBounds[] = [];
+  let navBakeSurfaces: { x: number; y: number; z: number; width: number; depth: number }[] = [];
+  let roomStreamingRegistrar: {
+    clear(): void;
+    register(handle: {
+      readonly id: string;
+      setVisible(visible: boolean): void;
+      dispose(): void;
+    }): void;
+  } | null = null;
+  let floorLayoutReady: Promise<void> = Promise.resolve();
   /** GAME-ART-010: LOD props + shadow map condizionale (FeatureFlags). */
   const featureFlags = resolveFeatureFlags();
   const lodManager: LodManager | null = featureFlags.meshLod ? createLodManager() : null;
@@ -842,6 +853,51 @@ export function createThreeRenderer(
     });
   }
 
+  function disposeUniqueRoomGeometry(group: THREE.Group): void {
+    const toRemove: THREE.Object3D[] = [];
+    group.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const geom = child.geometry;
+      if (geom && geom.userData['shared'] !== true) {
+        geom.dispose();
+      }
+      toRemove.push(child);
+    });
+    group.clear();
+    void toRemove;
+  }
+
+  function makeStreamHandle(bounds: import('@/rendering/FrustumCuller.js').RoomBounds) {
+    let gpuDisposed = false;
+    return {
+      id: bounds.id,
+      setVisible(visible: boolean): void {
+        if (visible && gpuDisposed) {
+          const rebuild = bounds.group.userData['rebuild'] as (() => void) | undefined;
+          rebuild?.();
+          gpuDisposed = false;
+        }
+        bounds.group.visible = visible;
+      },
+      dispose(): void {
+        if (gpuDisposed) return;
+        disposeUniqueRoomGeometry(bounds.group);
+        gpuDisposed = true;
+        bounds.group.visible = false;
+      },
+    };
+  }
+
+  function syncRoomStreamingHandles(): void {
+    if (!roomStreamingRegistrar) return;
+    roomStreamingRegistrar.clear();
+    for (const bounds of lastRoomBounds) {
+      // Solo stanze (id numerico): i corridoi restano nel frustum.
+      if (bounds.id.includes('-')) continue;
+      roomStreamingRegistrar.register(makeStreamHandle(bounds));
+    }
+  }
+
   function setFloorLayout(
     layout: FloorSceneLayout | null,
     trapHooks?: FloorLayoutTrapHooks,
@@ -849,9 +905,10 @@ export function createThreeRenderer(
     activeFloorLayout = layout;
     pendingTrapHooks = trapHooks ?? null;
     if (!initialized || !layout) {
+      floorLayoutReady = Promise.resolve();
       return;
     }
-    void rebuildFloorLayout(layout);
+    floorLayoutReady = rebuildFloorLayout(layout);
   }
 
   /**
@@ -1302,15 +1359,24 @@ export function createThreeRenderer(
   }
 
   async function rebuildFloorLayout(layout: FloorSceneLayout): Promise<void> {
-    // Swap texture muri: arenaria chiara nei livelli bassi, scura in cripta.
-    const useDeepWall = layout.floorIndex >= 5;
+    // Swap texture muri: arenaria in anticamera, calcare in tomba, scuro in cripta.
+    const useLimestone = layout.floorIndex >= 3 && layout.floorIndex <= 6;
+    const useDeepWall = layout.floorIndex >= 7;
     const wPbr = loadPbrTextureSet(
-      useDeepWall ? 'textures/sandstone_dark_color.ktx2' : 'textures/sandstone_wall_color.ktx2',
-      useDeepWall ? 'textures/sandstone_dark_normal.ktx2' : 'textures/sandstone_wall_normal.ktx2',
+      useLimestone
+        ? 'textures/limestone_wall_color.ktx2'
+        : useDeepWall ? 'textures/sandstone_dark_color.ktx2' : 'textures/sandstone_wall_color.ktx2',
+      useLimestone
+        ? 'textures/limestone_wall_normal.ktx2'
+        : useDeepWall ? 'textures/sandstone_dark_normal.ktx2' : 'textures/sandstone_wall_normal.ktx2',
       // Stessa scala dei conci usata in init: blocchi da ~65 cm, non mattoni.
       1.6, 1.1,
-      useDeepWall ? 'textures/sandstone_dark_roughness.ktx2' : 'textures/sandstone_wall_roughness.ktx2',
-      useDeepWall ? 'textures/sandstone_dark_ao.ktx2' : 'textures/sandstone_wall_ao.ktx2',
+      useLimestone
+        ? 'textures/limestone_wall_roughness.ktx2'
+        : useDeepWall ? 'textures/sandstone_dark_roughness.ktx2' : 'textures/sandstone_wall_roughness.ktx2',
+      useLimestone
+        ? 'textures/limestone_wall_ao.ktx2'
+        : useDeepWall ? 'textures/sandstone_dark_ao.ktx2' : 'textures/sandstone_wall_ao.ktx2',
       backend === 'webgl2' ? renderer as THREE.WebGLRenderer : undefined,
     );
     if (wPbr.color) {
@@ -1322,7 +1388,7 @@ export function createThreeRenderer(
       if (wPbr.ao) wallMaterial.aoMapIntensity = 0.45;
       // Scendendo la pietra si scurisce: calcare chiaro in alto, granito
       // rossastro nelle camere profonde (come nella camera del re di Cheope).
-      wallMaterial.color.setHex(useDeepWall ? 0xA8896A : 0xC9B48C);
+      wallMaterial.color.setHex(useLimestone ? 0xD4C4A4 : useDeepWall ? 0xA8896A : 0xC9B48C);
       wallMaterial.needsUpdate = true;
     }
 
@@ -1424,6 +1490,11 @@ export function createThreeRenderer(
         });
       },
     }) ?? [];
+    lastRoomBounds = roomBounds;
+    const storedNav = dungeonRoot.userData['navSurfaces'];
+    navBakeSurfaces = Array.isArray(storedNav)
+      ? storedNav as { x: number; y: number; z: number; width: number; depth: number }[]
+      : [];
 
     // Pulviscolo in sospensione proporzionale alla profondità: l'aria si fa
     // più densa scendendo verso la base della piramide. Prima l'intensità era
@@ -1433,6 +1504,7 @@ export function createThreeRenderer(
     for (const bounds of roomBounds) {
       frustumCuller.registerRoom(bounds);
     }
+    syncRoomStreamingHandles();
 
     // G-14: carica i modelli .glb dei landmark dichiarati nel manifest e li
     // aggiunge sopra la primitiva placeholder (la copre visivamente). Se il
@@ -1459,6 +1531,14 @@ export function createThreeRenderer(
       decorGlyphMaterial = decorResult.glyphMaterial;
     } catch (error) {
       log.warn('Decorazione stanze non disponibile', { error: String(error) });
+    }
+
+    // G-22: ProceduralDecorator — props per archetipo (canopi/altare/trono/anfora).
+    try {
+      const { placeArchetypeDecor } = await import('@/rendering/ArchetypeDecor.js');
+      placeArchetypeDecor({ layout, dungeonRoot, wallMaterial });
+    } catch (error) {
+      log.warn('ArchetypeDecor non disponibile', { error: String(error) });
     }
 
     // GAME-ART-008: props della stanza speciale (arsenale / tesoreria / santuario).
@@ -1986,6 +2066,18 @@ export function createThreeRenderer(
           import('@/content/assets.js'),
         ]);
         const entry = ENEMY_ASSETS.find((e) => e.archetype === kind);
+        // G-30: anubis_executioner.glb è duplicato della statua — mesh procedurale distinta.
+        if (kind === 'ANUBIS_EXECUTIONER') {
+          const { createEgyptianAnubisExecutionerMesh } = await import(
+            '@/rendering/EgyptianAnubisMesh.js'
+          );
+          if (disposed) return;
+          const proc = createEgyptianAnubisExecutionerMesh({ scale: 1.0, eyeIntensity: 2.4 });
+          enemyModelCache.set(kind, proc);
+          enemyModelOffsets.set(kind, 0);
+          mountEnemyModel(visual, proc, 0);
+          return;
+        }
         // modelPath null è legittimo (es. WITNESS): resta la primitiva.
         if (!entry?.modelPath || disposed) {
           if (kind === 'MUMMY' || kind === 'ROYAL_MUMMY') {
@@ -2092,6 +2184,21 @@ export function createThreeRenderer(
     const built = createStaircase(origin, layout.exitDoorYawRad, wallMaterial, createStaticBox);
     dungeonRoot.add(built.group);
     staircase = built;
+    built.group.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const box = new THREE.Box3().setFromObject(child);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      if (size.y < 0.35 && size.x > 0.4 && size.z > 0.2) {
+        navBakeSurfaces.push({
+          x: center.x,
+          y: center.y,
+          z: center.z,
+          width: size.x,
+          depth: size.z,
+        });
+      }
+    });
   }
 
   /** Modello del braciere, condiviso da tutti i bracieri del piano. */
@@ -2170,15 +2277,33 @@ export function createThreeRenderer(
     // Animator sul clone: quattro dei sette GLB sono statici, quindi
     // createEnemyAnimator ritorna null e resta il respiro procedurale.
     void (async (): Promise<void> => {
-      const [{ createEnemyAnimator }, { getArtifactClips }] = await Promise.all([
+      const [{ createEnemyAnimator }, artifact] = await Promise.all([
         import('@/rendering/EnemyAnimator.js'),
         import('@/rendering/ArtifactLoader.js'),
       ]);
+      const { getArtifactClips, loadArtifact } = artifact;
       // `disposed` cambia durante l'await (TS non lo modella), e il modello
       // può essere stato rimpiazzato nel frattempo da un cambio piano.
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (disposed || visual.model !== clone) return;
-      const clips = getArtifactClips(`enemy_${visual.kind ?? ''}`);
+      let clips = getArtifactClips(`enemy_${visual.kind ?? ''}`);
+      const { HUMANOID_CLIP_RECIPIENTS } = await import('@/content/assets.js');
+      if (clips.length === 0 && (HUMANOID_CLIP_RECIPIENTS as readonly string[]).includes(visual.kind ?? '')) {
+        await loadArtifact({
+          id: 'enemy_MUMMY',
+          url: '/assets/enemies/mummy.glb',
+          displayName: 'MUMMY',
+          loreName: null,
+          rarity: 'common',
+          interactable: false,
+          scale: 1,
+          description: null,
+          source: 'procedural',
+        });
+        if (disposed || visual.model !== clone) return;
+        clips = getArtifactClips('enemy_MUMMY');
+        if (clips.length === 0) clips = getArtifactClips('enemy_ROYAL_MUMMY');
+      }
       visual.animator = createEnemyAnimator(clone, clips);
     })();
   }
@@ -2711,6 +2836,16 @@ export function createThreeRenderer(
     applyQualityProfile,
     setStreamedRoomIds(ids: ReadonlySet<string> | null): void {
       frustumCuller.setActiveRoomIds(ids);
+    },
+    bindRoomStreaming(manager): void {
+      roomStreamingRegistrar = manager;
+      syncRoomStreamingHandles();
+    },
+    getNavBakeSurfaces() {
+      return navBakeSurfaces;
+    },
+    whenFloorLayoutReady() {
+      return floorLayoutReady;
     },
     setLootReliquary,
     setShovelPickup,

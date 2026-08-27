@@ -32,3 +32,17 @@ export function wantsDesertWind(kind: AmbienceKind): boolean {
 export function wantsTombDrip(kind: AmbienceKind): boolean {
   return kind === 'tomb' || kind === 'infested' || kind === 'sacred';
 }
+
+/** Cue loop da passare a `audio.play()` per il tema corrente (G-26). */
+export function ambienceCueForKind(kind: AmbienceKind): string {
+  switch (kind) {
+    case 'desert':
+      return 'desert_wind';
+    case 'sacred':
+      return 'sacred_hum';
+    case 'infested':
+      return 'infested_chitter';
+    default:
+      return 'tomb_drip';
+  }
+}

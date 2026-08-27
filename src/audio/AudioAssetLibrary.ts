@@ -5,7 +5,7 @@
  *        procedurale (fallback silenzioso).
  * Ownership: audio. Pura: nessuna dipendenza da AudioContext/DOM.
  * Invarianti:
- *   - ogni variante punta a un file .ogg sotto /audio (public/);
+ *   - ogni variante punta a un file .ogg o .wav sotto /audio (public/);
  *   - almeno una variante per cue mappato;
  *   - il runtime NON fallisce se un file manca: il cue torna al procedurale.
  * Failure mode: asset assente ⇒ il cue suona con il profilo sintetico.
@@ -68,19 +68,40 @@ export const AUDIO_ASSET_MAP: Readonly<Record<string, readonly string[]>> = {
   // Sorgenti consigliate: Freesound.org CC0, OpenGameArt CC0.
   stone_door: [
     'audio/effects/stone_door_open.ogg',
+    // G-26: riuso Kenney se il foley dedicato manca.
+    'audio/real_door_creak_1.ogg',
+    'audio/real_door_creak_2.ogg',
+    'audio/real_door_creak_3.ogg',
   ],
   trap_trigger: [
     'audio/effects/trap_trigger.ogg',
+    'audio/sfx_hit_000.ogg',
+    'audio/sfx_hit_001.ogg',
+    'audio/sfx_hit_002.ogg',
   ],
   torch_ignite: [
     'audio/effects/torch_ignite.ogg',
+    'audio/sfx_confirmation_000.ogg',
+    'audio/sfx_confirmation_001.ogg',
   ],
-  // G-26: loop ambientali (file opzionali — fallback sintetico se assenti).
+  // G-26: loop ambientali (WAV/OGG — fallback sintetico se assenti).
   desert_wind: [
     'audio/ambience/desert_wind.ogg',
+    'audio/ambience/desert_wind.wav',
   ],
   tomb_drip: [
     'audio/ambience/tomb_drip.ogg',
+    'audio/ambience/tomb_drip.wav',
+  ],
+  sacred_hum: [
+    'audio/ambience/sacred_hum.ogg',
+    'audio/ambience/sacred_hum.wav',
+    'audio/ambience/tomb_drip.wav',
+  ],
+  infested_chitter: [
+    'audio/ambience/infested_chitter.ogg',
+    'audio/ambience/infested_chitter.wav',
+    'audio/ambience/tomb_drip.wav',
   ],
 };
 
@@ -89,7 +110,7 @@ export function validateAudioAssetMap(): boolean {
   for (const [cue, variants] of Object.entries(AUDIO_ASSET_MAP)) {
     if (cue.length === 0 || variants.length === 0) return false;
     for (const path of variants) {
-      if (!path.endsWith('.ogg')) return false;
+      if (!path.endsWith('.ogg') && !path.endsWith('.wav')) return false;
       if (!path.startsWith('audio/')) return false;
     }
   }

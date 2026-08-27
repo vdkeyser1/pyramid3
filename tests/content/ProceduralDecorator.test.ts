@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decorateRoom } from '@/content/ProceduralDecorator.js';
+import { decorateRoom, tilesFromBounds } from '@/content/ProceduralDecorator.js';
 import { getRoomArchetypeById } from '@/content/RoomArchetypes.js';
 
 describe('ProceduralDecorator (GAME-ART-010)', () => {
@@ -16,6 +16,15 @@ describe('ProceduralDecorator (GAME-ART-010)', () => {
     expect(a.props).toEqual(b.props);
     expect(a.torches).toEqual(b.torches);
     expect(a.clues).toEqual(archetype!.environmentalClues);
+  });
+
+  it('tilesFromBounds genera una griglia interna alla stanza', () => {
+    const tiles = tilesFromBounds(0, 0, 12, 12, 1.6);
+    expect(tiles.length).toBeGreaterThan(0);
+    for (const [tx, tz] of tiles) {
+      expect(tx * 3).toBeGreaterThanOrEqual(0);
+      expect(tz * 3).toBeGreaterThanOrEqual(0);
+    }
   });
 
   it('seed diversi producono disposizioni diverse (con abbastanza tile)', () => {

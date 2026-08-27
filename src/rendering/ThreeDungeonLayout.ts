@@ -159,6 +159,9 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
   // R-03: active room group — geometry goes here instead of dungeonRoot during
   // addRoom / addCorridor so the FrustumCuller can cull per-room.
   let _roomGroup: THREE.Group | null = null;
+  let allowPhysics = true;
+  let rebuilding = false;
+  const navSurfaces: { x: number; y: number; z: number; width: number; depth: number }[] = [];
 
   // GAME-ART-003/010: pavimenti batched in un solo InstancedMesh.
   const useInstancedFloors = resolveFeatureFlags().instancedFloors;
@@ -171,17 +174,25 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
   }
 
   function addFloorSlab(width: number, depth: number, x: number, z: number): void {
-    createStaticBox(x, -FLOOR_THICKNESS_M / 2, z, width / 2, FLOOR_THICKNESS_M / 2, depth / 2);
+    if (allowPhysics) {
+      createStaticBox(x, -FLOOR_THICKNESS_M / 2, z, width / 2, FLOOR_THICKNESS_M / 2, depth / 2);
+    }
+    if (!rebuilding) {
+      navSurfaces.push({ x, y: 0, z, width, depth });
+    }
     if (instancedFloors) {
-      floorTiles.push({
-        x,
-        y: 0,
-        z,
-        scaleX: width,
-        scaleZ: depth,
-      });
+      if (!rebuilding) {
+        floorTiles.push({
+          x,
+          y: 0,
+          z,
+          scaleX: width,
+          scaleZ: depth,
+        });
+      }
       return;
     }
+    if (rebuilding) return;
     addDungeonBox(width, FLOOR_THICKNESS_M, depth, x, -FLOOR_THICKNESS_M / 2, z, floorMaterial);
   }
 
@@ -210,7 +221,9 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
 
   function addWallSegment(width: number, height: number, depth: number, x: number, y: number, z: number): void {
     addDungeonBox(width, height, depth, x, y, z, wallMaterial, true);
-    createStaticBox(x, y, z, width / 2, height / 2, depth / 2);
+    if (allowPhysics) {
+      createStaticBox(x, y, z, width / 2, height / 2, depth / 2);
+    }
   }
 
   function addDirectionalWall(
@@ -663,6 +676,15 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
     _roomGroup = group;
     addRoom(room);
     _roomGroup = null;
+    group.userData['rebuild'] = (): void => {
+      rebuilding = true;
+      allowPhysics = false;
+      _roomGroup = group;
+      addRoom(room);
+      _roomGroup = null;
+      allowPhysics = true;
+      rebuilding = false;
+    };
     cullBounds.push({
       id: String(room.roomId),
       min: { x: room.bounds.minX, y: -FLOOR_THICKNESS_M, z: room.bounds.minZ },
@@ -713,6 +735,8 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
   if (instancedFloors) {
     instancedFloors.setFloorTiles(floorTiles);
   }
+
+  dungeonRoot.userData['navSurfaces'] = navSurfaces;
 
   return cullBounds;
 }

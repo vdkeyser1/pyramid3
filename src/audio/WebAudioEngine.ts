@@ -15,7 +15,7 @@ import {
 import { MUSIC_PRESET, type MusicState } from '@/audio/MusicPreset.js';
 import { AUDIO_ASSET_MAP } from '@/audio/AudioAssetLibrary.js';
 import { createReverbEngine, type ReverbEngine } from '@/audio/ReverbEngine.js';
-import { wantsDesertWind, wantsTombDrip, type AmbienceKind } from '@/audio/AmbienceTheme.js';
+import { wantsDesertWind, wantsTombDrip, ambienceCueForKind, type AmbienceKind } from '@/audio/AmbienceTheme.js';
 
 const log = createLogger('Audio');
 
@@ -27,6 +27,8 @@ export interface AudioCueRequest {
   readonly volume?: number;
   readonly playbackRate?: number;
   readonly position?: { readonly x: number; readonly y: number; readonly z: number };
+  /** Bus di destinazione (default sfx). I loop ambientali usano `ambience`. */
+  readonly bus?: AudioBus;
 }
 
 export interface AudioEngine {
@@ -232,6 +234,8 @@ export function createAudioEngine(): AudioEngine {
   }
 
   // G-18: drone ambientale persistente (2 oscillatori per layer, detuned).
+  let ambienceLoopId: number | null = null;
+  let lastAmbienceKind: AmbienceKind | null = null;
   let ambienceNodes: {
     oscillators: OscillatorNode[];
     gains: GainNode[];
@@ -697,14 +701,15 @@ export function createAudioEngine(): AudioEngine {
         panner.positionZ.value = cue.position.z;
       }
 
-      const sfxBus = buses.get('sfx') ?? buses.get('master');
+      const destBusName = cue.bus ?? 'sfx';
+      const destBus = buses.get(destBusName) ?? buses.get('master');
       if (panner) {
         output.connect(gain);
         gain.connect(panner);
-        panner.connect(sfxBus ?? ctx.destination);
+        panner.connect(destBus ?? ctx.destination);
       } else {
         output.connect(gain);
-        gain.connect(sfxBus ?? ctx.destination);
+        gain.connect(destBus ?? ctx.destination);
       }
 
       source.start(ctx.currentTime);
@@ -855,8 +860,28 @@ export function createAudioEngine(): AudioEngine {
 
     setAmbienceTheme(kind: AmbienceKind): void {
       if (!ctx || !unlocked || disposed) return;
-      this.setDesertWindActive(wantsDesertWind(kind));
-      this.setTombDripActive(wantsTombDrip(kind));
+      const cueName = ambienceCueForKind(kind);
+      const hasSample = (audioBuffers.get(cueName)?.length ?? 0) > 0
+        || (audioBuffers.get(kind === 'desert' ? 'desert_wind' : 'tomb_drip')?.length ?? 0) > 0;
+
+      // G-26: play() è obbligatorio sul cambio tema — anche in fallback sintetico
+      // il loop deve essere udibile (non solo i generatori wind/drip).
+      if (kind !== lastAmbienceKind || ambienceLoopId === null) {
+        if (ambienceLoopId !== null) {
+          this.stop(ambienceLoopId, 700);
+          ambienceLoopId = null;
+        }
+        ambienceLoopId = this.play({
+          name: cueName,
+          loop: true,
+          volume: 0.55,
+          bus: 'ambience',
+        });
+        lastAmbienceKind = kind;
+      }
+
+      this.setDesertWindActive(wantsDesertWind(kind) && !hasSample && ambienceLoopId === null);
+      this.setTombDripActive(wantsTombDrip(kind) && !hasSample && ambienceLoopId === null);
     },
 
     getAudioContext(): AudioContext | null {
@@ -879,6 +904,10 @@ export function createAudioEngine(): AudioEngine {
       stopTorchCrackle(ctx);
       stopDesertWind(ctx);
       stopTombDrip();
+      if (ambienceLoopId !== null) {
+        try { this.stop(ambienceLoopId); } catch { /* già fermato */ }
+        ambienceLoopId = null;
+      }
       disposeAmbience(ctx);
       disposeMusic(ctx);
       reverb?.dispose();

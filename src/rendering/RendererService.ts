@@ -221,6 +221,33 @@ export interface RendererHandle {
    */
   setStreamedRoomIds?(ids: ReadonlySet<string> | null): void;
 
+  /**
+   * G-31: registra i Group stanza sul RoomStreamingManager (dispose oltre hop).
+   * No-op se il manager è null.
+   */
+  bindRoomStreaming?(manager: {
+    clear(): void;
+    register(handle: {
+      readonly id: string;
+      setVisible(visible: boolean): void;
+      dispose(): void;
+    }): void;
+  } | null): void;
+
+  /**
+   * G-28: superfici pavimento reali (lastre + gradini) per il bake Recast.
+   */
+  getNavBakeSurfaces?(): readonly {
+    readonly x: number;
+    readonly y: number;
+    readonly z: number;
+    readonly width: number;
+    readonly depth: number;
+  }[];
+
+  /** Risolve quando rebuildFloorLayout ha finito (navmesh + streaming). */
+  whenFloorLayoutReady?(): Promise<void>;
+
   /** G-05: mostra/nasconde il reliquiario del tesoro dissotterrato (loot fisico). */
   setLootReliquary(position: { readonly x: number; readonly y: number; readonly z: number } | null): void;
 

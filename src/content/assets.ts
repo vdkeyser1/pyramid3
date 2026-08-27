@@ -55,7 +55,7 @@ export const ENEMY_ASSETS: readonly EnemyAssetEntry[] = [
   { archetype: 'SCARAB', modelPath: 'assets/enemies/scarab.glb', scale: 0.55, yOffset: 0.2, animated: false },
   { archetype: 'MUMMY', modelPath: 'assets/enemies/mummy.glb', scale: 1.0, yOffset: 0, animated: true },
   { archetype: 'COBRA', modelPath: 'assets/enemies/cobra.glb', scale: 0.8, yOffset: 0.1, animated: false },
-  { archetype: 'SHABTI', modelPath: 'assets/enemies/shabti.glb', scale: 1.15, yOffset: 0, animated: false },
+  { archetype: 'SHABTI', modelPath: 'assets/enemies/shabti.glb', scale: 1.15, yOffset: 0, animated: true },
   { archetype: 'PRIEST', modelPath: 'assets/enemies/priest.glb', scale: 1.05, yOffset: 0, animated: true },
   { archetype: 'SOBEK_SPAWN', modelPath: 'assets/enemies/sobek.glb', scale: 1.3, yOffset: 0, animated: false },
   { archetype: 'ROYAL_MUMMY', modelPath: 'assets/enemies/royal_mummy.glb', scale: 1.2, yOffset: 0, animated: true },
@@ -89,7 +89,16 @@ export const LANDMARK_ASSETS: readonly LandmarkAssetEntry[] = [
   { landmarkId: 'vaso-canopo-gigante', kind: 'relic', modelPath: null, scale: 1.0, yOffset: 0 },
 ];
 
-/** Lookup rapido per archetipo. */
+/** Archetipi umanoidi che possono riusare le clip Mixamo della mummia (G-24). */
+export const HUMANOID_CLIP_RECIPIENTS: readonly EnemyArchetype[] = [
+  'MUMMY',
+  'ROYAL_MUMMY',
+  'PRIEST',
+  'SHABTI',
+  'ANUBIS_EXECUTIONER',
+];
+
+/** Mixamo ancora da scaricare (account richiesto): Idle/Walk/Attack/Hit/Death per priest, shabti, anubis, plus quadrupedi scarab/cobra/sobek. */
 export function enemyAssetFor(archetype: EnemyArchetype): EnemyAssetEntry | null {
   return ENEMY_ASSETS.find((entry) => entry.archetype === archetype) ?? null;
 }

@@ -16,7 +16,7 @@ import {
   buildSarcophagus,
   buildStatue,
 } from '@/rendering/EgyptianLandmarks.js';
-import type { LodManager } from '@/rendering/LodManager.js';
+import { createGoldMaterial } from '@/rendering/Materials.js';
 
 const shared = new Map<string, THREE.BufferGeometry>();
 
@@ -40,7 +40,7 @@ function markShadows(root: THREE.Object3D): void {
 
 function materialFor(propId: string, wallMaterial: THREE.Material): THREE.Material {
   if (propId.includes('GOLD') || propId.includes('RA_') || propId.includes('SUN')) {
-    return new THREE.MeshStandardMaterial({ color: 0xc9a227, metalness: 0.65, roughness: 0.35 });
+    return createGoldMaterial();
   }
   if (propId.includes('ANUBIS') || propId.includes('STATUE') || propId.includes('SARCOPHAGUS')) {
     return new THREE.MeshStandardMaterial({ color: 0x2a2a32, metalness: 0.15, roughness: 0.75 });

@@ -28,7 +28,37 @@ export interface DecoResult {
   readonly clues: readonly string[];
 }
 
-const TILE_SIZE_M = 3;
+export const DECOR_TILE_SIZE_M = 3;
+
+/** Griglia di tile internamente alla stanza, con margine dalle pareti. */
+export function tilesFromBounds(
+  minX: number,
+  minZ: number,
+  maxX: number,
+  maxZ: number,
+  marginM = 1.6,
+): [number, number][] {
+  const tiles: [number, number][] = [];
+  const innerMinX = minX + marginM;
+  const innerMaxX = maxX - marginM;
+  const innerMinZ = minZ + marginM;
+  const innerMaxZ = maxZ - marginM;
+  if (innerMaxX <= innerMinX || innerMaxZ <= innerMinZ) return tiles;
+
+  const minTx = Math.floor(innerMinX / DECOR_TILE_SIZE_M);
+  const maxTx = Math.floor(innerMaxX / DECOR_TILE_SIZE_M);
+  const minTz = Math.floor(innerMinZ / DECOR_TILE_SIZE_M);
+  const maxTz = Math.floor(innerMaxZ / DECOR_TILE_SIZE_M);
+  for (let tx = minTx; tx <= maxTx; tx++) {
+    for (let tz = minTz; tz <= maxTz; tz++) {
+      const wx = tx * DECOR_TILE_SIZE_M;
+      const wz = tz * DECOR_TILE_SIZE_M;
+      if (wx < innerMinX || wx > innerMaxX || wz < innerMinZ || wz > innerMaxZ) continue;
+      tiles.push([tx, tz]);
+    }
+  }
+  return tiles;
+}
 
 const PROP_SETS: Record<string, readonly string[]> = {
   FUNERARY: ['sarcophagus', 'canopic_jar', 'bone_pile', 'torch'],
@@ -94,14 +124,14 @@ export function decorateRoom(
 
     const meshKey = propSet[Math.floor(rng.next() * propSet.length)] ?? 'amphora';
     if (meshKey === 'torch') {
-      torches.push([tx * TILE_SIZE_M, 2.5, tz * TILE_SIZE_M]);
+      torches.push([tx * DECOR_TILE_SIZE_M, 2.5, tz * DECOR_TILE_SIZE_M]);
     } else {
       props.push({
         meshKey,
         position: [
-          tx * TILE_SIZE_M + rng.range(-0.5, 0.5),
+          tx * DECOR_TILE_SIZE_M + rng.range(-0.5, 0.5),
           0,
-          tz * TILE_SIZE_M + rng.range(-0.5, 0.5),
+          tz * DECOR_TILE_SIZE_M + rng.range(-0.5, 0.5),
         ],
         rotation: [0, rng.range(0, Math.PI * 2), 0],
         scale: rng.range(0.85, 1.15),

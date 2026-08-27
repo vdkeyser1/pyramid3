@@ -18,7 +18,7 @@ describe('AudioAssetLibrary (G-19/Kenney)', () => {
     for (const variants of Object.values(AUDIO_ASSET_MAP)) {
       for (const path of variants) {
         expect(path.startsWith('audio/')).toBe(true);
-        expect(path.endsWith('.ogg')).toBe(true);
+        expect(path.endsWith('.ogg') || path.endsWith('.wav')).toBe(true);
       }
     }
   });
