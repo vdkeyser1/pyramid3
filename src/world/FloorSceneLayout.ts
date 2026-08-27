@@ -1,7 +1,26 @@
 import type { FloorModel } from '@/procedural/FloorModel.js';
 import type { RoomBounds, RoomId, RoomNode, RoomRole } from '@/procedural/FloorValidator.js';
 import { themeForRoom, type RoomTheme } from '@/content/RoomThemes.js';
-import { STAIRCASE } from '@/content/balance.js';
+import { STAIRCASE, TRAPS } from '@/content/balance.js';
+import { SPECIAL_ROOM_BY_ID } from '@/procedural/SpecialRooms.js';
+
+/** Mappa G-05 kind → tema ART-004 per forzare varietà nella stanza speciale. */
+function themeForSpecialKind(kind: string): RoomTheme | null {
+  switch (kind) {
+    case 'ARMORY':
+      return 'PLUNDERED';
+    case 'TREASURY':
+      return 'ROYAL';
+    case 'SHRINE':
+      return 'SACRED';
+    case 'VAULT':
+      return 'FUNERARY';
+    case 'LIBRARY':
+      return 'PLAIN';
+    default:
+      return null;
+  }
+}
 
 export interface SceneVector3 {
   readonly x: number;
@@ -63,6 +82,44 @@ export interface FloorSceneDoorway {
   readonly axis: 'x' | 'z';
 }
 
+/**
+ * ART-006 / GAME-ART-012: trappola di piano (piastra, pendolo, dardi, masso).
+ *
+ * La posizione è il centro della trappola sul pavimento (y = 0).
+ * corridorLengthM e corridorAxis servono a pendolo / dardi / masso.
+ */
+export interface FloorSceneTrap {
+  readonly trapId: string;
+  readonly kind: 'pressurePlate' | 'bladePendulum' | 'dartLauncher' | 'rollingBoulder';
+  readonly position: SceneVector3;
+  /** Pendolo / masso / dardi: lunghezza utile del corridoio o stanza. */
+  readonly corridorLengthM?: number;
+  /**
+   * Asse di movimento.
+   * Pendolo: asse del corridoio (oscillazione perpendicolare).
+   * Dardi: asse di fuoco dal launcher.
+   * Masso: asse di rotolamento lungo il corridoio.
+   */
+  readonly corridorAxis?: 'x' | 'z';
+}
+
+/**
+ * ART-006: posizione della leva e del sigillo di pietra corrispondente.
+ *
+ * Il sigillo è visivo-only (senza corpo fisico Rapier): il passaggio è sempre
+ * fisicamente libero, ma la lastra visiva lo occulta fino a che la leva non
+ * viene tirata. sealPosition.y è il centro della lastra nella posizione
+ * "chiusa" (in alto, che ostruisce la nicchia).
+ */
+export interface FloorSceneLeverPassage {
+  readonly leverId: string;
+  readonly leverPosition: SceneVector3;
+  /** Centro del sigillo quando è nella posizione "chiusa" (in alto). */
+  readonly sealPosition: SceneVector3;
+  readonly sealWidthM: number;
+  readonly sealDepthM: number;
+}
+
 export interface FloorSceneLayout {
   readonly floorId: string;
   /** v2: indice del piano (1..MAX_FLOORS) — fascia tematica per decor. */
@@ -97,6 +154,29 @@ export interface FloorSceneLayout {
   readonly digSite: FloorSceneDigSite | null;
   /** Posizione del pickup della pala (se presente in questo piano). */
   readonly shovelPickup: SceneVector3 | null;
+  /**
+   * ART-006: trappole presenti nel piano.
+   * Vuoto nei piani 1-2 (tutorial). Derivato deterministicamente dal seed.
+   */
+  readonly traps: readonly FloorSceneTrap[];
+  /**
+   * ART-006: meccanismo leva+sigillo del piano.
+   * null nei piani 1-2 e nei piani pari >= 4 (compare a rotazione).
+   */
+  readonly leverPassage: FloorSceneLeverPassage | null;
+  /**
+   * GAME-ART-008: props della stanza speciale (arsenale/tesoreria/santuario),
+   * già mappati in coordinate mondo. Vuoto se non c'è specialRoom.
+   */
+  readonly specialProps: readonly FloorSceneSpecialProp[];
+}
+
+/** Prop di SpecialRooms già risolto in mondo (per il placer rendering). */
+export interface FloorSceneSpecialProp {
+  readonly propId: string;
+  readonly position: SceneVector3;
+  readonly yawRad: number;
+  readonly scale: number;
 }
 
 const FLOOR_Y = 0;
@@ -199,6 +279,252 @@ function deriveBraziers(
   }
 
   return result;
+}
+
+/**
+ * ART-006 / GAME-ART-012: trappole del piano.
+ *
+ * Distribuzione deterministica (nessun Math.random):
+ *   Piastre: (roomId + floorIndex*3) % 5 === 0, esclusi ENTRY/EXIT; floor ≥ 2.
+ *   Pendoli: corridoi ≥ minCorridorLengthM (8 m); floor ≥ 2.
+ *   Dardi: (roomId + floorIndex*5) % 7 === 0, esclusi ENTRY/EXIT; floor ≥ 3.
+ *   Masso: corridoi ≥ 6 m e (from+to+floor) % 3 === 0, senza pendolo sullo stesso; floor ≥ 3.
+ */
+function deriveTraps(
+  floorId: string,
+  floorIndex: number,
+  rooms: readonly FloorSceneRoom[],
+  corridors: readonly FloorSceneCorridor[],
+  entryRoomId: RoomId,
+  exitRoomId: RoomId,
+  specialProps: readonly FloorSceneSpecialProp[],
+): FloorSceneTrap[] {
+  if (floorIndex < 2) return [];
+
+  const traps: FloorSceneTrap[] = [];
+  const pendulumCorridorKeys = new Set<string>();
+
+  for (const room of rooms) {
+    if (room.roomId === entryRoomId || room.roomId === exitRoomId) continue;
+    const roomNum = Number(room.roomId);
+    if ((roomNum + floorIndex * 3) % 5 !== 0) continue;
+
+    const xOff = ((roomNum * 7) % 5 - 2) * 0.55;
+    const zOff = ((roomNum * 11) % 5 - 2) * 0.55;
+
+    traps.push({
+      trapId: `${floorId}:trap:plate:${String(room.roomId)}`,
+      kind: 'pressurePlate',
+      position: {
+        x: room.center.x + xOff,
+        y: 0,
+        z: room.center.z + zOff,
+      },
+    });
+  }
+
+  for (const corridor of corridors) {
+    const length = corridor.axis === 'x'
+      ? corridor.bounds.maxX - corridor.bounds.minX
+      : corridor.bounds.maxZ - corridor.bounds.minZ;
+    if (length < TRAPS.bladePendulum.minCorridorLengthM) continue;
+
+    const centerX = (corridor.bounds.minX + corridor.bounds.maxX) / 2;
+    const centerZ = (corridor.bounds.minZ + corridor.bounds.maxZ) / 2;
+    const key = `${String(corridor.fromRoomId)}-${String(corridor.toRoomId)}`;
+    pendulumCorridorKeys.add(key);
+
+    traps.push({
+      trapId: `${floorId}:trap:pendulum:${key}`,
+      kind: 'bladePendulum',
+      position: { x: centerX, y: 0, z: centerZ },
+      corridorLengthM: length,
+      corridorAxis: corridor.axis,
+    });
+  }
+
+  // GAME-ART-012: dardi da nicchia (piani ≥ 3).
+  if (floorIndex >= TRAPS.dartLauncher.minFloorIndex) {
+    for (const room of rooms) {
+      if (room.roomId === entryRoomId || room.roomId === exitRoomId) continue;
+      const roomNum = Number(room.roomId);
+      if ((roomNum + floorIndex * 5) % 7 !== 0) continue;
+
+      const width = room.bounds.maxX - room.bounds.minX;
+      const depth = room.bounds.maxZ - room.bounds.minZ;
+      const fireAlongX = width >= depth;
+      const inset = 0.55;
+      const position = fireAlongX
+        ? {
+            x: room.bounds.minX + inset,
+            y: 0,
+            z: room.center.z + ((roomNum % 3) - 1) * 0.4,
+          }
+        : {
+            x: room.center.x + ((roomNum % 3) - 1) * 0.4,
+            y: 0,
+            z: room.bounds.minZ + inset,
+          };
+
+      traps.push({
+        trapId: `${floorId}:trap:dart:${String(room.roomId)}`,
+        kind: 'dartLauncher',
+        position,
+        corridorAxis: fireAlongX ? 'x' : 'z',
+        corridorLengthM: fireAlongX ? width : depth,
+      });
+    }
+  }
+
+  // GAME-ART-012: masso nei corridoi medi/lunghi senza pendolo.
+  if (floorIndex >= TRAPS.rollingBoulder.minFloorIndex) {
+    for (const corridor of corridors) {
+      const length = corridor.axis === 'x'
+        ? corridor.bounds.maxX - corridor.bounds.minX
+        : corridor.bounds.maxZ - corridor.bounds.minZ;
+      if (length < TRAPS.rollingBoulder.minCorridorLengthM) continue;
+
+      const key = `${String(corridor.fromRoomId)}-${String(corridor.toRoomId)}`;
+      if (pendulumCorridorKeys.has(key)) continue;
+      const fromN = Number(corridor.fromRoomId);
+      const toN = Number(corridor.toRoomId);
+      if ((fromN + toN + floorIndex) % 3 !== 0) continue;
+
+      const centerX = (corridor.bounds.minX + corridor.bounds.maxX) / 2;
+      const centerZ = (corridor.bounds.minZ + corridor.bounds.maxZ) / 2;
+
+      traps.push({
+        trapId: `${floorId}:trap:boulder:${key}`,
+        kind: 'rollingBoulder',
+        position: { x: centerX, y: 0, z: centerZ },
+        corridorLengthM: length,
+        corridorAxis: corridor.axis,
+      });
+    }
+  }
+
+  // GAME-ART-008: piastre dichiarate nei template SpecialRooms (es. tesoreria).
+  let plateExtra = 0;
+  for (const prop of specialProps) {
+    if (!prop.propId.includes('PRESSURE_PLATE')) continue;
+    traps.push({
+      trapId: `${floorId}:trap:special-plate:${plateExtra}`,
+      kind: 'pressurePlate',
+      position: { x: prop.position.x, y: 0, z: prop.position.z },
+    });
+    plateExtra += 1;
+  }
+
+  return traps;
+}
+
+/**
+ * GAME-ART-008: mappa i props del template SpecialRooms nella stanza host.
+ * Le coordinate template (tile, y = asse Z) sono normalizzate sul bounds reale.
+ */
+function deriveSpecialProps(
+  floor: FloorModel,
+  rooms: readonly FloorSceneRoom[],
+): FloorSceneSpecialProp[] {
+  const special = floor.specialRoom ?? null;
+  if (!special) return [];
+
+  const template = SPECIAL_ROOM_BY_ID.get(special.templateId);
+  if (!template) return [];
+
+  const host = rooms.find((r) => r.roomId === special.roomId);
+  if (!host) return [];
+
+  const width = Math.max(0.1, host.bounds.maxX - host.bounds.minX);
+  const depth = Math.max(0.1, host.bounds.maxZ - host.bounds.minZ);
+  const tw = Math.max(0.1, template.bounds.width);
+  const th = Math.max(0.1, template.bounds.height);
+
+  return template.props.map((prop) => {
+    const u = prop.position.x / tw;
+    const v = prop.position.y / th;
+    return {
+      propId: prop.propId,
+      position: {
+        x: host.bounds.minX + u * width,
+        y: FLOOR_Y,
+        z: host.bounds.minZ + v * depth,
+      },
+      yawRad: (prop.rotation * Math.PI) / 180,
+      scale: prop.scale,
+    };
+  });
+}
+
+/**
+ * ART-006: meccanismo leva+sigillo del piano.
+ *
+ * Seleziona la stanza più grande che abbia un landmark, escludendo entrata
+ * ed uscita. La leva è addossata alla parete nord-ovest; il sigillo di pietra
+ * è posizionato sul lato sud della stessa stanza, davanti a una nicchia
+ * immaginaria. Appare solo a partire dal piano TRAPS.lever.minFloorIndex (3).
+ *
+ * Il sigillo è visivo-only: il passaggio fisico non esiste, ma la lastra
+ * nera suggerisce al giocatore che c'è qualcosa di nascosto. Quando la leva
+ * viene tirata, TrapSystem anima la discesa della lastra (sealDropProgress).
+ */
+function deriveLeverPassage(
+  floorId: string,
+  floorIndex: number,
+  rooms: readonly FloorSceneRoom[],
+  entryRoomId: RoomId,
+  exitRoomId: RoomId,
+): FloorSceneLeverPassage | null {
+  // La leva compare solo nei piani avanzati e a rotazione (piani dispari >= 3).
+  if (floorIndex < TRAPS.lever.minFloorIndex) return null;
+  if (floorIndex % 2 === 0) return null; // Solo piani dispari: 3, 5, 7 …
+
+  // La stanza più grande con un landmark (escluse entrata ed uscita).
+  let bestRoom: FloorSceneRoom | null = null;
+  let bestArea = 0;
+  for (const room of rooms) {
+    if (room.roomId === entryRoomId || room.roomId === exitRoomId) continue;
+    if (!room.landmarkId) continue;
+    const area =
+      (room.bounds.maxX - room.bounds.minX) * (room.bounds.maxZ - room.bounds.minZ);
+    if (area > bestArea) {
+      bestArea = area;
+      bestRoom = room;
+    }
+  }
+  if (!bestRoom) return null;
+
+  const room = bestRoom;
+  const roomNum = Number(room.roomId);
+
+  // Leva: angolo nord-ovest della stanza, inset dalla parete.
+  const leverPosition: SceneVector3 = {
+    x: room.bounds.minX + 1.8,
+    y: 0,
+    z: room.bounds.minZ + 1.5,
+  };
+
+  // Sigillo: lato sud della stanza, leggermente sfalsato per varietà.
+  // L'offset laterale è deterministico: cambia da stanza a stanza.
+  const lateralOff = ((roomNum % 3) - 1) * 1.2; // -1.2, 0, +1.2
+  const sealW = Math.min(2.4, (room.bounds.maxX - room.bounds.minX) * 0.28);
+  const sealDepth = 0.35;
+
+  // sealPosition.y = metà altezza del sigillo quando è "chiuso":
+  // il sigillo copre l'altezza sealDropM, il centro è a sealDropM/2.
+  const sealPosition: SceneVector3 = {
+    x: room.center.x + lateralOff,
+    y: TRAPS.lever.sealDropM / 2,
+    z: room.bounds.maxZ - 1.2,
+  };
+
+  return {
+    leverId: `${floorId}:lever:${String(room.roomId)}`,
+    leverPosition,
+    sealPosition,
+    sealWidthM: sealW,
+    sealDepthM: sealDepth,
+  };
 }
 
 function centerOfBounds(bounds: RoomBounds, y: number): SceneVector3 {
@@ -373,6 +699,7 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
 
   const exitDirection = exitDirectionFor(floor, exitRoom);
   const targetRoom = selectTargetRoom(floor, roomIndex);
+  const special = floor.specialRoom ?? null;
   const rooms = floor.rooms.map((room) => {
     const openings = room.doors
       .map((doorId) => roomIndex.get(doorId))
@@ -383,6 +710,11 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
       openings.push(exitDirection);
     }
 
+    const forcedTheme =
+      special?.roomId === room.id
+        ? themeForSpecialKind(special.kind)
+        : null;
+
     return {
       roomId: room.id,
       role: room.role,
@@ -390,9 +722,8 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
       center: centerOfBounds(room.bounds, FLOOR_Y),
       landmarkId: room.landmarkId,
       openings,
-      // ART-004: tema deterministico da piano e stanza. Il vincolo per ruolo
-      // sta in RoomThemes: l'ingresso non può essere crollato o infestato.
-      theme: themeForRoom(floor.floorIndex, Number(room.id), room.role),
+      // ART-004 / GAME-ART-008: tema deterministico; stanza speciale forza il mood.
+      theme: forcedTheme ?? themeForRoom(floor.floorIndex, Number(room.id), room.role),
     };
   });
 
@@ -464,6 +795,25 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
     },
   }));
 
+  // ART-006 / GAME-ART-008: props speciali → trappole template → leva.
+  const specialProps = deriveSpecialProps(floor, rooms);
+  const traps = deriveTraps(
+    floor.floorId,
+    floor.floorIndex,
+    rooms,
+    corridors,
+    floor.entryRoomId,
+    floor.exitRoomId,
+    specialProps,
+  );
+  const leverPassage = deriveLeverPassage(
+    floor.floorId,
+    floor.floorIndex,
+    rooms,
+    floor.entryRoomId,
+    floor.exitRoomId,
+  );
+
   return {
     floorId: floor.floorId,
     floorIndex: floor.floorIndex,
@@ -491,5 +841,8 @@ export function buildFloorSceneLayout(floor: FloorModel): FloorSceneLayout {
     doorways,
     digSite,
     shovelPickup,
+    traps,
+    leverPassage,
+    specialProps,
   };
 }

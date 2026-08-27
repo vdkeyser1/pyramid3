@@ -443,18 +443,22 @@ npx gltf-transform etc1s canopic_jar_step2.glb public/models/canopic_jar.glb
 | Scarabeo | 1.000–3.000 | < 512 KB |
 | Sarcofago | 20.000–40.000 | < 5 MB |
 
-### 5b — Quaternius Ruins CC0
+### 5b — Ambiente piramide (procedurale + ToxSam, NO Quaternius Medieval)
 
-**URL:** https://quaternius.com/packs/egyptianruins.html  
-**Licenza:** CC0  
-**Contenuto:** ~40 mesh (colonne, archi, blocchi, pavimenti, torce)
+**Stato 2026-08-25:** Completato in-engine. Non scaricare Quaternius Modular
+Dungeons / Ultimate Modular Ruins (tag Medieval).
 
-```bash
-# Dopo il download, ottimizza il pack completo:
-for f in quaternius_egypt/*.glb; do
-  npx gltf-transform draco "$f" "public/models/ruins/$(basename $f)"
-done
-```
+| Componente | Implementazione |
+|---|---|
+| Colonne | `EgyptianColumn.ts` (papiriformi) |
+| Soglie / false porte | Procedurali in `ThreeRendererService` / `RoomDecor` |
+| Lampade | `EgyptianOilLamp.ts` (posata + murale) |
+| Landmark GLB | ToxSam in `public/assets/landmarks/` (5/5) |
+| Filler pietra | Kenney `-KenneyStoneOnly` opzionale → `public/models/ruins/` |
+
+Import GLB egizi extra: `pwsh -File scripts/download-external-assets.ps1 -EgyptianFolder <path>`
+
+Vedi `docs/PYRAMID_ART_DIRECTION.md`.
 
 ### 5c — File da creare: `src/content/ArtifactRegistry.ts`
 

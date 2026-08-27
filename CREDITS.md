@@ -54,6 +54,25 @@ Fonte: https://ambientcg.com (Lennart Demes)
 | `public/textures/stone_roughness.jpg` | Rock 064 (Roughness) |
 | `public/textures/stone_ambientocclusion.jpg` | Rock 064 (AmbientOcclusion) |
 
+## Ambiente piramide — filler pietra (CC0, opzionale)
+
+Identità: **piramide egizia / Egyptian Noir**, non dungeon medievale.
+
+Fonte filler: https://kenney.nl/assets/mini-dungeon — solo moduli **pietra neutri**
+(`pot`, `rocks`, `stones`, `stairs`, …). **Non** barrel / gate / banner / wood / chest.
+
+| File nel gioco | Uso |
+|---|---|
+| `public/models/ruins/pot.glb`, `rocks.glb`, `stairs.glb` | Filler corridoio (opzionale) |
+| `public/assets/landmarks/*` | Landmark egizi ToxSam (Anubi, obelisco, sarcofago, …) |
+| Colonne in scena | Procedurali `EgyptianColumn` (papiriformi) |
+| Soglie | Procedurali (stipiti + architrave dorato) |
+
+Import egizio: `pwsh -File scripts/download-external-assets.ps1 -EgyptianFolder <path>`
+Filler pietra: `pwsh -File scripts/download-external-assets.ps1 -KenneyStoneOnly`
+
+**Non usare** Quaternius Modular Dungeons / Ultimate Modular Ruins (tag Medieval).
+
 ## Audio (CC0)
 
 Fonte: https://kenney.nl — pack "Impact Sounds", "Interface Sounds" e "RPG Audio" (CC0)
@@ -83,4 +102,5 @@ Fonte: https://opengameart.org/content/ancient-egypt-0 (CC0) — fogli
 > Crocodile, Skeleton by Poly by Google (via Poly Pizza, CC-BY 3.0);
 > Colossus by Darwin Yamamoto (via Poly Pizza, CC-BY 3.0).
 > Texture: ambientCG (CC0) di Lennart Demes; geroglifici "ancient-egypt-0" (CC0) da OpenGameArt.
+> Ambiente piramide: landmark ToxSam (CC0); filler pietra Kenney opzionale (CC0).
 > Audio: Kenney.nl (CC0) — Impact Sounds, Interface Sounds & RPG Audio.

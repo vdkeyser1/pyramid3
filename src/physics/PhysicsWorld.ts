@@ -18,6 +18,11 @@ import { initRapier } from '@/physics/RapierRuntime.js';
 export interface PhysicsEnemyProxy {
   readonly collider: RAPIER.Collider;
   setTranslation(position: { readonly x: number; readonly y: number; readonly z: number }): void;
+  /** P-01: superfici sleep/wake per PhysicsSleepBridge (duck-typed). */
+  sleep(): void;
+  wakeUp(): void;
+  isSleeping(): boolean;
+  setBodyType(type: number, wakeUp: boolean): void;
   dispose(): void;
 }
 
@@ -169,6 +174,23 @@ export async function createPhysicsWorld(): Promise<PhysicsWorld> {
             new RAPIER.Vector3(nextPosition.x, nextPosition.y, nextPosition.z),
             true,
           );
+        },
+        sleep(): void {
+          if (disposed || proxyDisposed) return;
+          body.sleep();
+        },
+        wakeUp(): void {
+          if (disposed || proxyDisposed) return;
+          body.wakeUp();
+        },
+        isSleeping(): boolean {
+          if (disposed || proxyDisposed) return true;
+          return body.isSleeping();
+        },
+        setBodyType(type: number, wakeUpFlag: boolean): void {
+          if (disposed || proxyDisposed) return;
+          // Rapier RigidBodyType è un enum numerico; bridge P-01 passa number.
+          body.setBodyType(type, wakeUpFlag);
         },
         dispose(): void {
           if (disposed || proxyDisposed) return;

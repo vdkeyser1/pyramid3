@@ -14,6 +14,7 @@
  */
 
 import { ENEMIES, type EnemyArchetype, type EnemyDef } from '@/content/enemies.js';
+import { checkPerception } from '@/ai/PerceptionSystem.js';
 import type { EntityId } from '@/ecs/EntityAllocator.js';
 import type { AttackDefinition, AttackShapeDefinition } from '@/gameplay/combat/AttackDefinition.js';
 import { HitRegistry } from '@/gameplay/combat/HitRegistry.js';
@@ -21,6 +22,7 @@ import { HurtboxStore } from '@/gameplay/combat/HurtboxStore.js';
 import { createPlayerHurtbox, resolveEnemyAttackHitsPlayer } from '@/gameplay/combat/EnemyAttackResolver.js';
 import { isEnemyInParryArc, PARRY_STAGGER_TICKS } from '@/gameplay/combat/ParryResolver.js';
 
+/** @deprecated Prefer EnemyDef.viewRadiusM via checkPerception; kept for tests/docs. */
 export const GENERIC_WAKE_RADIUS_M = 5.0;
 /** Rotazione di inseguimento in gradi/secondo (comune a tutti). */
 export const GENERIC_TURN_RATE_DEG_S = 60;
@@ -59,6 +61,11 @@ export interface GenericEncounterTickOptions {
    * sguardo se il rumore è più vicino del player. intensity 0..1.
    */
   readonly noiseStimulus?: { readonly x: number; readonly z: number; readonly intensity: number } | null;
+  /**
+   * GAME-ART: punto verso cui camminare in PURSUING (waypoint A* o player).
+   * Se assente, il chase usa direttamente la posizione del player.
+   */
+  readonly pursuitTarget?: { readonly x: number; readonly z: number } | null;
 }
 
 export interface GenericEncounterTickResult {
@@ -223,11 +230,26 @@ export function tickGenericEncounter(
     const noiseDistanceM = noise
       ? Math.hypot(noise.x - state.position.x, noise.z - state.position.z)
       : Number.POSITIVE_INFINITY;
-    const canHear = distanceM <= state.def.hearRadiusM;
+    // GAME-ART-006: vista a cono + udito da EnemyDef (non raggio fisso isotropo).
+    // Convenzione facingDeg 0 = -z; PerceptionSystem yaw 0 = +z ⇒ +π.
+    const enemyYawRad = (state.facingDeg * Math.PI) / 180 + Math.PI;
+    const perception = checkPerception(
+      state.def,
+      state.position.x,
+      state.position.y,
+      state.position.z,
+      enemyYawRad,
+      playerPosition.x,
+      playerPosition.y,
+      playerPosition.z,
+      0,
+      torchLit ? 'HIGH' : 'OFF',
+    );
+    const canHear = perception.canHear;
     const canHearNoise = noise !== null && noise !== undefined
       && noiseDistanceM <= state.def.hearRadiusM * (0.6 + 0.4 * Math.min(1, Math.max(0, noise.intensity)));
-    const canSee = distanceM <= GENERIC_WAKE_RADIUS_M && (hasLineOfSight === null || hasLineOfSight());
-    if (canSee || canHear || canHearNoise) {
+    const canSee = perception.canSee && (hasLineOfSight === null || hasLineOfSight());
+    if (canSee || canHear || canHearNoise || perception.canSenseKa) {
       r.state = 'PURSUING';
       r.stateTicks = 0;
       state.facingDeg = 0;
@@ -377,9 +399,14 @@ export function tickGenericEncounter(
     return { message: null, playerDamageHp: 0, telegraphStrength: 0 };
   }
 
-  // Fuori range: avvicinati ruotando verso il player
-  const moveX = -dx / Math.max(0.01, distanceM);
-  const moveZ = -dz / Math.max(0.01, distanceM);
+  // Fuori range: avvicinati verso pursuitTarget (A*) o player.
+  // Stesso segno del chase storico: dx = target - self, step = -dx/|d|.
+  const seek = options.pursuitTarget ?? playerPosition;
+  const seekDx = seek.x - state.position.x;
+  const seekDz = seek.z - state.position.z;
+  const seekDist = Math.hypot(seekDx, seekDz);
+  const moveX = -seekDx / Math.max(0.01, seekDist);
+  const moveZ = -seekDz / Math.max(0.01, seekDist);
   state.position.x += moveX * state.def.speedMps / 60;
   state.position.z += moveZ * state.def.speedMps / 60;
 

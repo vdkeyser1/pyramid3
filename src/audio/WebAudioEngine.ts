@@ -8,11 +8,14 @@ import { getProceduralCueProfile } from '@/audio/ProceduralCueLibrary.js';
 import {
   AMBIENCE_PRESET,
   ambienceGainForDarkness,
+  gainMultiplierForFloor,
   lfoDepthForDarkness,
+  stoneRumbleGainForFloor,
 } from '@/audio/AmbiencePreset.js';
 import { MUSIC_PRESET, type MusicState } from '@/audio/MusicPreset.js';
 import { AUDIO_ASSET_MAP } from '@/audio/AudioAssetLibrary.js';
 import { createReverbEngine, type ReverbEngine } from '@/audio/ReverbEngine.js';
+import { wantsDesertWind, wantsTombDrip, ambienceCueForKind, type AmbienceKind } from '@/audio/AmbienceTheme.js';
 
 const log = createLogger('Audio');
 
@@ -24,6 +27,8 @@ export interface AudioCueRequest {
   readonly volume?: number;
   readonly playbackRate?: number;
   readonly position?: { readonly x: number; readonly y: number; readonly z: number };
+  /** Bus di destinazione (default sfx). I loop ambientali usano `ambience`. */
+  readonly bus?: AudioBus;
 }
 
 export interface AudioEngine {
@@ -38,6 +43,8 @@ export interface AudioEngine {
   setBusGain(bus: AudioBus, gain: number): void;
   /** G-18: livello di oscurità 0..1 → drone ambientale procedurale. */
   setAmbienceLevel(darkness01: number): void;
+  /** B-05: scala il drone con la profondità del piano (rombo di pietra). */
+  setAmbienceFloor(floorIndex: number): void;
   /** G-19: musica adattiva — crossfade tra EXPLORE/TENSION/COMBAT. */
   setMusicState(state: MusicState): void;
   /** G-19/Kenney: carica gli asset audio reali (fire-and-forget). */
@@ -50,6 +57,10 @@ export interface AudioEngine {
   playFootstep(stepIndex: number): void;
   /** W-3: vento desertico sintetico on/off. */
   setDesertWindActive(active: boolean): void;
+  /** G-26: stillicidio da cripta (tomb drip) on/off. */
+  setTombDripActive(active: boolean): void;
+  /** G-26: crossfade ambientale in base al tema della stanza. */
+  setAmbienceTheme(kind: import('@/audio/AmbienceTheme.js').AmbienceKind): void;
   /** W-4: espone il contesto audio per MusicStateMachine (null prima di unlock). */
   getAudioContext(): AudioContext | null;
   suspend(): Promise<void>;
@@ -174,7 +185,57 @@ export function createAudioEngine(): AudioEngine {
     }, 1600);
   }
 
+  // G-26: stillicidio da cripta — burst periodici di rumore filtrato.
+  let tombDripTimer: ReturnType<typeof setInterval> | null = null;
+  let tombDripGain: GainNode | null = null;
+
+  function playTombDripBurst(ctxRef: AudioContext): void {
+    const buf = getNoiseBuffer(ctxRef, 0.18);
+    const src = ctxRef.createBufferSource();
+    src.buffer = buf;
+    const bp = ctxRef.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1800 + Math.random() * 900;
+    bp.Q.value = 4;
+    const burstGain = ctxRef.createGain();
+    const now = ctxRef.currentTime;
+    burstGain.gain.setValueAtTime(0, now);
+    burstGain.gain.linearRampToValueAtTime(0.045, now + 0.02);
+    burstGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    const dest = tombDripGain ?? buses.get('ambience') ?? ctxRef.destination;
+    src.connect(bp);
+    bp.connect(burstGain);
+    burstGain.connect(dest);
+    src.start();
+    src.stop(now + 0.2);
+  }
+
+  function startTombDrip(ctxRef: AudioContext): void {
+    if (tombDripTimer) return;
+    const gainNode = ctxRef.createGain();
+    gainNode.gain.value = 1;
+    const ambienceBus = buses.get('ambience') ?? buses.get('master');
+    gainNode.connect(ambienceBus ?? ctxRef.destination);
+    tombDripGain = gainNode;
+    playTombDripBurst(ctxRef);
+    tombDripTimer = setInterval(() => {
+      if (!ctx || disposed) return;
+      playTombDripBurst(ctx);
+    }, 2800 + Math.random() * 2200);
+  }
+
+  function stopTombDrip(): void {
+    if (tombDripTimer) {
+      clearInterval(tombDripTimer);
+      tombDripTimer = null;
+    }
+    tombDripGain?.disconnect();
+    tombDripGain = null;
+  }
+
   // G-18: drone ambientale persistente (2 oscillatori per layer, detuned).
+  let ambienceLoopId: number | null = null;
+  let lastAmbienceKind: AmbienceKind | null = null;
   let ambienceNodes: {
     oscillators: OscillatorNode[];
     gains: GainNode[];
@@ -182,6 +243,7 @@ export function createAudioEngine(): AudioEngine {
     lfoGain: GainNode | null;
   } | null = null;
   let currentAmbienceLevel = 0;
+  let ambienceFloorIndex = 1;
 
   function buildAmbience(ctxRef: AudioContext): void {
     const ambienceBus = buses.get('ambience') ?? buses.get('master');
@@ -481,7 +543,8 @@ export function createAudioEngine(): AudioEngine {
             if (!response.ok) continue;
             const arrayBuffer = await response.arrayBuffer();
             const buffer = await ctxRef.decodeAudioData(arrayBuffer);
-            buffers.push(buffer);
+            const { resampleBuffer } = await import('@/audio/AudioBufferResampler.js');
+            buffers.push(await resampleBuffer(buffer, ctxRef.sampleRate));
           } catch { /* variante mancante: ignora */ }
         }
         if (buffers.length > 0) {
@@ -490,6 +553,36 @@ export function createAudioEngine(): AudioEngine {
       }),
     );
     log.info('Asset audio reali caricati', { cues: audioBuffers.size });
+  }
+
+  function applyAmbienceLevel(darkness01: number): void {
+    if (!ctx || !unlocked || disposed || !ambienceNodes) return;
+    const clamped = Math.max(0, Math.min(1, darkness01));
+    if (Math.abs(clamped - currentAmbienceLevel) < 0.01) return;
+
+    currentAmbienceLevel = clamped;
+    const floorMult = gainMultiplierForFloor(ambienceFloorIndex);
+    const targetGain = ambienceGainForDarkness(clamped) * floorMult;
+    const lfoDepth = lfoDepthForDarkness(clamped);
+    const stoneLayer = AMBIENCE_PRESET.layers[3];
+    const stoneMax = stoneLayer?.gainMax ?? 0;
+    const stoneTarget = stoneRumbleGainForFloor(ambienceFloorIndex, stoneMax) * clamped;
+
+    const now = ctx.currentTime;
+    // Transizione morbida (≈1.5s) — niente tagli bruschi
+    ambienceNodes.gains.forEach((gain, index) => {
+      // Layer 4 (rombo di pietra) = osc 6 e 7: gain dedicato per floor.
+      const isStone = index >= 6;
+      const dest = isStone ? stoneTarget : targetGain;
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(dest, now + 1.5);
+    });
+    if (ambienceNodes.lfoGain) {
+      ambienceNodes.lfoGain.gain.cancelScheduledValues(now);
+      ambienceNodes.lfoGain.gain.setValueAtTime(ambienceNodes.lfoGain.gain.value, now);
+      ambienceNodes.lfoGain.gain.linearRampToValueAtTime(lfoDepth, now + 1.5);
+    }
   }
 
   return {
@@ -608,14 +701,15 @@ export function createAudioEngine(): AudioEngine {
         panner.positionZ.value = cue.position.z;
       }
 
-      const sfxBus = buses.get('sfx') ?? buses.get('master');
+      const destBusName = cue.bus ?? 'sfx';
+      const destBus = buses.get(destBusName) ?? buses.get('master');
       if (panner) {
         output.connect(gain);
         gain.connect(panner);
-        panner.connect(sfxBus ?? ctx.destination);
+        panner.connect(destBus ?? ctx.destination);
       } else {
         output.connect(gain);
-        gain.connect(sfxBus ?? ctx.destination);
+        gain.connect(destBus ?? ctx.destination);
       }
 
       source.start(ctx.currentTime);
@@ -680,26 +774,15 @@ export function createAudioEngine(): AudioEngine {
     },
 
     setAmbienceLevel(darkness01: number): void {
-      if (!ctx || !unlocked || disposed || !ambienceNodes) return;
-      const clamped = Math.max(0, Math.min(1, darkness01));
-      if (Math.abs(clamped - currentAmbienceLevel) < 0.01) return;
+      applyAmbienceLevel(darkness01);
+    },
 
-      currentAmbienceLevel = clamped;
-      const targetGain = ambienceGainForDarkness(clamped);
-      const lfoDepth = lfoDepthForDarkness(clamped);
-
-      const now = ctx.currentTime;
-      // Transizione morbida (≈1.5s) — niente tagli bruschi
-      for (const gain of ambienceNodes.gains) {
-        gain.gain.cancelScheduledValues(now);
-        gain.gain.setValueAtTime(gain.gain.value, now);
-        gain.gain.linearRampToValueAtTime(targetGain, now + 1.5);
-      }
-      if (ambienceNodes.lfoGain) {
-        ambienceNodes.lfoGain.gain.cancelScheduledValues(now);
-        ambienceNodes.lfoGain.gain.setValueAtTime(ambienceNodes.lfoGain.gain.value, now);
-        ambienceNodes.lfoGain.gain.linearRampToValueAtTime(lfoDepth, now + 1.5);
-      }
+    setAmbienceFloor(floorIndex: number): void {
+      ambienceFloorIndex = Math.max(1, Math.min(10, Math.floor(floorIndex)));
+      // Forza ricalcolo immediato con il nuovo moltiplicatore di piano.
+      const lvl = currentAmbienceLevel;
+      currentAmbienceLevel = -1;
+      applyAmbienceLevel(Math.max(0, lvl));
     },
 
     setMusicState(state: MusicState): void {
@@ -766,6 +849,41 @@ export function createAudioEngine(): AudioEngine {
       }
     },
 
+    setTombDripActive(active: boolean): void {
+      if (!ctx || !unlocked || disposed) return;
+      if (active) {
+        startTombDrip(ctx);
+      } else {
+        stopTombDrip();
+      }
+    },
+
+    setAmbienceTheme(kind: AmbienceKind): void {
+      if (!ctx || !unlocked || disposed) return;
+      const cueName = ambienceCueForKind(kind);
+      const hasSample = (audioBuffers.get(cueName)?.length ?? 0) > 0
+        || (audioBuffers.get(kind === 'desert' ? 'desert_wind' : 'tomb_drip')?.length ?? 0) > 0;
+
+      // G-26: play() è obbligatorio sul cambio tema — anche in fallback sintetico
+      // il loop deve essere udibile (non solo i generatori wind/drip).
+      if (kind !== lastAmbienceKind || ambienceLoopId === null) {
+        if (ambienceLoopId !== null) {
+          this.stop(ambienceLoopId, 700);
+          ambienceLoopId = null;
+        }
+        ambienceLoopId = this.play({
+          name: cueName,
+          loop: true,
+          volume: 0.55,
+          bus: 'ambience',
+        });
+        lastAmbienceKind = kind;
+      }
+
+      this.setDesertWindActive(wantsDesertWind(kind) && !hasSample && ambienceLoopId === null);
+      this.setTombDripActive(wantsTombDrip(kind) && !hasSample && ambienceLoopId === null);
+    },
+
     getAudioContext(): AudioContext | null {
       return ctx;
     },
@@ -785,6 +903,11 @@ export function createAudioEngine(): AudioEngine {
       stopArpeggiator();
       stopTorchCrackle(ctx);
       stopDesertWind(ctx);
+      stopTombDrip();
+      if (ambienceLoopId !== null) {
+        try { this.stop(ambienceLoopId); } catch { /* già fermato */ }
+        ambienceLoopId = null;
+      }
       disposeAmbience(ctx);
       disposeMusic(ctx);
       reverb?.dispose();

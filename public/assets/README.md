@@ -20,9 +20,23 @@ public/assets/
     └── statue_anubis.glb        (statua-anubi) ✅ GodAnubis (ToxSam, CC0)
 ```
 
-## ✅ Stato asset (2026-08-14) — COMPLETO 12/12
+## ✅ Stato asset (2026-08-25) — COMPLETO 12/12 nemici + 5/5 landmark
 
-Tutti i modelli del manifest sono presenti. Fonti:
+Tutti i modelli del manifest nemici/landmark critici sono presenti e meshopt-ottimizzati.
+
+### Ambiente procedurale (no pack dungeon)
+
+Il gioco **non** usa kit Quaternius/Kenney medievali per l'ambiente. Al posto:
+
+- Colonne papiriformi (`EgyptianColumn.ts`)
+- Soglie e false porte funerarie (procedurali)
+- Lampade a olio posate e murale (`EgyptianOilLamp.ts`)
+- Landmark compositi (`EgyptianLandmarks.ts`) quando manca il GLB
+- Decor stanze (`RoomDecor.ts`)
+
+Vedi `docs/PYRAMID_ART_DIRECTION.md`.
+
+### Fonti GLB
 
 **ToxSam/open-source-3D-assets** (CC0, [GitHub](https://github.com/ToxSam/open-source-3D-assets),
 progetti tomb-chaser-1/xyz di Polygonal Mind):

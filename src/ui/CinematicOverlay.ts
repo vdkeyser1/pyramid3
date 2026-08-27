@@ -22,6 +22,11 @@ export interface CinematicOverlay {
    * poi fadeToBlack(0) lo dissolve. Ritorna senza transizione se null.
    */
   fadeToBlack(opaque: boolean): void;
+  /**
+   * Mostra una didascalia geroglifica durante il fade nero tra i piani.
+   * Passa null per nasconderla.
+   */
+  setFloorCaption(text: string | null): void;
   dispose(): void;
 }
 
@@ -70,6 +75,23 @@ export function createCinematicOverlay(): CinematicOverlay | null {
   `;
   element.appendChild(fade);
 
+  // Didascalia di piano (geroglifici + tema) durante il fade nero.
+  const caption = document.createElement('div');
+  caption.id = 'game-cinematic-caption';
+  caption.setAttribute('aria-hidden', 'true');
+  caption.style.cssText = `
+    position: absolute; left: 50%; top: 48%; z-index: 3;
+    transform: translate(-50%, -50%);
+    max-width: min(520px, 88vw); text-align: center;
+    font-family: Cinzel, 'Palatino Linotype', serif;
+    color: #E8C070; letter-spacing: 0.08em;
+    font-size: clamp(15px, 2.4vw, 22px); line-height: 1.55;
+    opacity: 0; transition: opacity 0.4s ease;
+    text-shadow: 0 2px 18px rgba(0,0,0,0.85);
+    white-space: pre-line;
+  `;
+  element.appendChild(caption);
+
   document.body.appendChild(element);
 
   return {
@@ -88,6 +110,19 @@ export function createCinematicOverlay(): CinematicOverlay | null {
 
     fadeToBlack(opaque: boolean): void {
       fade.style.opacity = opaque ? '1' : '0';
+      if (!opaque) {
+        caption.style.opacity = '0';
+      }
+    },
+
+    setFloorCaption(text: string | null): void {
+      if (!text || text.trim().length === 0) {
+        caption.textContent = '';
+        caption.style.opacity = '0';
+        return;
+      }
+      caption.textContent = text;
+      caption.style.opacity = '1';
     },
 
     dispose(): void {

@@ -1,0 +1,1 @@
+# Droppate qui gli FBX Mixamo. Vedi scripts/Download-MixamoClips.ps1

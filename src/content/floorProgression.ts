@@ -11,7 +11,7 @@
  * Failure mode: piano fuori range → clampa al piano 1 o 10 (nessun crash).
  */
 
-export const MAX_FLOORS = 10;
+export const MAX_FLOORS = 20;
 
 export interface FloorPalette {
   readonly wallHex: number;
@@ -39,57 +39,103 @@ const T = (wallHex: number, floorHex: number, accentHex: number, darknessFactor:
   wallHex, floorHex, accentHex, darknessFactor,
 });
 
-/** Progressione completa: piano 1 (VS) → piano 10 (cuore della piramide). */
+/** Progressione completa su 20 piani: piano 1 (Pyramidion d'oro) → piano 20 (Trono della Duat). */
 export const FLOOR_PROGRESSION: readonly FloorProgressionDef[] = [
+  // FASCIA 1: L'APICE DORATO & CAMERE SUPERIORI (Piani 1-5)
   {
-    floorIndex: 1, theme: 'Atrio dei sigilli', directorBudget: 12, safeRoomCount: 1, junctionRatio: 0.12, maxConcurrentEnemies: 2,
-    palette: T(0x6b5432, 0x8a7350, 0xd4a05a, 0.0),
+    floorIndex: 1, theme: 'Il Pyramidion di Ra', directorBudget: 12, safeRoomCount: 1, junctionRatio: 0.12, maxConcurrentEnemies: 2,
+    palette: T(0x8a6a3b, 0xa88b58, 0xf5c342, 0.0),
   },
   {
-    floorIndex: 2, theme: 'Corridoi dei cobra', directorBudget: 22, safeRoomCount: 1, junctionRatio: 0.18, maxConcurrentEnemies: 3,
-    palette: T(0x5f5330, 0x7d7350, 0x2e8b8b, 0.08),
+    floorIndex: 2, theme: 'La Grande Galleria Superiore', directorBudget: 18, safeRoomCount: 1, junctionRatio: 0.16, maxConcurrentEnemies: 3,
+    palette: T(0x7a5e35, 0x94784a, 0x2e8b8b, 0.06),
   },
   {
-    floorIndex: 3, theme: 'Gallerie degli Shabti', directorBudget: 32, safeRoomCount: 2, junctionRatio: 0.24, maxConcurrentEnemies: 3,
-    palette: T(0x55402a, 0x6b5a3c, 0xc77d3a, 0.16),
+    floorIndex: 3, theme: 'Anticamera dei Nobili', directorBudget: 24, safeRoomCount: 2, junctionRatio: 0.20, maxConcurrentEnemies: 3,
+    palette: T(0x6b5432, 0x8a7350, 0xd4a05a, 0.12),
   },
   {
-    floorIndex: 4, theme: 'Cripta di Sobek', directorBudget: 42, safeRoomCount: 2, junctionRatio: 0.3, maxConcurrentEnemies: 4,
-    palette: T(0x3e3526, 0x4e4430, 0x3a7d5a, 0.24),
+    floorIndex: 4, theme: 'Santuario degli Occhi di Horus', directorBudget: 30, safeRoomCount: 2, junctionRatio: 0.24, maxConcurrentEnemies: 3,
+    palette: T(0x5f5330, 0x7d7350, 0x3a7d5a, 0.18),
   },
   {
-    floorIndex: 5, theme: 'Ossario', directorBudget: 52, safeRoomCount: 2, junctionRatio: 0.34, maxConcurrentEnemies: 4,
-    palette: T(0x2e2a22, 0x3a342a, 0x8b7355, 0.32),
+    floorIndex: 5, theme: 'Camera del Faraone Ascendente', directorBudget: 38, safeRoomCount: 2, junctionRatio: 0.28, maxConcurrentEnemies: 4,
+    palette: T(0x55402a, 0x6b5a3c, 0xc77d3a, 0.24),
+  },
+
+  // FASCIA 2: CAMERE DI SCARICO & LABIRINTO DEI FALSI PASSAGGI (Piani 6-10)
+  {
+    floorIndex: 6, theme: 'Camere di Scarico Monolitiche', directorBudget: 44, safeRoomCount: 2, junctionRatio: 0.32, maxConcurrentEnemies: 4,
+    palette: T(0x4a3824, 0x5e4c32, 0x8b7355, 0.30),
   },
   {
-    floorIndex: 6, theme: 'Ossario profondo', directorBudget: 58, safeRoomCount: 2, junctionRatio: 0.38, maxConcurrentEnemies: 4,
-    palette: T(0x26221c, 0x322c24, 0x9a5a38, 0.4),
+    floorIndex: 7, theme: 'Labirinto dei Dardi Avvelenati', directorBudget: 50, safeRoomCount: 2, junctionRatio: 0.36, maxConcurrentEnemies: 4,
+    palette: T(0x3e3526, 0x4e4430, 0x9a5a38, 0.36),
   },
   {
-    floorIndex: 7, theme: 'Antro del Testimone', directorBudget: 64, safeRoomCount: 2, junctionRatio: 0.42, maxConcurrentEnemies: 4,
-    palette: T(0x1c1a16, 0x282420, 0x6a334d, 0.48),
+    floorIndex: 8, theme: 'Cripta dei Vasi Canopi Sigillati', directorBudget: 56, safeRoomCount: 2, junctionRatio: 0.40, maxConcurrentEnemies: 4,
+    palette: T(0x342c1e, 0x443a28, 0x6a334d, 0.42),
   },
   {
-    floorIndex: 8, theme: 'Sotterranei del silenzio', directorBudget: 68, safeRoomCount: 2, junctionRatio: 0.46, maxConcurrentEnemies: 4,
-    palette: T(0x161412, 0x201c18, 0x4a90a0, 0.56),
+    floorIndex: 9, theme: 'Corridoio Inclinato a Chevrons', directorBudget: 62, safeRoomCount: 2, junctionRatio: 0.44, maxConcurrentEnemies: 4,
+    palette: T(0x2a2418, 0x3a3020, 0x4a90a0, 0.48),
   },
   {
-    floorIndex: 9, theme: 'Anticamera del Ka', directorBudget: 72, safeRoomCount: 2, junctionRatio: 0.5, maxConcurrentEnemies: 4,
-    palette: T(0x100e0c, 0x1a1612, 0xd4a05a, 0.64),
+    floorIndex: 10, theme: 'Trono dei Cento Guardiani Shabti', directorBudget: 70, safeRoomCount: 2, junctionRatio: 0.48, maxConcurrentEnemies: 5,
+    palette: T(0x221d14, 0x30281b, 0xd4a05a, 0.54),
+  },
+
+  // FASCIA 3: SALE IPOSTILE & ARCHIVI DELLA DUAT (Piani 11-15)
+  {
+    floorIndex: 11, theme: 'Grande Sala Ipostila di Tebe', directorBudget: 76, safeRoomCount: 2, junctionRatio: 0.50, maxConcurrentEnemies: 5,
+    palette: T(0x1e1912, 0x2a2217, 0x2e8b8b, 0.60),
   },
   {
-    floorIndex: 10, theme: 'Camera del Ka', directorBudget: 80, safeRoomCount: 2, junctionRatio: 0.55, maxConcurrentEnemies: 4,
-    palette: T(0x0b0908, 0x14100c, 0xffe0a0, 0.72),
+    floorIndex: 12, theme: 'Archivio Proibito del Libro dei Morti', directorBudget: 82, safeRoomCount: 2, junctionRatio: 0.52, maxConcurrentEnemies: 5,
+    palette: T(0x1a150f, 0x241d13, 0x8b7355, 0.65),
+  },
+  {
+    floorIndex: 13, theme: 'Forgia Rituale del Bronzo Sacro', directorBudget: 88, safeRoomCount: 2, junctionRatio: 0.54, maxConcurrentEnemies: 5,
+    palette: T(0x16120c, 0x201810, 0xd48a33, 0.70),
+  },
+  {
+    floorIndex: 14, theme: 'Santuario della Furia di Sekhmet', directorBudget: 94, safeRoomCount: 2, junctionRatio: 0.56, maxConcurrentEnemies: 5,
+    palette: T(0x140e0a, 0x1c130d, 0xaa2211, 0.75),
+  },
+  {
+    floorIndex: 15, theme: 'Sepolcro del Gran Sacerdote di Eliopoli', directorBudget: 100, safeRoomCount: 2, junctionRatio: 0.58, maxConcurrentEnemies: 5,
+    palette: T(0x120c08, 0x18100a, 0x996633, 0.80),
+  },
+
+  // FASCIA 4: NECROPOLI SOMMERSA & CATACOMBE DELLA ROCCIA MADRE (Piani 16-19)
+  {
+    floorIndex: 16, theme: 'Cunicoli Sommersi dalle Sabbie', directorBudget: 106, safeRoomCount: 2, junctionRatio: 0.60, maxConcurrentEnemies: 6,
+    palette: T(0x100a06, 0x160e08, 0xcc8833, 0.84),
+  },
+  {
+    floorIndex: 17, theme: 'Gallerie del Nilo Sotterraneo', directorBudget: 112, safeRoomCount: 2, junctionRatio: 0.62, maxConcurrentEnemies: 6,
+    palette: T(0x0e0906, 0x140c07, 0x226688, 0.88),
+  },
+  {
+    floorIndex: 18, theme: 'Le Catacombe dei Dannati Senza Nome', directorBudget: 118, safeRoomCount: 2, junctionRatio: 0.64, maxConcurrentEnemies: 6,
+    palette: T(0x0c0704, 0x100905, 0x772244, 0.91),
+  },
+  {
+    floorIndex: 19, theme: 'L Anticamera dell Ombra Eterna', directorBudget: 124, safeRoomCount: 2, junctionRatio: 0.66, maxConcurrentEnemies: 6,
+    palette: T(0x0a0604, 0x0e0804, 0xaa8844, 0.94),
+  },
+
+  // FASCIA 5: IL CUORE PRIMORDIALE (Piano 20)
+  {
+    floorIndex: 20, theme: 'La Cripta Primordiale del Faraone Eterno', directorBudget: 135, safeRoomCount: 3, junctionRatio: 0.70, maxConcurrentEnemies: 6,
+    palette: T(0x080402, 0x0c0603, 0xffcc33, 0.97),
   },
 ];
 
-/** Lookup con clamp: piano ≤0 → 1, piano >10 → 10. Mai undefined. */
+/** Lookup con clamp: piano ≤0 → 1, piano >20 → 20. Mai undefined. */
 export function floorProgressionFor(floorIndex: number): FloorProgressionDef {
   const clamped = Math.max(1, Math.min(MAX_FLOORS, floorIndex));
-  return FLOOR_PROGRESSION[clamped - 1] ?? FLOOR_PROGRESSION[0] ?? {
-    floorIndex: 1, theme: 'Atrio dei sigilli', directorBudget: 12, safeRoomCount: 1, junctionRatio: 0.12, maxConcurrentEnemies: 2,
-    palette: T(0x6b5432, 0x8a7350, 0xd4a05a, 0.0),
-  };
+  return FLOOR_PROGRESSION[clamped - 1] ?? FLOOR_PROGRESSION[0]!;
 }
 
 /** Seed derivato del piano N: determinismo per run riproducibile. */

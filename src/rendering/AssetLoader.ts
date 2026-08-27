@@ -11,35 +11,39 @@
  * Failure mode: fetch 404 o parse fallito ⇒ null + log warning.
  */
 
+import { LoadingManager } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
-const loader = new GLTFLoader();
+const manager = new LoadingManager();
+manager.setURLModifier((url: string) => {
+  // AST-01: se un modello GLB contiene riferimenti legacy a texture non presenti (es. Textures/colormap.png),
+  // restituisce un 1x1 data URL neutro per evitare errori 404 di rete e warning in console.
+  if (url.includes('Textures/colormap.png')) {
+    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  }
+  return url;
+});
+
+const loader = new GLTFLoader(manager);
 // gltf-transform (scripts/optimize-assets.mjs) comprime i GLB con Meshopt:
 // senza decoder il GLTFLoader rifiuta i file compressi. Il modulo carica il
 // .wasm in automatico (Vite lo copia in dist/ via import.meta.url).
 loader.setMeshoptDecoder(MeshoptDecoder);
 
+// GAME-ART-010 / R-05: decoder Draco per GLB compressi (public/draco/).
+const dracoLoader = new DRACOLoader(manager);
+dracoLoader.setDecoderPath('/draco/');
+loader.setDRACOLoader(dracoLoader);
+
 /** Cache delle Promise: path → modello caricato (o null su errore). */
 const cache = new Map<string, Promise<GLTF | null>>();
 
-function loadInternal(path: string): Promise<GLTF | null> {
-  return new Promise((resolve) => {
-    loader.load(
-      path,
-      (gltf: GLTF) => {
-        resolve(gltf);
-      },
-      undefined,
-      (error: unknown) => {
-        // Silenzioso ma tracciabile: il fallback alle primitive è il design.
-        console.warn(`[AssetLoader] caricamento fallito: ${path}`, error);
-        resolve(null);
-      },
-    );
-  });
-}
+export type AssetLoadProgress = (loaded: number, total: number, path: string) => void;
+
+let progressCallback: AssetLoadProgress | null = null;
 
 export interface AssetLoader {
   /** Carica un modello .glb (cache). Ritorna null se assente/fallito. */
@@ -50,6 +54,37 @@ export interface AssetLoader {
   has(path: string): boolean;
   /** Svuota la cache (per cambi piano / test). */
   clear(): void;
+  /** GAME-ART-001: callback progresso per loading screen. */
+  setProgressCallback(cb: AssetLoadProgress | null): void;
+}
+
+function loadInternal(path: string): Promise<GLTF | null> {
+  return new Promise((resolve) => {
+    loader.load(
+      path,
+      (gltf: GLTF) => {
+        resolve(gltf);
+      },
+      (event: ProgressEvent) => {
+        if (progressCallback && event.lengthComputable) {
+          progressCallback(event.loaded, event.total, path);
+        }
+      },
+      (error: unknown) => {
+        // Silenzioso ma tracciabile: il fallback alle primitive è il design.
+        console.warn(`[AssetLoader] caricamento fallito: ${path}`, error);
+        resolve(null);
+      },
+    );
+  });
+}
+
+/** Singleton condiviso (KTX2/DRACOLoader worker unico). */
+let singleton: AssetLoader | null = null;
+
+export function getAssetLoader(): AssetLoader {
+  singleton ??= createAssetLoader();
+  return singleton;
 }
 
 export function createAssetLoader(): AssetLoader {
@@ -65,7 +100,13 @@ export function createAssetLoader(): AssetLoader {
     },
 
     async preload(paths: readonly string[]): Promise<void> {
-      await Promise.all(paths.map((path) => this.load(path)));
+      let done = 0;
+      const total = paths.length;
+      await Promise.all(paths.map(async (path) => {
+        await this.load(path);
+        done += 1;
+        progressCallback?.(done, total, path);
+      }));
     },
 
     has(path: string): boolean {
@@ -74,6 +115,10 @@ export function createAssetLoader(): AssetLoader {
 
     clear(): void {
       cache.clear();
+    },
+
+    setProgressCallback(cb: AssetLoadProgress | null): void {
+      progressCallback = cb;
     },
   };
 }

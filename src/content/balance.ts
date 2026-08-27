@@ -103,10 +103,13 @@ export const STAIRCASE = {
 } as const;
 
 export const WEAPONS = {
-  fists:   { damageHp: 3,  intervalTicks: secondsToTicks(0.65), reachM: 1.1, durability: Number.POSITIVE_INFINITY },
-  khopesh: { damageHp: 18, intervalTicks: secondsToTicks(0.78), reachM: 1.7, durability: 120 },
-  staff:   { damageHp: 11, intervalTicks: secondsToTicks(0.55), reachM: 2.2, durability: 180 },
-  shovel:  { damageHp: 7,  intervalTicks: secondsToTicks(1.0),  reachM: 1.5, durability: 3  }, // in scavi
+  fists:          { damageHp: 3,  intervalTicks: secondsToTicks(0.65), reachM: 2.0, durability: Number.POSITIVE_INFINITY },
+  khopesh:        { damageHp: 18, intervalTicks: secondsToTicks(0.78), reachM: 2.7, durability: 120 },
+  staff:          { damageHp: 11, intervalTicks: secondsToTicks(0.55), reachM: 3.2, durability: 180 },
+  shovel:         { damageHp: 7,  intervalTicks: secondsToTicks(1.0),  reachM: 2.5, durability: 3   }, // in scavi
+  spear:          { damageHp: 16, intervalTicks: secondsToTicks(0.70), reachM: 3.5, durability: 140 },
+  golden_khopesh: { damageHp: 24, intervalTicks: secondsToTicks(0.68), reachM: 2.8, durability: 220 },
+  anubis_sickle:  { damageHp: 22, intervalTicks: secondsToTicks(0.62), reachM: 2.6, durability: 160 },
 } as const;
 
 export const DIGGING = {
@@ -150,4 +153,120 @@ export const FLOOR_CONSTRAINTS = {
 export const DARKNESS = {
   thresholds: { calm: 25, whispers: 50, patrols: 75, witness: 100 },
   sanctuaryRecoveryPerSecond: 4,
+} as const;
+
+/**
+ * ART-006: trappole procedurali e meccanismo leva+sigillo.
+ *
+ * I danni sono calibrati su PLAYER.baseHealthHp = 100.
+ * - Piastra: 15 HP — evitabile se il giocatore è attento (vede la lastra).
+ * - Pendolo: 22 HP — meno evitabile perché occupa l'intero corridoio.
+ * - Un'unica attivazione di piastra non è letale; due di fila in cooldown
+ *   corto sì — la pressione su torch gestione non è casuale.
+ *
+ * I timer di estensione (0,15 s) e ritrazione (0,40 s) danno tempo di
+ * reagire senza rendere la trappola banale. Il cooldown (4,0 s) impedisce
+ * lo spam ma lascia la stanza sempre pericolosa al secondo passaggio.
+ */
+export const TRAPS = {
+  pressurePlate: {
+    damageHp: 15,
+    /** Raggio di attivazione dal centro della piastra. */
+    activationRadiusM: 0.55,
+    /** Altezza delle punte sopra il pavimento quando estese. */
+    spikeHeightM: 0.58,
+    /** Durata della fase di estensione (punte in salita). */
+    extendTicks: secondsToTicks(0.15),
+    /** Durata della fase di mantenimento (punte ferme e danno attivo). */
+    holdTicks: secondsToTicks(1.2),
+    /** Durata della fase di rientro. */
+    retractTicks: secondsToTicks(0.40),
+    /** Cooldown prima che la trappola si riarmi. */
+    cooldownTicks: secondsToTicks(4.0),
+  },
+  bladePendulum: {
+    damageHp: 22,
+    /** Semiescursione del pendolo in gradi. */
+    halfSwingDeg: 75,
+    /** Durata di un'oscillazione completa (andata e ritorno). */
+    swingPeriodTicks: secondsToTicks(2.6),
+    /** Larghezza della lama — dimensiona il mesh. */
+    bladeWidthM: 1.5,
+    /** Quota del perno di rotazione (asse di montaggio). */
+    mountHeightM: 3.0,
+    /** Lunghezza del braccio dal perno alla lama. */
+    armLengthM: 1.8,
+    /** Raggio di colpo dalla punta della lama. */
+    hitRadiusM: 0.6,
+    /**
+     * Cooldown minimo fra due colpi dello stesso pendolo, in tick.
+     * Impedisce che la lama infligga danno ogni tick nel punto di passaggio.
+     * Calcolato come metà periodo: la lama passa al centro una volta per
+     * semioscillazione.
+     */
+    hitCooldownTicks: secondsToTicks(1.3),
+    /**
+     * Soglia di lunghezza corridoio per piazzare un pendolo.
+     * Deve allinearsi con PENDULUM_MIN_CORRIDOR_M in FloorSceneLayout.ts.
+     */
+    minCorridorLengthM: 8.0,
+  },
+  /**
+   * GAME-ART-012: lanciatore di dardi da nicchia.
+   * Spara a intervalli fissi lungo un asse; il dardo è una hitbox corta
+   * che attraversa la stanza. Evitabile crouching / lateral step.
+   */
+  dartLauncher: {
+    damageHp: 12,
+    /** Intervallo fra due spari. */
+    firePeriodTicks: secondsToTicks(2.4),
+    /** Durata del volo del dardo (animazione + hit window). */
+    flightTicks: secondsToTicks(0.55),
+    /** Portata del dardo dal launcher. */
+    rangeM: 4.2,
+    /** Raggio di colpo intorno alla punta del dardo. */
+    hitRadiusM: 0.45,
+    /** Cooldown fra due colpi dello stesso launcher. */
+    hitCooldownTicks: secondsToTicks(2.0),
+    /** Piano minimo (dopo tutorial trappole base). */
+    minFloorIndex: 3,
+  },
+  /**
+   * GAME-ART-012: masso che rotola avanti/indietro nel corridoio.
+   * Occupazione ampia: forza sprint o rifugio laterale.
+   */
+  rollingBoulder: {
+    damageHp: 28,
+    /** Periodo di andata+ritorno. */
+    rollPeriodTicks: secondsToTicks(3.8),
+    /** Raggio di colpo dal centro del masso. */
+    hitRadiusM: 0.95,
+    /** Semi-corsa di default se il corridoio non fornisce lunghezza. */
+    defaultTravelHalfM: 3.0,
+    /** Cooldown fra colpi dello stesso masso. */
+    hitCooldownTicks: secondsToTicks(1.0),
+    /** Lunghezza minima corridoio per piazzarlo. */
+    minCorridorLengthM: 6.0,
+    /** Piano minimo. */
+    minFloorIndex: 3,
+  },
+  lever: {
+    /** Raggio entro cui il giocatore può interagire con la leva. */
+    interactionRadiusM: 1.4,
+    /** Durata dell'animazione di tiro della leva. */
+    pullDurationTicks: secondsToTicks(0.9),
+    /**
+     * Distanza di discesa del sigillo di pietra.
+     * Deve superare WALL_HEIGHT_M (4,5 m) nel renderer perché il sigillo
+     * deve scomparire completamente sotto il pavimento.
+     */
+    sealDropM: 2.8,
+    /** Durata dell'animazione di discesa del sigillo dopo il tiro. */
+    sealDropTicks: secondsToTicks(2.0),
+    /**
+     * Piano minimo in cui compare il meccanismo leva.
+     * I piani 1-2 sono di tutorial: nessuna leva.
+     */
+    minFloorIndex: 3,
+  },
 } as const;

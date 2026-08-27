@@ -4,12 +4,24 @@ import { presetFor, type CeilingVariant, type RoomTheme } from '@/content/RoomTh
 import {
   buildAltar, buildCanopicJar, buildSarcophagus, buildStatue, buildWell,
 } from '@/rendering/EgyptianLandmarks.js';
+import {
+  buildBladePendulumMesh, buildDartLauncherMesh, buildLeverMesh,
+  buildPressurePlateMesh, buildRollingBoulderMesh, buildSealMesh,
+} from '@/rendering/TrapMesh.js';
+import {
+  createInstancedDungeonGroup,
+  type TileTransform,
+} from '@/rendering/InstancedDungeonRenderer.js';
+import { createEgyptianCeiling } from '@/rendering/EgyptianCeilings.js';
+import { resolveFeatureFlags } from '@/config/FeatureFlags.js';
 import type { RoomBounds as CullBounds } from '@/rendering/FrustumCuller.js';
 import type {
   FloorSceneCorridor,
   FloorSceneLandmark,
   FloorSceneLayout,
+  FloorSceneLeverPassage,
   FloorSceneRoom,
+  FloorSceneTrap,
 } from '@/world/FloorSceneLayout.js';
 
 const FLOOR_THICKNESS_M = 0.2;
@@ -93,6 +105,50 @@ export interface BuildDungeonLayoutOptions {
    * Se assente si usa wallMaterial: il soffitto c'è comunque, ma in pietra.
    */
   readonly ceilingMaterial?: THREE.Material | null;
+  /**
+   * ART-006: callback invocata per ogni piastra a pressione costruita.
+   * Il chiamante ottiene spikesGroup (il gruppo delle 9 punte) e lo collega
+   * a TrapSystem per l'animazione verticale.
+   * Opzionale — se assente la trappola è renderizzata ma non animata.
+   */
+  readonly onPressurePlateMeshReady?: (
+    trapId: string,
+    spikesGroup: THREE.Object3D,
+  ) => void;
+  /**
+   * ART-006: callback invocata per ogni pendolo a lama costruito.
+   * Il chiamante ottiene pivotGroup e imposta rotation.z (corridoio X)
+   * o rotation.x (corridoio Z) ogni frame tramite TrapSystem.
+   * Opzionale — se assente il pendolo è renderizzato ma fermo.
+   */
+  readonly onPendulumMeshReady?: (
+    trapId: string,
+    pivotGroup: THREE.Object3D,
+    corridorAxis: 'x' | 'z',
+  ) => void;
+  /** GAME-ART-012: dardo — travel01 + visible. */
+  readonly onDartLauncherMeshReady?: (
+    trapId: string,
+    dartMesh: THREE.Object3D,
+    fireAxis: 'x' | 'z',
+  ) => void;
+  /** GAME-ART-012: masso — offset lungo l'asse. */
+  readonly onRollingBoulderMeshReady?: (
+    trapId: string,
+    boulderMesh: THREE.Object3D,
+    rollAxis: 'x' | 'z',
+  ) => void;
+  /**
+   * ART-006: callback invocata per il meccanismo leva+sigillo.
+   * handleMesh ruota di rotation.z quando la leva viene tirata;
+   * sealMesh.position.y scende da sealDropM/2 a –sealDropM/2.
+   * Opzionale — se assente il meccanismo è renderizzato ma statico.
+   */
+  readonly onLeverMeshReady?: (
+    leverId: string,
+    handleMesh: THREE.Mesh,
+    sealMesh: THREE.Mesh,
+  ) => void;
 }
 
 export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBounds[] {
@@ -103,6 +159,42 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
   // R-03: active room group — geometry goes here instead of dungeonRoot during
   // addRoom / addCorridor so the FrustumCuller can cull per-room.
   let _roomGroup: THREE.Group | null = null;
+  let allowPhysics = true;
+  let rebuilding = false;
+  const navSurfaces: { x: number; y: number; z: number; width: number; depth: number }[] = [];
+
+  // GAME-ART-003/010: pavimenti batched in un solo InstancedMesh.
+  const useInstancedFloors = resolveFeatureFlags().instancedFloors;
+  const floorTiles: TileTransform[] = [];
+  const instancedFloors = useInstancedFloors
+    ? createInstancedDungeonGroup(floorMaterial, wallMaterial, wallMaterial)
+    : null;
+  if (instancedFloors) {
+    dungeonRoot.add(instancedFloors.root);
+  }
+
+  function addFloorSlab(width: number, depth: number, x: number, z: number): void {
+    if (allowPhysics) {
+      createStaticBox(x, -FLOOR_THICKNESS_M / 2, z, width / 2, FLOOR_THICKNESS_M / 2, depth / 2);
+    }
+    if (!rebuilding) {
+      navSurfaces.push({ x, y: 0, z, width, depth });
+    }
+    if (instancedFloors) {
+      if (!rebuilding) {
+        floorTiles.push({
+          x,
+          y: 0,
+          z,
+          scaleX: width,
+          scaleZ: depth,
+        });
+      }
+      return;
+    }
+    if (rebuilding) return;
+    addDungeonBox(width, FLOOR_THICKNESS_M, depth, x, -FLOOR_THICKNESS_M / 2, z, floorMaterial);
+  }
 
   function addDungeonBox(
     width: number,
@@ -129,7 +221,9 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
 
   function addWallSegment(width: number, height: number, depth: number, x: number, y: number, z: number): void {
     addDungeonBox(width, height, depth, x, y, z, wallMaterial, true);
-    createStaticBox(x, y, z, width / 2, height / 2, depth / 2);
+    if (allowPhysics) {
+      createStaticBox(x, y, z, width / 2, height / 2, depth / 2);
+    }
   }
 
   function addDirectionalWall(
@@ -172,23 +266,7 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
   function addRoom(room: FloorSceneRoom): void {
     const width = room.bounds.maxX - room.bounds.minX;
     const depth = room.bounds.maxZ - room.bounds.minZ;
-    addDungeonBox(
-      width,
-      FLOOR_THICKNESS_M,
-      depth,
-      room.center.x,
-      -FLOOR_THICKNESS_M / 2,
-      room.center.z,
-      floorMaterial,
-    );
-    createStaticBox(
-      room.center.x,
-      -FLOOR_THICKNESS_M / 2,
-      room.center.z,
-      width / 2,
-      FLOOR_THICKNESS_M / 2,
-      depth / 2,
-    );
+    addFloorSlab(width, depth, room.center.x, room.center.z);
 
     const halfWidth = width / 2;
     const halfDepth = depth / 2;
@@ -241,6 +319,65 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
           ceilingMat,
         );
       }
+      // Blocchi di macerie/conci pendenti dal bordo della breccia
+      addDungeonBox(0.9, 0.45, 0.7, room.center.x - holeW * 0.4, ceilingY - 0.25, room.center.z - holeD * 0.45, wallMaterial);
+      addDungeonBox(0.7, 0.5, 0.85, room.center.x + holeW * 0.35, ceilingY - 0.28, room.center.z + holeD * 0.4, wallMaterial);
+      addDungeonBox(0.8, 0.4, 0.6, room.center.x + holeW * 0.42, ceilingY - 0.2, room.center.z - holeD * 0.35, wallMaterial);
+    } else if (ceilingKind === 'COFFERED') {
+      // Soffitto a cassettoni egizio: lastra superiore + reticolo di architravi a gradino incassati
+      addDungeonBox(fullW, CEILING_THICKNESS_M, fullD, room.center.x, ceilingY, room.center.z, ceilingMat);
+      const gridCountX = Math.max(2, Math.floor(width / 3.2));
+      const gridCountZ = Math.max(2, Math.floor(depth / 3.2));
+      const beamThick = 0.32;
+      const beamDrop = 0.26;
+      const beamY = ceilingY - CEILING_THICKNESS_M / 2 - beamDrop / 2;
+
+      // Travi longitudinali X
+      for (let i = 1; i < gridCountZ; i++) {
+        const offsetZ = -depth / 2 + (i * depth) / gridCountZ;
+        addDungeonBox(width, beamDrop, beamThick, room.center.x, beamY, room.center.z + offsetZ, wallMaterial);
+      }
+      // Travi trasversali Z
+      for (let j = 1; j < gridCountX; j++) {
+        const offsetX = -width / 2 + (j * width) / gridCountX;
+        addDungeonBox(beamThick, beamDrop, depth, room.center.x + offsetX, beamY, room.center.z, wallMaterial);
+      }
+    } else if (ceilingKind === 'BEAMED') {
+      // Grande galleria: architravi monolitici massicci in pietra posati a intervalli regolari
+      addDungeonBox(fullW, CEILING_THICKNESS_M, fullD, room.center.x, ceilingY, room.center.z, ceilingMat);
+      const beamCount = Math.max(2, Math.floor(depth / 2.6));
+      const beamWidth = 0.55;
+      const beamHeight = 0.42;
+      const beamY = ceilingY - CEILING_THICKNESS_M / 2 - beamHeight / 2;
+
+      for (let i = 0; i <= beamCount; i++) {
+        const offsetZ = -depth / 2 + (i * depth) / Math.max(1, beamCount);
+        addDungeonBox(width, beamHeight, beamWidth, room.center.x, beamY, room.center.z + offsetZ, wallMaterial);
+      }
+    } else if (ceilingKind === 'HIGH_VAULT') {
+      // Volta monumentale: quota elevata con architravi perimetrali e costoloni di supporto
+      addDungeonBox(fullW, CEILING_THICKNESS_M, fullD, room.center.x, ceilingY, room.center.z, ceilingMat);
+      const vaultGroup = createEgyptianCeiling({
+        width: fullW,
+        depth: fullD,
+        height: 0,
+        style: 'corbelled_vault',
+      });
+      vaultGroup.position.set(room.center.x, WALL_HEIGHT_M - 0.1, room.center.z);
+      if (_roomGroup) _roomGroup.add(vaultGroup);
+      else dungeonRoot.add(vaultGroup);
+    } else if (ceilingKind === 'STARRY') {
+      // Soffitto stellato in lapislazzuli con costellazioni d'oro e disco solare
+      addDungeonBox(fullW, CEILING_THICKNESS_M, fullD, room.center.x, ceilingY, room.center.z, ceilingMat);
+      const starlitGroup = createEgyptianCeiling({
+        width: fullW,
+        depth: fullD,
+        height: 0,
+        style: 'starlit_lapis',
+      });
+      starlitGroup.position.set(room.center.x, ceilingY - CEILING_THICKNESS_M / 2, room.center.z);
+      if (_roomGroup) _roomGroup.add(starlitGroup);
+      else dungeonRoot.add(starlitGroup);
     } else {
       // Copre anche lo spessore delle pareti: dal basso non si vede alcuna
       // fessura verso il vuoto esterno.
@@ -255,8 +392,7 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
     const centerZ = (corridor.bounds.minZ + corridor.bounds.maxZ) / 2;
     const wallY = WALL_HEIGHT_M / 2;
 
-    addDungeonBox(width, FLOOR_THICKNESS_M, depth, centerX, -FLOOR_THICKNESS_M / 2, centerZ, floorMaterial);
-    createStaticBox(centerX, -FLOOR_THICKNESS_M / 2, centerZ, width / 2, FLOOR_THICKNESS_M / 2, depth / 2);
+    addFloorSlab(width, depth, centerX, centerZ);
 
     // Soffitto del corridoio: più basso di quello delle camere, e in pietra
     // (mai stellato — il cielo dipinto è riservato alle sale funerarie).
@@ -453,6 +589,85 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
     createStaticBox(landmark.position.x, 0.18, landmark.position.z, 0.55, 0.18, 0.55);
   }
 
+  /**
+   * ART-006: piastra a pressione.
+   *
+   * La lastra è sul pavimento; le punte sono figlie di spikesGroup, che
+   * parte con position.y = 0 (punte nascoste) e viene animato verso l'alto
+   * da TrapSystem. Il corpo fisico non è necessario: le trappole sono
+   * geometria pura, il danno è calcolato dalla simulazione (distanza).
+   */
+  function addPressurePlate(trap: FloorSceneTrap): void {
+    const { plate, spikesGroup } = buildPressurePlateMesh(wallMaterial);
+    plate.position.set(trap.position.x, 0, trap.position.z);
+    dungeonRoot.add(plate);
+    spikesGroup.position.set(trap.position.x, 0, trap.position.z);
+    dungeonRoot.add(spikesGroup);
+    options.onPressurePlateMeshReady?.(trap.trapId, spikesGroup);
+  }
+
+  /**
+   * ART-006: pendolo a lama da soffitto.
+   *
+   * Il mountMesh è statico (il blocco al soffitto). pivotGroup contiene braccio
+   * e lama e viene animato in rotazione da TrapSystem. L'asse di rotazione
+   * dipende dal corridoio ospite: corridoio X → rotation.z, corridoio Z → rotation.x.
+   * Questa mappatura avviene nel codice che registra l'animator in TrapSystem,
+   * non qui: il renderer si limita a consegnare il pivotGroup alla callback.
+   */
+  function addBladePendulum(trap: FloorSceneTrap): void {
+    const { pivotGroup, mountMesh } = buildBladePendulumMesh(wallMaterial);
+    mountMesh.position.set(trap.position.x, 0, trap.position.z);
+    pivotGroup.position.set(trap.position.x, 0, trap.position.z);
+    dungeonRoot.add(mountMesh);
+    dungeonRoot.add(pivotGroup);
+    options.onPendulumMeshReady?.(trap.trapId, pivotGroup, trap.corridorAxis ?? 'x');
+  }
+
+  function addDartLauncher(trap: FloorSceneTrap): void {
+    const { housing, dartMesh } = buildDartLauncherMesh(wallMaterial);
+    housing.position.set(trap.position.x, 0, trap.position.z);
+    dartMesh.position.set(trap.position.x, 1.15, trap.position.z);
+    const axis = trap.corridorAxis ?? 'x';
+    if (axis === 'z') {
+      dartMesh.rotation.set(Math.PI / 2, 0, 0);
+    }
+    dungeonRoot.add(housing);
+    dungeonRoot.add(dartMesh);
+    options.onDartLauncherMeshReady?.(trap.trapId, dartMesh, axis);
+  }
+
+  function addRollingBoulder(trap: FloorSceneTrap): void {
+    const { boulderMesh } = buildRollingBoulderMesh(wallMaterial);
+    boulderMesh.position.set(trap.position.x, 0.72, trap.position.z);
+    dungeonRoot.add(boulderMesh);
+    options.onRollingBoulderMeshReady?.(trap.trapId, boulderMesh, trap.corridorAxis ?? 'x');
+  }
+
+  /**
+   * ART-006: meccanismo leva + sigillo di pietra.
+   *
+   * La leva è addossata alla parete; il sigillo è posizionato secondo
+   * sealPosition (centro della lastra nella posizione "chiusa").
+   * Nessun corpo fisico per il sigillo: il passaggio è sempre aperto,
+   * la lastra è solo visiva.
+   */
+  function addLeverPassage(passage: FloorSceneLeverPassage): void {
+    const { leverGroup, handleMesh } = buildLeverMesh(wallMaterial);
+    leverGroup.position.set(passage.leverPosition.x, 0, passage.leverPosition.z);
+    dungeonRoot.add(leverGroup);
+
+    const sealMesh = buildSealMesh(wallMaterial, passage.sealWidthM, passage.sealDepthM);
+    sealMesh.position.set(
+      passage.sealPosition.x,
+      passage.sealPosition.y,
+      passage.sealPosition.z,
+    );
+    dungeonRoot.add(sealMesh);
+
+    options.onLeverMeshReady?.(passage.leverId, handleMesh, sealMesh);
+  }
+
   const cullBounds: CullBounds[] = [];
 
   for (const room of layout.rooms) {
@@ -461,6 +676,15 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
     _roomGroup = group;
     addRoom(room);
     _roomGroup = null;
+    group.userData['rebuild'] = (): void => {
+      rebuilding = true;
+      allowPhysics = false;
+      _roomGroup = group;
+      addRoom(room);
+      _roomGroup = null;
+      allowPhysics = true;
+      rebuilding = false;
+    };
     cullBounds.push({
       id: String(room.roomId),
       min: { x: room.bounds.minX, y: -FLOOR_THICKNESS_M, z: room.bounds.minZ },
@@ -486,6 +710,33 @@ export function buildDungeonLayout(options: BuildDungeonLayoutOptions): CullBoun
   for (const landmark of layout.landmarks) {
     addLandmark(landmark);
   }
+
+  // ART-006 / GAME-ART-012: trappole e meccanismo leva.
+  for (const trap of layout.traps) {
+    switch (trap.kind) {
+      case 'pressurePlate':
+        addPressurePlate(trap);
+        break;
+      case 'bladePendulum':
+        addBladePendulum(trap);
+        break;
+      case 'dartLauncher':
+        addDartLauncher(trap);
+        break;
+      case 'rollingBoulder':
+        addRollingBoulder(trap);
+        break;
+    }
+  }
+  if (layout.leverPassage) {
+    addLeverPassage(layout.leverPassage);
+  }
+
+  if (instancedFloors) {
+    instancedFloors.setFloorTiles(floorTiles);
+  }
+
+  dungeonRoot.userData['navSurfaces'] = navSurfaces;
 
   return cullBounds;
 }
