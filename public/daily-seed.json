@@ -1,10 +1,10 @@
 {
-  "date": "2026-08-30",
-  "seed": 2828130390,
+  "date": "2026-08-31",
+  "seed": 3794594648,
   "modifiers": [
-    "SPEED_RUN"
+    "NO_TORCH"
   ],
-  "targetFloor": 5,
+  "targetFloor": 6,
   "description": "Il modificatore del giorno mette alla prova una sola abilità.",
-  "generatedAt": "2026-08-30T02:30:41.033Z"
+  "generatedAt": "2026-08-31T02:24:47.765Z"
 }
