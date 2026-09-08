@@ -120,9 +120,17 @@ export function createDeathOverlay(): DeathOverlay {
     panel.id = 'death-overlay';
     panel.style.cssText = `
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(11, 9, 8, 0.94);
+      background:
+        radial-gradient(ellipse at 50% 40%, rgba(42, 28, 12, 0.55) 0%, rgba(8, 6, 5, 0.96) 70%),
+        repeating-linear-gradient(
+          0deg,
+          rgba(60, 40, 18, 0.04) 0px,
+          rgba(60, 40, 18, 0.04) 1px,
+          transparent 1px,
+          transparent 4px
+        );
       z-index: 110; display: flex; align-items: center; justify-content: center;
-      font-family: 'Courier New', monospace; color: #D4A05A;
+      font-family: Cinzel, 'Palatino Linotype', 'Book Antiqua', serif; color: #D4A05A;
       user-select: none; -webkit-user-select: none;
     `;
 
@@ -132,7 +140,9 @@ export function createDeathOverlay(): DeathOverlay {
     content.setAttribute('aria-modal', 'true');
     content.setAttribute('aria-labelledby', 'death-title');
     content.style.cssText = `
-      background: #1A1512; border: 2px solid #4A2F1A; border-radius: 6px;
+      background: linear-gradient(165deg, #2A1E12 0%, #1A1510 45%, #14100C 100%);
+      border: 2px solid #8C6A28; border-radius: 2px;
+      box-shadow: inset 0 0 0 1px #3A2A14, 0 12px 40px rgba(0,0,0,0.55);
       padding: 28px 32px; width: min(460px, 92vw);
       display: flex; flex-direction: column; gap: 14px;
       pointer-events: all;
@@ -142,10 +152,19 @@ export function createDeathOverlay(): DeathOverlay {
     title.id = 'death-title';
     title.textContent = 'La Cripta Ti Ha Spezzato';
     title.style.cssText = `
-      margin: 0; font-size: 24px; color: #D4A05A;
-      border-bottom: 1px solid #4A2F1A; padding-bottom: 12px;
+      margin: 0; font-size: 24px; color: #E8C070; letter-spacing: 0.04em;
+      border-bottom: 1px solid #5A4020; padding-bottom: 12px;
     `;
     content.appendChild(title);
+
+    const glyphRule = document.createElement('div');
+    glyphRule.setAttribute('aria-hidden', 'true');
+    glyphRule.textContent = '𓂀  ·  𓋹  ·  𓆣';
+    glyphRule.style.cssText = `
+      color: #8C6A28; font-size: 14px; letter-spacing: 0.35em;
+      text-align: center; margin-top: -4px;
+    `;
+    content.appendChild(glyphRule);
 
     causeEl = document.createElement('div');
     causeEl.style.cssText = 'color:#C77D3A; font-size:14px; line-height:1.5;';
@@ -185,8 +204,8 @@ export function createDeathOverlay(): DeathOverlay {
     shareEl.style.cssText = `
       align-self: flex-start; padding: 8px 14px; background: transparent;
       border: 1px solid #2E8B8B; color: #2E8B8B;
-      font-family: 'Courier New', monospace; font-size: 12px;
-      border-radius: 3px; cursor: pointer;
+      font-family: Cinzel, 'Palatino Linotype', serif; font-size: 12px;
+      border-radius: 2px; cursor: pointer;
     `;
     const shareButton = shareEl;
     shareEl.addEventListener('click', () => {
@@ -201,9 +220,9 @@ export function createDeathOverlay(): DeathOverlay {
     retryButtonEl.textContent = 'Riprova';
     retryButtonEl.style.cssText = `
       align-self: flex-end; padding: 10px 18px; background: transparent;
-      border: 1px solid #D4A05A; color: #D4A05A;
-      font-family: 'Courier New', monospace; font-size: 13px;
-      border-radius: 3px;
+      border: 1px solid #D4A05A; color: #E8C070;
+      font-family: Cinzel, 'Palatino Linotype', serif; font-size: 13px;
+      border-radius: 2px; letter-spacing: 0.06em;
     `;
     retryButtonEl.addEventListener('click', () => {
       if (!retryButtonEl?.disabled) {

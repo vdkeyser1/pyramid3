@@ -89,3 +89,37 @@ describe('ProceduralCueLibrary — cue nemici (B-04 ext)', () => {
     expect(curse.noise ?? false).not.toBe(swing.noise ?? false);
   });
 });
+
+describe('ProceduralCueLibrary — cue trappole e manufatti egizi (P04)', () => {
+  const PYRAMID_CUES = [
+    'trap_blade_whoosh',
+    'trap_spikes_extend',
+    'trap_boulder_rumble',
+    'trap_lever_pull',
+    'relic_chime',
+    'sand_pour',
+  ] as const;
+
+  it('tutti i cue delle trappole hanno parametri validi', () => {
+    for (const name of PYRAMID_CUES) {
+      const p = getProceduralCueProfile(name);
+      expect(p.gain, name).toBeGreaterThan(0);
+      expect(p.durationSeconds, name).toBeGreaterThan(0);
+      expect(p.frequencyHz, name).toBeGreaterThan(0);
+    }
+  });
+
+  it('relic_chime è una risonanza eterea pura ad alta frequenza', () => {
+    const relic = getProceduralCueProfile('relic_chime');
+    expect(relic.waveform).toBe('sine');
+    expect(relic.frequencyHz).toBeGreaterThan(700);
+    expect(relic.durationSeconds).toBeGreaterThan(1.0);
+  });
+
+  it('trap_boulder_rumble è il più profondo e lungo tra i rumori di trappola', () => {
+    const rumble = getProceduralCueProfile('trap_boulder_rumble');
+    const spikes = getProceduralCueProfile('trap_spikes_extend');
+    expect(rumble.frequencyHz).toBeLessThan(spikes.frequencyHz);
+    expect(rumble.durationSeconds).toBeGreaterThan(spikes.durationSeconds);
+  });
+});

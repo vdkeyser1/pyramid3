@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import type { WebGPURenderer as ThreeWebGPURenderer } from 'three/webgpu';
 import type {
+  FloorLayoutTrapHooks,
   RendererBrazierState,
   RendererEnemyState,
   RendererHandle,
@@ -29,8 +30,13 @@ import {
   loadPbrTextureSet,
 } from '@/rendering/Materials.js';
 import { createLogger } from '@/core/Logger.js';
+import { TRAPS } from '@/content/balance.js';
+import { resolveFeatureFlags } from '@/config/FeatureFlags.js';
+import { createLodManager, type LodManager } from '@/rendering/LodManager.js';
+import { createPlacedOilLamp } from '@/rendering/EgyptianOilLamp.js';
+import { ShadowMapOptimizer } from '@/rendering/ShadowMapOptimizer.js';
 import type { AssetLoader } from '@/rendering/AssetLoader.js';
-import type { ParticleBurst } from '@/rendering/Vfx.js';
+import type { ParticleBurst, SmokePlume, DustMotes } from '@/rendering/Vfx.js';
 import type { PhysicsKinematicBox, PhysicsWorld } from '@/physics/PhysicsWorld.js';
 import type { FloorSceneLayout } from '@/world/FloorSceneLayout.js';
 import { createFrustumCuller } from '@/rendering/FrustumCuller.js';
@@ -94,7 +100,8 @@ export function createThreeRenderer(
   let torchLight: THREE.SpotLight;
   let torchAmbientLight: THREE.PointLight;
   let placedTorchLight: THREE.PointLight;
-  let placedTorchMesh: THREE.Mesh;
+  /** Lampada a olio posata (procedurale egizia — niente GLB KayKit). */
+  let placedOilLamp: import('@/rendering/EgyptianOilLamp.js').PlacedOilLamp | null = null;
   // G-15: fiamma procedurale della torcia (mano) e della torcia posata.
   let handFlame: { group: THREE.Group; update(deltaMs: number, intensity: number): void; setFlickerReduced(reduced: boolean): void } | null = null;
   /** Braccio che regge la torcia (con la fiamma agganciata in cima). */
@@ -105,6 +112,9 @@ export function createThreeRenderer(
   let sparkBurst: ParticleBurst | null = null;
   // G-15 V2: trail a falce per i colpi corpo-a-corpo.
   let weaponTrail: { mesh: THREE.Mesh; slash(position: { readonly x: number; readonly y: number; readonly z: number }, yaw: number): void; update(deltaMs: number): boolean } | null = null;
+  // P02: fumo d'incenso per bracieri e pulviscolo dorato tombale
+  const brazierSmokePlumes = new Map<string, SmokePlume>();
+  let dustMotes: DustMotes | null = null;
   /** Un viewmodel per tipo d'arma; solo quello attivo è visibile. */
   const weaponViewmodels = new Map<string, {
     readonly group: THREE.Group;
@@ -122,6 +132,9 @@ export function createThreeRenderer(
   } | null = null;
   let envMapTexture: THREE.Texture | null = null;
   let ambientLight: THREE.AmbientLight;
+  /** C-02: sessione XR attiva (solo WebGL2). */
+  let xrActive = false;
+  let onXrSessionEnd: (() => void) | null = null;
   let hemiLight: THREE.HemisphereLight;
   let floorMaterial: THREE.MeshStandardMaterial;
   let wallMaterial: THREE.MeshStandardMaterial;
@@ -135,6 +148,7 @@ export function createThreeRenderer(
   let digSiteBeamMaterial: THREE.MeshBasicMaterial | null = null;
   /** Segno blu dipinto dentro l'anello del sito di scavo. */
   let digSiteGlyphMaterial: THREE.MeshBasicMaterial | null = null;
+  let doorwayGlowMaterial: THREE.MeshBasicMaterial | null = null;
   /**
    * Colonne procedurali del piano corrente. Ognuna possiede geometrie e
    * materiali propri: vanno liberate al cambio piano, altrimenti si accumulano
@@ -165,6 +179,10 @@ export function createThreeRenderer(
     /** Animator del modello, se il GLB ha clip utilizzabili. */
     animator?: import('@/rendering/EnemyAnimator.js').EnemyAnimator | null;
   }[] = [];
+  /** GAME-ART: InstancedMesh per sciami SCARAB (≥3) — 1 draw call. */
+  let scarabSwarmMesh: THREE.InstancedMesh | null = null;
+  const scarabSwarmDummy = new THREE.Object3D();
+  const SCARAB_SWARM_INSTANCE_CAP = 32;
   /** Cache dei GLB nemici: un solo fetch per tipo, poi si clona. */
   const enemyModelCache = new Map<string, THREE.Group>();
   /** yOffset per archetipo, letto da ENEMY_ASSETS al primo caricamento. */
@@ -176,6 +194,22 @@ export function createThreeRenderer(
   let disposed = false;
   let initialized = false;
   let activeFloorLayout: FloorSceneLayout | null = null;
+  let pendingTrapHooks: FloorLayoutTrapHooks | null = null;
+  let lastRoomBounds: import('@/rendering/FrustumCuller.js').RoomBounds[] = [];
+  let navBakeSurfaces: { x: number; y: number; z: number; width: number; depth: number }[] = [];
+  let roomStreamingRegistrar: {
+    clear(): void;
+    register(handle: {
+      readonly id: string;
+      setVisible(visible: boolean): void;
+      dispose(): void;
+    }): void;
+  } | null = null;
+  let floorLayoutReady: Promise<void> = Promise.resolve();
+  /** GAME-ART-010: LOD props + shadow map condizionale (FeatureFlags). */
+  const featureFlags = resolveFeatureFlags();
+  const lodManager: LodManager | null = featureFlags.meshLod ? createLodManager() : null;
+  let shadowMapOptimizer: ShadowMapOptimizer | null = null;
   let _doorOpen = false;
   let _doorMesh: THREE.Mesh | null = null;
   let _doorPhysics: PhysicsKinematicBox | null = null;
@@ -200,7 +234,7 @@ export function createThreeRenderer(
   // Bloom WebGPU: RenderPipeline + BloomNode TSL (r183+).
   let webgpuPipeline: { render(): void; dispose(): void } | null = null;
   // SSAO-1: ambient occlusion screen-space (solo WebGL2, per ambienti di pietra).
-  let ssaoPass: { dispose(): void; setSize(width: number, height: number): void } | null = null;
+  let ssaoPass: { dispose(): void; setSize(width: number, height: number): void; enabled?: boolean; kernelRadius?: number } | null = null;
   // W-7: sandstorm post-processing controller (heat shimmer + grain).
   let sandStormController: import('@/rendering/SandStormPass.js').SandStormController | null = null;
   // QC-1: post-fx (bloom+SSAO) attivo? Controllato da applyQualityProfile.
@@ -213,8 +247,6 @@ export function createThreeRenderer(
   let lootReliquary: THREE.Group | null = null;
   // Pickup della pala — piccola croce dorata sul pavimento.
   let shovelPickupGroup: THREE.Group | null = null;
-  // KayKit: torcia posata (GLB) — sostituisce il cilindro placeholder se caricato.
-  let placedTorchGlb: THREE.Group | null = null;
   // Soffitto stellato: ricreato a ogni piano (seed = floorIndex), va rilasciato.
   let ceilingMaterial: THREE.MeshStandardMaterial | null = null;
 
@@ -261,9 +293,9 @@ export function createThreeRenderer(
     // Se un asset manca, l'AssetLoader fallisce a null e il renderer usa le
     // primitive placeholder — mai un blocco del bootstrap.
     void (async () => {
-      const { createAssetLoader } = await import('@/rendering/AssetLoader.js');
+      const { getAssetLoader } = await import('@/rendering/AssetLoader.js');
       const { ENEMY_ASSETS, LANDMARK_ASSETS } = await import('@/content/assets.js');
-      assetLoader = createAssetLoader();
+      assetLoader = getAssetLoader();
       const paths = [
         ...ENEMY_ASSETS.map((entry) => entry.modelPath),
         ...LANDMARK_ASSETS.map((entry) => entry.modelPath),
@@ -273,38 +305,26 @@ export function createThreeRenderer(
         log.info('Asset preload completato', { assets: paths.length, caricate: paths.filter((p) => assetLoader?.has(p) ?? false).length });
       }
 
-      // Carica torcia KayKit (CC0) — sostituisce il cilindro placeholder.
-      const torchGltf = await assetLoader.load('assets/props/torch_lit.glb');
-      if (torchGltf && !disposed) {
-        const group = torchGltf.scene.clone(true);
-        group.scale.setScalar(0.9);
-        // KayKit usa asse Y verso l'alto, origine alla base — nessuna rotazione necessaria.
-        group.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-          }
-        });
-        group.visible = false;
-        scene.add(group);
-        placedTorchGlb = group;
-      }
-
-      // W-1: HDRI Poly Haven CC0 — migliora l'IBL su tutti i MeshStandardMaterial.
-      // Sostituisce l'env map procedurale se il file è disponibile.
+      // G-25: HDRI Poly Haven desert_road_puresky — IBL su MeshStandardMaterial.
+      // Tier LOW resta sul colore statico / env procedurale.
       if (backend === 'webgl2' && !disposed) {
-        const { loadHDRI } = await import('@/rendering/HDRILoader.js');
-        const hdri = await loadHDRI(renderer as THREE.WebGLRenderer, '/hdri/sahara_2k.hdr');
-        // `disposed` può cambiare durante l'await (dispose() concorrente): TS non
-        // modella la mutazione attraverso il confine async e crede sia sempre false,
-        // ma il controllo è una guardia reale contro l'uso dopo il rilascio.
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (hdri && !disposed) {
-          envMapTexture?.dispose();
-          scene.environment = hdri.envMap;
-          scene.environmentIntensity = 0.45;
-          envMapTexture = hdri.envMap;
-          log.info('HDRI Poly Haven caricato');
+        const { hdriUrlForResolution } = await import('@/config/PerformanceTiers.js');
+        const { detectCapabilities } = await import('@/config/PerformanceTiers.js');
+        const { selectTierConfig } = await import('@/config/PerformanceTiers.js');
+        const tier = selectTierConfig(detectCapabilities(), window.devicePixelRatio || 1);
+        const hdriUrl = hdriUrlForResolution(tier.hdriResolution);
+        if (hdriUrl) {
+          const { loadHDRI } = await import('@/rendering/HDRILoader.js');
+          const hdri = await loadHDRI(renderer as THREE.WebGLRenderer, hdriUrl);
+          // `disposed` può cambiare durante l'await (dispose() concorrente).
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+          if (hdri && !disposed) {
+            envMapTexture?.dispose();
+            scene.environment = hdri.envMap;
+            scene.environmentIntensity = 0.2;
+            envMapTexture = hdri.envMap;
+            log.info('HDRI Poly Haven desert caricato', { url: hdriUrl });
+          }
         }
       }
     })();
@@ -354,7 +374,8 @@ export function createThreeRenderer(
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.2;
+      // Exposure neutra: ambient bassa + torcia moderata (Egyptian Noir).
+      renderer.toneMappingExposure = 1.0;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
     }
 
@@ -367,7 +388,7 @@ export function createThreeRenderer(
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0b0908);
-    scene.fog = new THREE.FogExp2(0x0b0908, 0.0008);
+    scene.fog = new THREE.FogExp2(0x0b0908, 0.0011);
 
     dungeonRoot = new THREE.Group();
     scene.add(dungeonRoot);
@@ -415,7 +436,8 @@ export function createThreeRenderer(
         envScene.add(gold);
         const envMap = pmrem.fromScene(envScene, 0.04).texture;
         scene.environment = envMap;
-        scene.environmentIntensity = 0.55;
+        // IBL debole: riempie i metalli senza lavare l'oscurità delle stanze.
+        scene.environmentIntensity = 0.22;
         envMapTexture = envMap;
         pmrem.dispose();
         log.info('Env map procedurale attiva', { backend });
@@ -437,7 +459,11 @@ export function createThreeRenderer(
         // SSAO-1: ambient occlusion screen-space per ambienti di pietra
         // credibili (profondità percepita senza geometria extra). Solo WebGL2.
         const ssao = new SSAOPass(scene, camera, canvas.clientWidth, canvas.clientHeight);
-        ssao.output = 1; // SSAOOutputPass? 1 = default SSAO blend
+        ssao.output = 1;
+        const ssaoTuned = ssao as typeof ssao & { kernelRadius: number; minDistance: number; maxDistance: number };
+        ssaoTuned.kernelRadius = 0.4;
+        ssaoTuned.minDistance = 0.005;
+        ssaoTuned.maxDistance = 0.1;
         composition.addPass(ssao);
         const bloom = new UnrealBloomPass(
           new THREE.Vector2(canvas.clientWidth, canvas.clientHeight),
@@ -507,31 +533,36 @@ export function createThreeRenderer(
       }
     }
 
-    ambientLight = new THREE.AmbientLight(0xffddbb, 0.6);
+    ambientLight = new THREE.AmbientLight(0xffddbb, 0.07);
     scene.add(ambientLight);
 
-    hemiLight = new THREE.HemisphereLight(0x88ccff, 0x442200, 0.5);
+    hemiLight = new THREE.HemisphereLight(0x88ccff, 0x442200, 0.11);
     scene.add(hemiLight);
 
-    // G-18 V2: torcia con halo ampio da "vera fiamma" — SpotLight calda con
-    // penombra morbida + PointLight ambientale secondaria (l'alone che illumina
-    // la stanza intorno al giocatore).
-    torchLight = new THREE.SpotLight(0xffb45e, 100, 45, Math.PI / 3.2, 0.85, 0.6);
+    // G-18: torcia Egyptian Noir — cono stretto, alone vicino (non lava la stanza).
+    torchLight = new THREE.SpotLight(0xffb45e, 42, 28, Math.PI / 3.8, 0.72, 1.1);
     torchLight.visible = false;
     torchLight.position.copy(camera.position);
     torchLight.castShadow = true;
     torchLight.shadow.mapSize.set(1024, 1024);
     torchLight.shadow.camera.near = 0.3;
-    torchLight.shadow.camera.far = 45;
+    torchLight.shadow.camera.far = 28;
     torchLight.shadow.bias = -0.0002;
     scene.add(torchLight);
     scene.add(torchLight.target);
 
-    torchAmbientLight = new THREE.PointLight(0xff9a3c, 0, 9, 1.7);
+    if (featureFlags.shadowMapOpt && 'shadowMap' in renderer) {
+      const gl = renderer as THREE.WebGLRenderer;
+      gl.shadowMap.autoUpdate = false;
+      shadowMapOptimizer = new ShadowMapOptimizer();
+      shadowMapOptimizer.addSpotLight(torchLight, 256);
+    }
+
+    torchAmbientLight = new THREE.PointLight(0xff9a3c, 0, 6.5, 2.0);
     torchAmbientLight.visible = false;
     scene.add(torchAmbientLight);
 
-    placedTorchLight = new THREE.PointLight(0xd78e38, 16, 11, 2);
+    placedTorchLight = new THREE.PointLight(0xd78e38, 9, 9, 2);
     placedTorchLight.visible = false;
     placedTorchLight.castShadow = true;
     placedTorchLight.shadow.mapSize.set(512, 512);
@@ -714,21 +745,22 @@ export function createThreeRenderer(
     exitBeaconLight.position.set(_doorClosedPos.x, _doorClosedPos.y + 1.0, _doorClosedPos.z);
     scene.add(exitBeaconLight);
 
-    placedTorchMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.05, 0.09, 0.85, 8),
-      placedTorchMaterial,
-    );
-    placedTorchMesh.visible = false;
-    placedTorchMesh.castShadow = true;
-    placedTorchMesh.receiveShadow = true;
-    scene.add(placedTorchMesh);
+    placedOilLamp = createPlacedOilLamp(placedTorchMaterial);
+    placedOilLamp.group.visible = false;
+    scene.add(placedOilLamp.group);
 
     // G-15: fiamme procedurali — la fiamma in mano segue la camera (viewmodel),
     // quella posata segue il mesh della torcia posata.
-    const { createTorchFlame, createParticleBurst, createWeaponTrail } = await import('@/rendering/Vfx.js');
+    const { createTorchFlame, createParticleBurst, createWeaponTrail, createDustMotes } = await import('@/rendering/Vfx.js');
+    const { enableMeshBvhExtension } = await import('@/rendering/MeshBvhHelper.js');
+    enableMeshBvhExtension();
     const hand = createTorchFlame();
     hand.group.visible = false;
     handFlame = hand;
+
+    // P02: pulviscolo dorato millenario sospeso nelle camere della piramide
+    dustMotes = createDustMotes();
+    scene.add(dustMotes.points);
 
     // Braccio con la torcia: prima la fiamma fluttuava davanti alla camera
     // senza nulla che la reggesse. Ora è agganciata in cima al bastone, così
@@ -821,12 +853,62 @@ export function createThreeRenderer(
     });
   }
 
-  function setFloorLayout(layout: FloorSceneLayout | null): void {
+  function disposeUniqueRoomGeometry(group: THREE.Group): void {
+    const toRemove: THREE.Object3D[] = [];
+    group.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const geom = child.geometry;
+      if (geom && geom.userData['shared'] !== true) {
+        geom.dispose();
+      }
+      toRemove.push(child);
+    });
+    group.clear();
+    void toRemove;
+  }
+
+  function makeStreamHandle(bounds: import('@/rendering/FrustumCuller.js').RoomBounds) {
+    let gpuDisposed = false;
+    return {
+      id: bounds.id,
+      setVisible(visible: boolean): void {
+        if (visible && gpuDisposed) {
+          const rebuild = bounds.group.userData['rebuild'] as (() => void) | undefined;
+          rebuild?.();
+          gpuDisposed = false;
+        }
+        bounds.group.visible = visible;
+      },
+      dispose(): void {
+        if (gpuDisposed) return;
+        disposeUniqueRoomGeometry(bounds.group);
+        gpuDisposed = true;
+        bounds.group.visible = false;
+      },
+    };
+  }
+
+  function syncRoomStreamingHandles(): void {
+    if (!roomStreamingRegistrar) return;
+    roomStreamingRegistrar.clear();
+    for (const bounds of lastRoomBounds) {
+      // Solo stanze (id numerico): i corridoi restano nel frustum.
+      if (bounds.id.includes('-')) continue;
+      roomStreamingRegistrar.register(makeStreamHandle(bounds));
+    }
+  }
+
+  function setFloorLayout(
+    layout: FloorSceneLayout | null,
+    trapHooks?: FloorLayoutTrapHooks,
+  ): void {
     activeFloorLayout = layout;
+    pendingTrapHooks = trapHooks ?? null;
     if (!initialized || !layout) {
+      floorLayoutReady = Promise.resolve();
       return;
     }
-    void rebuildFloorLayout(layout);
+    floorLayoutReady = rebuildFloorLayout(layout);
   }
 
   /**
@@ -847,7 +929,7 @@ export function createThreeRenderer(
     }
     // Accento: emissive dei landmark critici (usato da buildDungeonLayout)
     const darkness = Math.max(0, Math.min(1, palette.darknessFactor));
-    scene.fog = new THREE.FogExp2(0x0b0908, 0.0008 + darkness * 0.0016);
+    scene.fog = new THREE.FogExp2(0x0b0908, 0.0012 + darkness * 0.002);
     scene.background = new THREE.Color(0x0b0908);
     log.info('Palette piano applicata', { wallHex: palette.wallHex, darknessFactor: darkness });
   }
@@ -862,21 +944,26 @@ export function createThreeRenderer(
     readonly resolutionScale: number;
     readonly shadowMapSize: number;
     readonly usePostFx: boolean;
+    readonly ssaoEnabled?: boolean;
+    readonly bloomStrength?: number;
   }): void {
     if (!initialized) return;
 
     // Shadow map: dimensione scalata per tier
     const shadowSize = Math.max(256, profile.shadowMapSize);
     torchLight.shadow.mapSize.set(shadowSize, shadowSize);
-    torchLight.shadow.camera.far = profile.tier === 'low' ? 30 : 45;
+    torchLight.shadow.camera.far = profile.tier === 'low' ? 20 : 28;
     placedTorchLight.shadow.mapSize.set(Math.min(512, shadowSize), Math.min(512, shadowSize));
 
-    // Bloom (solo WebGL2): off su low, ridotto su medium
+    // Bloom (solo WebGL2): off su low, ridotto su medium, pieno su high.
+    // Threshold più alto su medium → meno bloom su superfici litte (torch).
     if (bloomPass) {
       const strength = profile.usePostFx
-        ? (profile.tier === 'medium' ? 0.38 : 0.55)
+        ? (profile.bloomStrength ?? (profile.tier === 'medium' ? 0.32 : profile.tier === 'high' ? 0.55 : 0))
         : 0;
       bloomPass.strength = strength;
+      bloomPass.threshold = profile.tier === 'medium' ? 0.55 : 0.42;
+      bloomPass.radius = profile.tier === 'medium' ? 0.4 : 0.55;
       if (composer) {
         composer.setSize(canvas.clientWidth, canvas.clientHeight);
       }
@@ -884,8 +971,12 @@ export function createThreeRenderer(
 
     // SSAO/bloom (solo WebGL2): il profilo low salta il composer in render()
     // (SSAOPass non ha un toggle runtime semplice e ri-crearlo è costoso).
-    _qualityWantsPostFx = profile.usePostFx;
+    _qualityWantsPostFx = profile.usePostFx && profile.tier !== 'low';
     postFxEnabled = _qualityWantsPostFx && !_motionReduced;
+    if (ssaoPass) {
+      // G-29: SSAO solo su tier HIGH (audit performance).
+      ssaoPass.enabled = profile.ssaoEnabled ?? profile.tier === 'high';
+    }
     if (ssaoPass && composer) {
       // Mantieni i target dell'SSAO allineati al canvas corrente
       composer.setSize(canvas.clientWidth, canvas.clientHeight);
@@ -915,53 +1006,79 @@ export function createThreeRenderer(
     if (!position || !initialized) return;
 
     const group = new THREE.Group();
-    // Cofanetto: base cubica + coperchio piramidale, oro con emissive
-    // Oro dalla libreria materiali. L'emissive va alzato rispetto al default:
-    // il reliquiario deve attirare l'occhio nel buio, non solo riflettere.
+
+    // 1. Cratere di scavo nella sabbia (fossa scavata nel suolo)
+    const craterGeo = new THREE.CylinderGeometry(0.75, 0.45, 0.22, 16);
+    const sandCraterMat = new THREE.MeshStandardMaterial({
+      color: 0x3d2812, // Terra scura e umida sotterranea
+      roughness: 0.96,
+      metalness: 0.05,
+    });
+    const crater = new THREE.Mesh(craterGeo, sandCraterMat);
+    crater.position.y = -0.09;
+    group.add(crater);
+
+    // Bordo rialzato di sabbia smossa scavata attorno alla buca
+    const moundGeo = new THREE.TorusGeometry(0.78, 0.12, 8, 16);
+    const sandMoundMat = new THREE.MeshStandardMaterial({
+      color: 0x8a6a3b,
+      roughness: 0.92,
+    });
+    const mound = new THREE.Mesh(moundGeo, sandMoundMat);
+    mound.rotation.x = Math.PI / 2;
+    mound.position.y = 0.02;
+    group.add(mound);
+
+    // 2. Forziere del Faraone: base con rilievi dorati e coperchio piramidale
     const goldMaterial = createGoldMaterial();
-    goldMaterial.emissive.setHex(0x4a2f00);
-    goldMaterial.emissiveIntensity = 0.6;
-    const base = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.28, 0.5), goldMaterial);
-    base.position.y = 0.14;
+    goldMaterial.emissive.setHex(0x5a3f10);
+    goldMaterial.emissiveIntensity = 0.85;
+
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.32, 0.58), goldMaterial);
+    base.position.y = 0.16;
     base.castShadow = true;
     base.receiveShadow = true;
-    const lid = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.22, 4), goldMaterial);
-    lid.position.y = 0.39;
+
+    const lid = new THREE.Mesh(new THREE.ConeGeometry(0.48, 0.26, 4), goldMaterial);
+    lid.position.y = 0.44;
     lid.rotation.y = Math.PI / 4;
     lid.castShadow = true;
-    group.add(base, lid);
 
-    // V6: god ray del tesoro — cono volumetrico additivo (raggio di luce
-    // ascendente) + bagliore pulsante. Fake volumetric: funziona su WebGL2
-    // e WebGPU senza ray-marching TSL.
+    // Gemma sacra di diaspro in cima al forziere
+    const gemMat = new THREE.MeshStandardMaterial({
+      color: 0x00d8ff,
+      emissive: 0x0099ff,
+      emissiveIntensity: 1.6,
+      roughness: 0.15,
+      metalness: 0.5,
+    });
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.09), gemMat);
+    gem.position.y = 0.62;
+    group.add(base, lid, gem);
+
+    // Luce calda radiante del tesoro
+    const chestLight = new THREE.PointLight(0xffbe44, 14.0, 6.0);
+    chestLight.position.y = 0.75;
+    group.add(chestLight);
+
+    // 3. Colonna di luce dorata ascendente
     const beamMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffd48a,
+      color: 0xffe29a,
       transparent: true,
-      opacity: 0.16,
+      opacity: 0.28,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    const beam = new THREE.Mesh(new THREE.ConeGeometry(0.55, 2.6, 12, 1, true), beamMaterial);
-    beam.position.y = 1.5;
+    const beam = new THREE.Mesh(new THREE.ConeGeometry(0.65, 3.2, 14, 1, true), beamMaterial);
+    beam.position.y = 1.6;
     beam.renderOrder = 2;
     group.add(beam);
-    // Bagliore alla base del raggio
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffd48a,
-      transparent: true,
-      opacity: 0.35,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 8), glowMaterial);
-    glow.position.y = 0.3;
-    group.add(glow);
 
     group.position.set(position.x, position.y + 0.02, position.z);
     brazierRoot.add(group);
     lootReliquary = group;
-    log.info('Reliquiario del tesoro appare', { x: position.x, z: position.z });
+    log.info('Reliquiario del tesoro appare con cratere di scavo', { x: position.x, z: position.z });
   }
 
   function setShovelPickup(
@@ -1035,25 +1152,12 @@ export function createThreeRenderer(
     shovelPickupGroup = group;
   }
 
-  // W-5 / task-9: posiziona props 3D CC0 nelle stanze.
-  // Stanze ≥ 8×8: colonne/pilastri KayKit agli angoli.
-  // Stanze più piccole: colonne Kenney Dungeon.
   /**
-   * Dispone le colonne nelle camere secondo lo schema della sala ipostila
-   * egizia: due file parallele che fiancheggiano l'asse centrale, lasciando
-   * libero il passaggio in mezzo (Karnak, Luxor).
-   *
-   * Sostituisce il piazzamento precedente ai 4 angoli di ogni stanza, che era
-   * meccanico e usava i prop del pack KayKit Dungeon — colonne con armi e
-   * scudi, fantasy medievale fuori tema per una piramide egizia.
-   *
-   * Usa solo `ruins_column` (Kenney CC0), che è geometricamente neutra.
+   * Colonnata ipostila egizia (due file lungo l'asse, passaggio centrale).
+   * Mesh procedurali papiriformi — niente pack dungeon/Kenney.
    */
   async function placeRoomColumns(layout: FloorSceneLayout, root: THREE.Group): Promise<void> {
-    // Colonne generate proceduralmente invece dell'asset `ruins_column`:
-    // quello era un cilindro bianco liscio con capitello classicheggiante,
-    // che in scena leggeva come colonna greco-romana. Queste hanno fusto
-    // scanalato, capitello papiriforme/lotiforme/palmiforme e bande dipinte.
+    // Colonne generate proceduralmente (EgyptianColumn): fusto scanalato,
     const { createEgyptianColumn } = await import('@/rendering/EgyptianColumn.js');
     if (disposed) return;
 
@@ -1098,6 +1202,12 @@ export function createThreeRenderer(
           const x = alongZ ? cx + side * AISLE_HALF_WIDTH_M : cx + offset;
           const z = alongZ ? cz + offset : cz + side * AISLE_HALF_WIDTH_M;
 
+          // Non piazzare colonne davanti o a ridosso dei passaggi/porte
+          const nearDoorway = layout.doorways.some(
+            (d) => Math.hypot(d.center.x - x, d.center.z - z) < 2.2,
+          );
+          if (nearDoorway) continue;
+
           // Il tipo di capitello deriva dalla stanza, non dalla posizione:
           // una sala ha colonne coerenti fra loro, come nelle sale ipostile.
           const roomSeed = Number(room.roomId) || 0;
@@ -1117,16 +1227,156 @@ export function createThreeRenderer(
     }
   }
 
+  /**
+   * Soglie egizie procedurali (stipiti + architrave dorato) — niente gate
+   * Kenney Mini Dungeon (silhouette fantasy medievale, fuori tema piramide).
+   */
+  function placeEgyptianDoorways(
+    layout: FloorSceneLayout,
+    root: THREE.Group,
+  ): void {
+    if (layout.doorways.length === 0) return;
+
+    const stone = new THREE.MeshStandardMaterial({
+      color: 0x8a7350,
+      roughness: 0.92,
+      metalness: 0.04,
+      emissive: 0x1a1006,
+      emissiveIntensity: 0.08,
+    });
+    const gold = new THREE.MeshStandardMaterial({
+      color: 0xc8900a,
+      roughness: 0.45,
+      metalness: 0.35,
+      emissive: 0x4a3010,
+      emissiveIntensity: 0.35,
+    });
+
+    const jambGeo = new THREE.BoxGeometry(0.28, 2.4, 0.42);
+    const lintelGeo = new THREE.BoxGeometry(2.2, 0.28, 0.48);
+    const bandGeo = new THREE.BoxGeometry(2.05, 0.06, 0.5);
+
+    for (const doorway of layout.doorways) {
+      const group = new THREE.Group();
+      const yaw = doorway.axis === 'x' ? Math.PI / 2 : 0;
+
+      const left = new THREE.Mesh(jambGeo, stone);
+      left.position.set(-0.95, 1.2, 0);
+      left.castShadow = true;
+      left.receiveShadow = true;
+      const right = new THREE.Mesh(jambGeo, stone);
+      right.position.set(0.95, 1.2, 0);
+      right.castShadow = true;
+      right.receiveShadow = true;
+      const lintel = new THREE.Mesh(lintelGeo, stone);
+      lintel.position.set(0, 2.45, 0);
+      lintel.castShadow = true;
+      lintel.receiveShadow = true;
+      const band = new THREE.Mesh(bandGeo, gold);
+      band.position.set(0, 2.45, 0.02);
+
+      group.add(left, right, lintel, band);
+      group.position.set(doorway.center.x, 0, doorway.center.z);
+      group.rotation.y = yaw;
+      root.add(group);
+    }
+  }
+
+  /**
+   * Props di riempimento tomba: solo anfora/detriti di pietra (neutri).
+   * Esclusi barrel/chest/banner Kenney — leggono come taverna, non cripta.
+   */
+  async function placeTombFloorProps(
+    layout: FloorSceneLayout,
+    root: THREE.Group,
+  ): Promise<void> {
+    const { loadArtifact } = await import('@/rendering/ArtifactLoader.js');
+    const { getArtifactById } = await import('@/content/ArtifactRegistry.js');
+    const { hash32 } = await import('@/procedural/Hash32.js');
+    if (disposed) return;
+
+    const propIds = ['ruins_pot', 'ruins_rocks'] as const;
+    const prototypes = new Map<string, THREE.Group>();
+    for (const id of propIds) {
+      const def = getArtifactById(id);
+      if (!def) continue;
+      const model = await loadArtifact(def);
+      if (model) prototypes.set(id, model);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutazione async
+    if (disposed || prototypes.size === 0) return;
+
+    const skipRoles = new Set(['ENTRY', 'EXIT', 'MAP', 'TREASURE', 'FORGE', 'STAIR']);
+    const MARGIN = 1.6;
+
+    for (const room of layout.rooms) {
+      if (skipRoles.has(room.role)) continue;
+      const { minX, maxX, minZ, maxZ } = room.bounds;
+      const w = maxX - minX;
+      const d = maxZ - minZ;
+      if (w < 6 || d < 6) continue;
+
+      const roomSeed = Number(room.roomId) || 0;
+      const count = 1 + (hash32(roomSeed, 0x71) % 3); // 1..3 props
+      for (let i = 0; i < count; i++) {
+        const h = hash32(roomSeed, 0x90 + i);
+        const ids = [...prototypes.keys()];
+        const pick = ids[h % ids.length];
+        if (!pick) continue;
+        const proto = prototypes.get(pick);
+        if (!proto) continue;
+
+        const wall = h % 4;
+        const t = 0.2 + ((h >>> 8) % 61) / 100; // 0.20..0.80
+        let x: number;
+        let z: number;
+        if (wall === 0) {
+          z = minZ + MARGIN;
+          x = minX + t * (maxX - minX);
+        } else if (wall === 1) {
+          z = maxZ - MARGIN;
+          x = minX + t * (maxX - minX);
+        } else if (wall === 2) {
+          x = minX + MARGIN;
+          z = minZ + t * (maxZ - minZ);
+        } else {
+          x = maxX - MARGIN;
+          z = minZ + t * (maxZ - minZ);
+        }
+
+        const instance = proto.clone(true);
+        instance.position.set(x, 0, z);
+        instance.rotation.y = ((h >>> 16) % 8) * (Math.PI / 4);
+        instance.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        root.add(instance);
+      }
+    }
+  }
+
   async function rebuildFloorLayout(layout: FloorSceneLayout): Promise<void> {
-    // Swap texture muri: arenaria chiara nei livelli bassi, scura in cripta.
-    const useDeepWall = layout.floorIndex >= 5;
+    // Swap texture muri: arenaria in anticamera, calcare in tomba, scuro in cripta.
+    const useLimestone = layout.floorIndex >= 3 && layout.floorIndex <= 6;
+    const useDeepWall = layout.floorIndex >= 7;
     const wPbr = loadPbrTextureSet(
-      useDeepWall ? 'textures/sandstone_dark_color.ktx2' : 'textures/sandstone_wall_color.ktx2',
-      useDeepWall ? 'textures/sandstone_dark_normal.ktx2' : 'textures/sandstone_wall_normal.ktx2',
+      useLimestone
+        ? 'textures/limestone_wall_color.ktx2'
+        : useDeepWall ? 'textures/sandstone_dark_color.ktx2' : 'textures/sandstone_wall_color.ktx2',
+      useLimestone
+        ? 'textures/limestone_wall_normal.ktx2'
+        : useDeepWall ? 'textures/sandstone_dark_normal.ktx2' : 'textures/sandstone_wall_normal.ktx2',
       // Stessa scala dei conci usata in init: blocchi da ~65 cm, non mattoni.
       1.6, 1.1,
-      useDeepWall ? 'textures/sandstone_dark_roughness.ktx2' : 'textures/sandstone_wall_roughness.ktx2',
-      useDeepWall ? 'textures/sandstone_dark_ao.ktx2' : 'textures/sandstone_wall_ao.ktx2',
+      useLimestone
+        ? 'textures/limestone_wall_roughness.ktx2'
+        : useDeepWall ? 'textures/sandstone_dark_roughness.ktx2' : 'textures/sandstone_wall_roughness.ktx2',
+      useLimestone
+        ? 'textures/limestone_wall_ao.ktx2'
+        : useDeepWall ? 'textures/sandstone_dark_ao.ktx2' : 'textures/sandstone_wall_ao.ktx2',
       backend === 'webgl2' ? renderer as THREE.WebGLRenderer : undefined,
     );
     if (wPbr.color) {
@@ -1138,12 +1388,16 @@ export function createThreeRenderer(
       if (wPbr.ao) wallMaterial.aoMapIntensity = 0.45;
       // Scendendo la pietra si scurisce: calcare chiaro in alto, granito
       // rossastro nelle camere profonde (come nella camera del re di Cheope).
-      wallMaterial.color.setHex(useDeepWall ? 0xA8896A : 0xC9B48C);
+      wallMaterial.color.setHex(useLimestone ? 0xD4C4A4 : useDeepWall ? 0xA8896A : 0xC9B48C);
       wallMaterial.needsUpdate = true;
     }
 
     dungeonRoot.clear();
+    lodManager?.clear();
+    shadowMapOptimizer?.forceUpdate();
     brazierRoot.clear();
+    for (const smoke of brazierSmokePlumes.values()) smoke.dispose();
+    brazierSmokePlumes.clear();
     brazierLights.clear();
     brazierMaterials.clear();
     digSiteMarker = null;
@@ -1153,6 +1407,8 @@ export function createThreeRenderer(
     digSiteBeamMaterial = null;
     digSiteGlyphMaterial?.dispose();
     digSiteGlyphMaterial = null;
+    doorwayGlowMaterial?.dispose();
+    doorwayGlowMaterial = null;
     // Stesso discorso per le colonne procedurali del piano precedente.
     for (const column of columnDisposables) column.dispose();
     columnDisposables.length = 0;
@@ -1173,6 +1429,7 @@ export function createThreeRenderer(
     _doorPhysics = null;
 
     frustumCuller.clearRooms();
+    const trapHooks = pendingTrapHooks;
     const roomBounds = buildDungeonLayout?.({
       layout,
       dungeonRoot,
@@ -1182,7 +1439,62 @@ export function createThreeRenderer(
       glyphEmissiveMap: glyphTexture,
       glyphColorMap,
       ceilingMaterial: buildCeilingMaterial(layout.floorIndex),
+      onPressurePlateMeshReady: (trapId, spikesGroup) => {
+        trapHooks?.onPressurePlateReady?.(trapId, (spikesGroupY) => {
+          spikesGroup.position.y = spikesGroupY;
+        });
+      },
+      onPendulumMeshReady: (trapId, pivotGroup, corridorAxis) => {
+        trapHooks?.onPendulumReady?.(trapId, (angleRad) => {
+          if (corridorAxis === 'x') {
+            pivotGroup.rotation.z = angleRad;
+          } else {
+            pivotGroup.rotation.x = angleRad;
+          }
+        });
+      },
+      onDartLauncherMeshReady: (trapId, dartMesh, fireAxis) => {
+        const originX = dartMesh.position.x;
+        const originZ = dartMesh.position.z;
+        trapHooks?.onDartReady?.(trapId, (travel01, visible) => {
+          dartMesh.visible = visible;
+          const along = travel01 * TRAPS.dartLauncher.rangeM;
+          if (fireAxis === 'x') {
+            dartMesh.position.x = originX + along;
+            dartMesh.position.z = originZ;
+          } else {
+            dartMesh.position.x = originX;
+            dartMesh.position.z = originZ + along;
+          }
+        });
+      },
+      onRollingBoulderMeshReady: (trapId, boulderMesh, rollAxis) => {
+        const originX = boulderMesh.position.x;
+        const originZ = boulderMesh.position.z;
+        trapHooks?.onBoulderReady?.(trapId, (offsetM) => {
+          if (rollAxis === 'x') {
+            boulderMesh.position.x = originX + offsetM;
+            boulderMesh.position.z = originZ;
+            boulderMesh.rotation.z = -offsetM;
+          } else {
+            boulderMesh.position.x = originX;
+            boulderMesh.position.z = originZ + offsetM;
+            boulderMesh.rotation.x = offsetM;
+          }
+        });
+      },
+      onLeverMeshReady: (leverId, handleMesh, sealMesh) => {
+        trapHooks?.onLeverReady?.(leverId, (handleAngleRad, sealY) => {
+          handleMesh.rotation.z = handleAngleRad;
+          sealMesh.position.y = sealY;
+        });
+      },
     }) ?? [];
+    lastRoomBounds = roomBounds;
+    const storedNav = dungeonRoot.userData['navSurfaces'];
+    navBakeSurfaces = Array.isArray(storedNav)
+      ? storedNav as { x: number; y: number; z: number; width: number; depth: number }[]
+      : [];
 
     // Pulviscolo in sospensione proporzionale alla profondità: l'aria si fa
     // più densa scendendo verso la base della piramide. Prima l'intensità era
@@ -1192,6 +1504,7 @@ export function createThreeRenderer(
     for (const bounds of roomBounds) {
       frustumCuller.registerRoom(bounds);
     }
+    syncRoomStreamingHandles();
 
     // G-14: carica i modelli .glb dei landmark dichiarati nel manifest e li
     // aggiunge sopra la primitiva placeholder (la copre visivamente). Se il
@@ -1220,8 +1533,27 @@ export function createThreeRenderer(
       log.warn('Decorazione stanze non disponibile', { error: String(error) });
     }
 
-    // W-5 / task-9: piazza props GLB KayKit nelle stanze grandi.
+    // G-22: ProceduralDecorator — props per archetipo (canopi/altare/trono/anfora).
+    try {
+      const { placeArchetypeDecor } = await import('@/rendering/ArchetypeDecor.js');
+      placeArchetypeDecor({ layout, dungeonRoot, wallMaterial });
+    } catch (error) {
+      log.warn('ArchetypeDecor non disponibile', { error: String(error) });
+    }
+
+    // GAME-ART-008: props della stanza speciale (arsenale / tesoreria / santuario).
+    try {
+      const { placeSpecialRoomProps } = await import('@/rendering/SpecialRoomProps.js');
+      placeSpecialRoomProps(layout.specialProps, dungeonRoot, wallMaterial, lodManager);
+    } catch (error) {
+      log.warn('Props stanza speciale non disponibili', { error: String(error) });
+    }
+
+    // Colonne egizie procedurali + soglie funerarie (niente pack dungeon).
     void placeRoomColumns(layout, dungeonRoot);
+    placeEgyptianDoorways(layout, dungeonRoot);
+    // Anfore/detriti di pietra (neutri) — no barrel/chest medievali.
+    void placeTombFloorProps(layout, dungeonRoot);
 
     // ART-005: tromba di scale sotto l'uscita, quando il piano ne ha una.
     // L'ultimo piano ha un'uscita vera, non una scala: lì non va costruita.
@@ -1345,7 +1677,7 @@ export function createThreeRenderer(
       // è la differenza di luce, più della geometria, a renderle distinte.
       const room = layout.rooms.find((r) => r.roomId === brazier.roomId);
       const lightScale = room ? themePresets.get(room.theme)?.lightScale ?? 1 : 1;
-      const light = new THREE.PointLight(0xff9b3d, 18 * lightScale, 10, 2);
+      const light = new THREE.PointLight(0xff9b3d, 12 * lightScale, 9, 2);
       light.visible = false;
       // All'altezza dei carboni (0.84 + un po'), non a metà della vecchia
       // coppa: la luce deve nascere dal fuoco, non dal piede del braciere.
@@ -1357,6 +1689,21 @@ export function createThreeRenderer(
 
       brazierLights.set(brazier.brazierId, light);
       brazierMaterials.set(brazier.brazierId, brazierMaterial);
+
+      // P02: pennacchio di fumo d'incenso che sale dal braciere egizio
+      try {
+        const { createSmokePlume } = await import('@/rendering/Vfx.js');
+        const smoke = createSmokePlume({
+          x: brazier.position.x,
+          y: brazier.position.y + 0.88,
+          z: brazier.position.z,
+        });
+        smoke.setIntensity(0.08); // fumo leggero prima dell'accensione
+        brazierRoot.add(smoke.points);
+        brazierSmokePlumes.set(brazier.brazierId, smoke);
+      } catch {
+        // Fallback silenzioso
+      }
     }
 
     if (layout.digSite) {
@@ -1438,10 +1785,32 @@ export function createThreeRenderer(
       brazierRoot.add(marker);
     }
 
+    // Hint corridoio raggiungibile: soglia dorata a pavimento sulle porte.
+    // Leggibile senza torcia, non invasivo (opacity bassa, no light cast).
+    if (layout.doorways.length > 0) {
+      doorwayGlowMaterial = new THREE.MeshBasicMaterial({
+        color: 0xc8900a,
+        transparent: true,
+        opacity: 0.18,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      for (const doorway of layout.doorways) {
+        const alongAxis = doorway.axis === 'x';
+        const w = alongAxis ? 0.55 : 1.35;
+        const d = alongAxis ? 1.35 : 0.55;
+        const pad = new THREE.Mesh(new THREE.PlaneGeometry(w, d), doorwayGlowMaterial);
+        pad.rotation.x = -Math.PI / 2;
+        pad.position.set(doorway.center.x, 0.04, doorway.center.z);
+        brazierRoot.add(pad);
+      }
+    }
+
     log.info('Layout floor applicato al renderer', {
       floorId: layout.floorId,
       rooms: layout.rooms.length,
       corridors: layout.corridors.length,
+      doorways: layout.doorways.length,
     });
   }
 
@@ -1478,13 +1847,13 @@ export function createThreeRenderer(
         Math.sin(t * 3.1 * Math.PI * 2) * 0.06 * flickerFactor +
         Math.sin(t * 11.3 * Math.PI * 2) * 0.025 * flickerFactor +
         Math.sin(t * 0.13 * Math.PI * 2) * 0.03 * flickerFactor;
-      torchLight.intensity = 85 * flicker;
-      placedTorchLight.intensity = placedTorchLight.visible ? 14 * (0.92 + flicker * 0.16) : 0;
+      torchLight.intensity = 38 * flicker;
+      placedTorchLight.intensity = placedTorchLight.visible ? 8 * (0.92 + flicker * 0.16) : 0;
 
       // Alone caldo della fiamma: segue la camera, respira col flicker.
       torchAmbientLight.visible = true;
       torchAmbientLight.position.copy(camera.position);
-      torchAmbientLight.intensity = 7.5 * (0.85 + flicker * 0.3);
+      torchAmbientLight.intensity = 2.8 * (0.85 + flicker * 0.3);
 
       // G-15: animazione fiamme procedurali
       const litGain = presentation.reduceTorchFlicker ? 0.35 : 1.0;
@@ -1495,7 +1864,7 @@ export function createThreeRenderer(
       // V6: god ray della torcia accesa — visibile e pulsante col flicker
       if (torchBeam) {
         torchBeam.mesh.visible = true;
-        torchBeam.material.opacity = 0.05 + 0.05 * flicker;
+        torchBeam.material.opacity = 0.03 + 0.03 * flicker;
       }
     } else {
       torchAmbientLight.visible = false;
@@ -1515,6 +1884,10 @@ export function createThreeRenderer(
 
     sparkBurst?.update(deltaMs);
     weaponTrail?.update(deltaMs);
+    dustMotes?.update(deltaMs, camera.position);
+    for (const smoke of brazierSmokePlumes.values()) {
+      smoke.update(deltaMs);
+    }
 
     // G-05: il reliquiario fluttua e ruota lentamente (attira l'occhio)
     if (lootReliquary) {
@@ -1528,9 +1901,8 @@ export function createThreeRenderer(
       shovelPickupGroup.position.y = 0.04 + Math.sin(t * 1.8) * 0.04;
     }
 
-    if (placedTorchMesh.visible) {
-      placedTorchMesh.rotation.z = Math.PI / 2.9;
-      placedTorchMesh.rotation.y += deltaMs * 0.00016;
+    if (placedOilLamp?.group.visible) {
+      placedOilLamp.group.rotation.y += deltaMs * 0.00012;
     }
 
     applyCameraShake(deltaMs);
@@ -1562,6 +1934,10 @@ export function createThreeRenderer(
     }
 
     frustumCuller.update(camera);
+    lodManager?.update(camera);
+    if (shadowMapOptimizer) {
+      shadowMapOptimizer.update(camera.position);
+    }
 
     if (webgpuPipeline) {
       webgpuPipeline.render();
@@ -1690,8 +2066,35 @@ export function createThreeRenderer(
           import('@/content/assets.js'),
         ]);
         const entry = ENEMY_ASSETS.find((e) => e.archetype === kind);
+        // G-30: anubis_executioner.glb è duplicato della statua — mesh procedurale distinta.
+        if (kind === 'ANUBIS_EXECUTIONER') {
+          const { createEgyptianAnubisExecutionerMesh } = await import(
+            '@/rendering/EgyptianAnubisMesh.js'
+          );
+          if (disposed) return;
+          const proc = createEgyptianAnubisExecutionerMesh({ scale: 1.0, eyeIntensity: 2.4 });
+          enemyModelCache.set(kind, proc);
+          enemyModelOffsets.set(kind, 0);
+          mountEnemyModel(visual, proc, 0);
+          return;
+        }
         // modelPath null è legittimo (es. WITNESS): resta la primitiva.
-        if (!entry?.modelPath || disposed) return;
+        if (!entry?.modelPath || disposed) {
+          if (kind === 'MUMMY' || kind === 'ROYAL_MUMMY') {
+            const { buildProceduralMummyGroup } = await import('@/rendering/EgyptianMummyMesh.js');
+            if (disposed) return;
+            const proc = buildProceduralMummyGroup(kind === 'ROYAL_MUMMY');
+            enemyModelCache.set(kind, proc);
+            mountEnemyModel(visual, proc, 0);
+          } else if (kind === 'ANUBIS_PRIEST' || kind === 'SHABTI_GUARDIAN') {
+            const { createEgyptianPriestMesh } = await import('@/rendering/EgyptianPriestMesh.js');
+            if (disposed) return;
+            const proc = createEgyptianPriestMesh({ scale: 1.15, eyeIntensity: 2.0 });
+            enemyModelCache.set(kind, proc);
+            mountEnemyModel(visual, proc, 0);
+          }
+          return;
+        }
 
         const model = await loadArtifact({
           id: `enemy_${kind}`,
@@ -1704,17 +2107,50 @@ export function createThreeRenderer(
           description: null,
           source: 'procedural',
         });
-        // `disposed` può diventare true durante l'await del GLB: TS non
-        // modella la mutazione attraverso il confine async e lo crede sempre
-        // false, ma senza questa guardia si aggiungerebbe un modello a una
-        // scena già rilasciata.
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (!model || disposed) return;
+        if (!model || disposed) {
+          if (kind === 'MUMMY' || kind === 'ROYAL_MUMMY') {
+            const { buildProceduralMummyGroup } = await import('@/rendering/EgyptianMummyMesh.js');
+            if (disposed) return;
+            const proc = buildProceduralMummyGroup(kind === 'ROYAL_MUMMY');
+            enemyModelCache.set(kind, proc);
+            mountEnemyModel(visual, proc, 0);
+          } else if (kind === 'ANUBIS_PRIEST' || kind === 'SHABTI_GUARDIAN') {
+            const { createEgyptianPriestMesh } = await import('@/rendering/EgyptianPriestMesh.js');
+            if (disposed) return;
+            const proc = createEgyptianPriestMesh({ scale: 1.15, eyeIntensity: 2.0 });
+            enemyModelCache.set(kind, proc);
+            mountEnemyModel(visual, proc, 0);
+          }
+          return;
+        }
         enemyModelCache.set(kind, model);
         enemyModelOffsets.set(kind, entry.yOffset);
         mountEnemyModel(visual, model, entry.yOffset);
       } catch {
-        // GLB assente o corrotto: resta la capsula, nessun crash.
+        // Fallback garantito
+        if (kind === 'MUMMY' || kind === 'ROYAL_MUMMY') {
+          try {
+            const { buildProceduralMummyGroup } = await import('@/rendering/EgyptianMummyMesh.js');
+            if (!disposed) {
+              const proc = buildProceduralMummyGroup(kind === 'ROYAL_MUMMY');
+              enemyModelCache.set(kind, proc);
+              mountEnemyModel(visual, proc, 0);
+            }
+          } catch {
+            // No-op fallback
+          }
+        } else if (kind === 'ANUBIS_PRIEST' || kind === 'SHABTI_GUARDIAN') {
+          try {
+            const { createEgyptianPriestMesh } = await import('@/rendering/EgyptianPriestMesh.js');
+            if (!disposed) {
+              const proc = createEgyptianPriestMesh({ scale: 1.15, eyeIntensity: 2.0 });
+              enemyModelCache.set(kind, proc);
+              mountEnemyModel(visual, proc, 0);
+            }
+          } catch {
+            // No-op fallback
+          }
+        }
       }
     })();
   }
@@ -1748,6 +2184,21 @@ export function createThreeRenderer(
     const built = createStaircase(origin, layout.exitDoorYawRad, wallMaterial, createStaticBox);
     dungeonRoot.add(built.group);
     staircase = built;
+    built.group.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const box = new THREE.Box3().setFromObject(child);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      if (size.y < 0.35 && size.x > 0.4 && size.z > 0.2) {
+        navBakeSurfaces.push({
+          x: center.x,
+          y: center.y,
+          z: center.z,
+          width: size.x,
+          depth: size.z,
+        });
+      }
+    });
   }
 
   /** Modello del braciere, condiviso da tutti i bracieri del piano. */
@@ -1826,15 +2277,33 @@ export function createThreeRenderer(
     // Animator sul clone: quattro dei sette GLB sono statici, quindi
     // createEnemyAnimator ritorna null e resta il respiro procedurale.
     void (async (): Promise<void> => {
-      const [{ createEnemyAnimator }, { getArtifactClips }] = await Promise.all([
+      const [{ createEnemyAnimator }, artifact] = await Promise.all([
         import('@/rendering/EnemyAnimator.js'),
         import('@/rendering/ArtifactLoader.js'),
       ]);
+      const { getArtifactClips, loadArtifact } = artifact;
       // `disposed` cambia durante l'await (TS non lo modella), e il modello
       // può essere stato rimpiazzato nel frattempo da un cambio piano.
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (disposed || visual.model !== clone) return;
-      const clips = getArtifactClips(`enemy_${visual.kind ?? ''}`);
+      let clips = getArtifactClips(`enemy_${visual.kind ?? ''}`);
+      const { HUMANOID_CLIP_RECIPIENTS } = await import('@/content/assets.js');
+      if (clips.length === 0 && (HUMANOID_CLIP_RECIPIENTS as readonly string[]).includes(visual.kind ?? '')) {
+        await loadArtifact({
+          id: 'enemy_MUMMY',
+          url: '/assets/enemies/mummy.glb',
+          displayName: 'MUMMY',
+          loreName: null,
+          rarity: 'common',
+          interactable: false,
+          scale: 1,
+          description: null,
+          source: 'procedural',
+        });
+        if (disposed || visual.model !== clone) return;
+        clips = getArtifactClips('enemy_MUMMY');
+        if (clips.length === 0) clips = getArtifactClips('enemy_ROYAL_MUMMY');
+      }
       visual.animator = createEnemyAnimator(clone, clips);
     })();
   }
@@ -1933,9 +2402,10 @@ export function createThreeRenderer(
     );
     const backgroundColor = palette.backgroundColor;
     scene.background = new THREE.Color(backgroundColor);
-    scene.fog = new THREE.FogExp2(backgroundColor, settings.assistedLight ? 0.00022 : 0.00055);
-    ambientLight.intensity = settings.assistedLight ? 1.0 : 0.6;
-    hemiLight.intensity = settings.assistedLight ? 0.8 : 0.5;
+    scene.fog = new THREE.FogExp2(backgroundColor, settings.assistedLight ? 0.00045 : 0.0011);
+    // Senza torcia: penombra. Con assistedLight: leggibilità, non daylight.
+    ambientLight.intensity = settings.assistedLight ? 0.22 : 0.07;
+    hemiLight.intensity = settings.assistedLight ? 0.18 : 0.11;
     floorMaterial.color.setHex(palette.floorColor);
     wallMaterial.color.setHex(palette.wallColor);
     doorMaterial.color.setHex(palette.doorColor);
@@ -1951,8 +2421,64 @@ export function createThreeRenderer(
     }
   }
 
+  function ensureScarabSwarmMesh(): THREE.InstancedMesh {
+    if (scarabSwarmMesh) return scarabSwarmMesh;
+    const geo = new THREE.SphereGeometry(0.32, 8, 6);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x3d5c28,
+      metalness: 0.35,
+      roughness: 0.5,
+      emissive: 0x1a2e10,
+      emissiveIntensity: 0.35,
+    });
+    scarabSwarmMesh = new THREE.InstancedMesh(geo, mat, SCARAB_SWARM_INSTANCE_CAP);
+    scarabSwarmMesh.count = 0;
+    scarabSwarmMesh.castShadow = true;
+    scarabSwarmMesh.frustumCulled = true;
+    scene.add(scarabSwarmMesh);
+    return scarabSwarmMesh;
+  }
+
+  function updateScarabSwarmInstances(states: readonly RendererEnemyState[]): void {
+    const mesh = ensureScarabSwarmMesh();
+    const n = Math.min(states.length, SCARAB_SWARM_INSTANCE_CAP);
+    mesh.count = n;
+    mesh.visible = n > 0;
+    for (let i = 0; i < n; i++) {
+      const s = states[i];
+      if (!s) continue;
+      const scale = Math.max(0.35, s.modelScale) * (0.9 + s.hpRatio * 0.2);
+      scarabSwarmDummy.position.set(s.x, s.y + 0.15, s.z);
+      scarabSwarmDummy.scale.setScalar(scale);
+      scarabSwarmDummy.rotation.set(0, i * 0.7, 0);
+      scarabSwarmDummy.updateMatrix();
+      mesh.setMatrixAt(i, scarabSwarmDummy.matrix);
+      const color = s.hitFlash
+        ? new THREE.Color(0xa23f16)
+        : s.awakened
+          ? new THREE.Color(0x6a9a40)
+          : new THREE.Color(0x3d5c28);
+      mesh.setColorAt(i, color);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+
   function setEnemyStates(states: readonly RendererEnemyState[]): void {
-    ensureEnemyVisualCount(states.length);
+    const scarabs = states.filter((s) => s.kind === 'SCARAB' && s.alive);
+    const useSwarmBatch = scarabs.length >= 3;
+    const individual = useSwarmBatch
+      ? states.filter((s) => s.kind !== 'SCARAB')
+      : states;
+
+    if (useSwarmBatch) {
+      updateScarabSwarmInstances(scarabs);
+    } else if (scarabSwarmMesh) {
+      scarabSwarmMesh.count = 0;
+      scarabSwarmMesh.visible = false;
+    }
+
+    ensureEnemyVisualCount(individual.length);
 
     // G-16: dissolve alla morte — se almeno un nemico è caduto, il materiale
     // dissolve verso il bordo dorato; quando tutti i marker tornano vivi o
@@ -1969,7 +2495,7 @@ export function createThreeRenderer(
       if (!visual) {
         continue;
       }
-      const state = states[i];
+      const state = individual[i];
       if (!state?.alive) {
         // Se c'è un'animazione di morte la si lascia finire prima di
         // nascondere il nemico: sparire di colpo annulla il dissolve.
@@ -2034,6 +2560,12 @@ export function createThreeRenderer(
           : (presentation.highContrast ? 0xd7d2c0 : 0x8d8a73),
       );
     }
+
+    // Nascondi visual individuali residui oltre individual.length
+    for (let i = individual.length; i < enemyVisuals.length; i++) {
+      const visual = enemyVisuals[i];
+      if (visual) visual.mesh.visible = false;
+    }
   }
 
   function setEnemyState(state: RendererEnemyState | null): void {
@@ -2094,6 +2626,14 @@ export function createThreeRenderer(
 
   function dispose(): void {
     disposed = true;
+    if ('setAnimationLoop' in renderer && typeof renderer.setAnimationLoop === 'function') {
+      void renderer.setAnimationLoop(null);
+    }
+    xrActive = false;
+    onXrSessionEnd = null;
+    lodManager?.clear();
+    shadowMapOptimizer?.dispose();
+    shadowMapOptimizer = null;
     _doorPhysics?.dispose();
     _doorPhysics = null;
     assetLoader = null;
@@ -2114,6 +2654,10 @@ export function createThreeRenderer(
     bloomPass = null;
     webgpuPipeline?.dispose();
     webgpuPipeline = null;
+    dustMotes?.dispose();
+    dustMotes = null;
+    for (const smoke of brazierSmokePlumes.values()) smoke.dispose();
+    brazierSmokePlumes.clear();
     renderer.dispose();
     scene.clear();
     log.info('Three.js renderer disposed');
@@ -2143,20 +2687,14 @@ export function createThreeRenderer(
     },
     setPlacedTorchState(state: RendererPlacedTorchState | null): void {
       if (!state) {
-        placedTorchMesh.visible = false;
-        if (placedTorchGlb) placedTorchGlb.visible = false;
+        if (placedOilLamp) placedOilLamp.group.visible = false;
         placedTorchLight.visible = false;
         if (placedFlame) placedFlame.group.visible = false;
         return;
       }
-      // Se il GLB KayKit è caricato lo usa; altrimenti il cilindro placeholder.
-      if (placedTorchGlb) {
-        placedTorchGlb.visible = true;
-        placedTorchGlb.position.set(state.x, state.y, state.z);
-        placedTorchMesh.visible = false;
-      } else {
-        placedTorchMesh.visible = true;
-        placedTorchMesh.position.set(state.x, state.y + 0.38, state.z);
+      if (placedOilLamp) {
+        placedOilLamp.group.visible = true;
+        placedOilLamp.group.position.set(state.x, state.y, state.z);
       }
       placedTorchLight.visible = true;
       placedTorchLight.position.set(state.x, state.y + 0.72, state.z);
@@ -2169,13 +2707,17 @@ export function createThreeRenderer(
       for (const state of states) {
         const light = brazierLights.get(state.brazierId);
         const material = brazierMaterials.get(state.brazierId);
+        const smoke = brazierSmokePlumes.get(state.brazierId);
         if (light) {
           light.position.set(state.x, state.y + 0.72, state.z);
           light.visible = state.lit;
-          light.intensity = state.lit ? (state.refillUsed ? 10 : 18) : 0;
+          light.intensity = state.lit ? (state.refillUsed ? 7 : 12) : 0;
         }
         if (material) {
           material.emissiveIntensity = state.lit ? (state.refillUsed ? 0.7 : 1.05) : 0.22;
+        }
+        if (smoke) {
+          smoke.setIntensity(state.lit ? (state.refillUsed ? 0.65 : 1.0) : 0.08);
         }
       }
     },
@@ -2202,20 +2744,65 @@ export function createThreeRenderer(
     playWeaponParry(): void {
       weaponViewmodel?.playParry();
     },
-    /** C-02: aggancia una sessione WebXR (probe sperimentale, try/catch). */
-    enableXr(session: unknown): void {
-      const xrRenderer = renderer as {
-        xr?: { enabled: boolean; setSession(s: unknown): Promise<void> | void };
-      };
-      if (xrRenderer.xr) {
-        xrRenderer.xr.enabled = true;
-        try {
-          void xrRenderer.xr.setSession(session);
-        } catch (error) {
-          log.warn('WebXR setSession fallito', { error: String(error) });
-        }
+    /** C-02: registra il frame callback via Three.js setAnimationLoop. */
+    setAnimationLoop(callback: ((timeMs: number) => void) | null): void {
+      if (disposed) return;
+      if ('setAnimationLoop' in renderer && typeof renderer.setAnimationLoop === 'function') {
+        void renderer.setAnimationLoop(
+          callback
+            ? (time: number) => {
+                callback(time);
+              }
+            : null,
+        );
       }
     },
+
+    isXrActive(): boolean {
+      return xrActive;
+    },
+
+    /**
+     * C-02: avvia una sessione immersive-vr. Richiede WebGL2.
+     * Il loop deve già usare setAnimationLoop affinché XR presenti i frame.
+     */
+    async enableXr(session: unknown): Promise<boolean> {
+      if (disposed) return false;
+      if (backend !== 'webgl2') {
+        log.warn('WebXR richiede backend WebGL2');
+        return false;
+      }
+      const gl = renderer as THREE.WebGLRenderer;
+      gl.xr.enabled = true;
+      try {
+        await gl.xr.setSession(session as XRSession);
+        xrActive = true;
+        const xrSession = session as XRSession;
+        const handleEnd = (): void => {
+          xrActive = false;
+          gl.xr.enabled = false;
+          onXrSessionEnd?.();
+        };
+        xrSession.addEventListener('end', handleEnd);
+        log.info('WebXR: sessione immersiva collegata al renderer');
+        return true;
+      } catch (error) {
+        gl.xr.enabled = false;
+        xrActive = false;
+        log.warn('WebXR setSession fallito', { error: String(error) });
+        return false;
+      }
+    },
+
+    disableXr(): void {
+      if (!xrActive) return;
+      const gl = renderer as THREE.WebGLRenderer;
+      const active = gl.xr.getSession();
+      xrActive = false;
+      gl.xr.enabled = false;
+      void active?.end();
+    },
+
     /** Viewmodel arma 3D: mostra/nascondi (cambio arma). */
     setWeaponViewmodelVisible(visible: boolean): void {
       weaponViewmodel?.setVisible(visible);
@@ -2226,9 +2813,18 @@ export function createThreeRenderer(
      * diverse dal khopesh, che lasciava le mani vuote.
      */
     setActiveWeaponViewmodel(weaponId: string): void {
-      const next = weaponViewmodels.get(weaponId);
-      for (const [id, model] of weaponViewmodels) {
-        model.setVisible(id === weaponId);
+      let targetKey = weaponId;
+      if (!weaponViewmodels.has(targetKey)) {
+        if (targetKey.includes('spear')) targetKey = 'staff';
+        else if (targetKey.includes('khopesh') || targetKey.includes('sickle')) targetKey = 'khopesh';
+        else if (targetKey.includes('staff')) targetKey = 'staff';
+        else if (targetKey.includes('shovel')) targetKey = 'shovel';
+        else if (targetKey.includes('fist')) targetKey = 'fists';
+        else targetKey = 'khopesh';
+      }
+      const next = weaponViewmodels.get(targetKey) ?? weaponViewmodels.get('khopesh') ?? weaponViewmodels.get('fists');
+      for (const model of weaponViewmodels.values()) {
+        model.setVisible(model === next);
       }
       if (next) weaponViewmodel = next;
     },
@@ -2238,6 +2834,19 @@ export function createThreeRenderer(
     setFloorLayout,
     applyFloorPalette,
     applyQualityProfile,
+    setStreamedRoomIds(ids: ReadonlySet<string> | null): void {
+      frustumCuller.setActiveRoomIds(ids);
+    },
+    bindRoomStreaming(manager): void {
+      roomStreamingRegistrar = manager;
+      syncRoomStreamingHandles();
+    },
+    getNavBakeSurfaces() {
+      return navBakeSurfaces;
+    },
+    whenFloorLayoutReady() {
+      return floorLayoutReady;
+    },
     setLootReliquary,
     setShovelPickup,
     getDebugStats,

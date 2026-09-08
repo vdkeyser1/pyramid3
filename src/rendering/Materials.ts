@@ -911,8 +911,12 @@ function loadKtxChannel(
  * Senza un WebGLRenderer non è possibile transcodificare — in quel caso
  * ritorna tutti null e il chiamante usa il fallback procedurale.
  *
+ * GAME-ART-010a: se il `.ktx2` manca, `KTX2TextureLoader` prova il sibling
+ * `.jpg`/`.png` senza doppio download quando il KTX2 c'è.
+ *
  * Storia: prima questa funzione scaricava il `.jpg` e POI ci sovrascriveva
- * il `.ktx2`, pagando due volte la banda. Ora carica solo il KTX2.
+ * il `.ktx2`, pagando due volte la banda. Ora carica solo il KTX2 (con
+ * fallback raster solo in caso di errore).
  */
 export function loadPbrTextureSet(
   colorPath: string,

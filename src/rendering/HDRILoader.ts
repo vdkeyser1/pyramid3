@@ -24,6 +24,7 @@ export interface HDRIResult {
 export async function loadHDRI(
   renderer: WebGLRenderer,
   url: string,
+  _options?: { readonly assignBackground?: boolean },
 ): Promise<HDRIResult | null> {
   try {
     // HDRLoader sostituisce RGBELoader, deprecato da three r18x.

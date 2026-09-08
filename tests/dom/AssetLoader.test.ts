@@ -42,6 +42,17 @@ describe('AssetLoader (G-17)', () => {
     expect(loader.has('assets/c.glb')).toBe(true);
   });
 
+  it('setProgressCallback riceve aggiornamenti durante preload', async () => {
+    const loader = createAssetLoader();
+    const events: string[] = [];
+    loader.setProgressCallback((_loaded, _total, path) => {
+      events.push(path);
+    });
+    await loader.preload(['assets/p.glb']);
+    expect(events.length).toBeGreaterThan(0);
+    loader.setProgressCallback(null);
+  });
+
   it('clear svuota la cache', () => {
     const loader = createAssetLoader();
     void loader.load('assets/x.glb');

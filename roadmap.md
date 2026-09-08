@@ -37,12 +37,12 @@
 
 | # | Risorsa | URL | Licenza | Uso | Stato |
 |---|---|---|---|---|---|
-| A1 | **Quaternius — Ultimate Modular Ruins** | quaternius.com/packs/ultimatemodularruins.html | CC0 | Kit modulare rovine: muri/colonne/archi/scale per stanze e corridoi procedurali | ⬜ da integrare |
-| A2 | **ToxSam/open-source-3D-assets** (registry GLB) | github.com/ToxSam/open-source-3D-assets | CC0 | 991+ GLB CC0 incl. **Egyptian temples**; JSON per il manifest | ⬜ da integrare |
-| A3 | **Sketchfab** (search `egyptian`, filtro CC0/CC-BY) | sketchfab.com/search?q=egyptian&type=models | CC0/CC-BY | Sarcofagi, statue Anubi/Bastet/Thoth/Sobek, obelischi, vasi canopi, bracieri | ⬜ da selezionare |
+| A1 | ~~Quaternius Modular Ruins~~ → **Ambiente piramide procedurale** | — | — | Colonne papiriformi, soglie dorati, false porte, soffitto stellato — **non** pack Medieval | ✅ sostituito (2026-08-25) |
+| A2 | **ToxSam/open-source-3D-assets** (registry GLB) | github.com/ToxSam/open-source-3D-assets | CC0 | 991+ GLB CC0 incl. **Egyptian temples**; JSON per il manifest | ✅ 5/5 landmark GLB integrati |
+| A3 | **Sketchfab** (search `egyptian`, filtro CC0/CC-BY) | sketchfab.com/search?q=egyptian&type=models | CC0/CC-BY | Sarcofagi, statue Anubi/Bastet/Thoth/Sobek, obelischi, vasi canopi, bracieri | 🟡 opzionale (ToxSam copre il VS) |
 | A4 | **Mixamo** (animazioni) | mixamo.com | Gratis | Idle/walk/attack/death/hit per player viewmodel + PRIEST/ROYAL_MUMMY | ⬜ da integrare |
-| A5 | **Kenney — Game Assets** | kenney.nl/assets | CC0 | Props generici (urne, casse, torce) + UI | ⬜ opzionale |
-| A6 | **Quaternius — Animated Creatures** | quaternius.com | CC0 | Creature animate per MUMMY/SCARAB/SHABTI | ⬜ opzionale |
+| A5 | **Kenney — filler pietra neutro** | kenney.nl/assets/mini-dungeon | CC0 | Solo pot/rocks/stairs (`-KenneyStoneOnly`) — **no** barrel/gate/banner | 🟡 opzionale |
+| A6 | ~~Quaternius Creatures~~ | — | — | Nemici già da ToxSam/Poly Pizza GLB | ✅ coperto |
 
 ### 1.3 Texture / Materiali PBR (G-14, G-16)
 
@@ -170,6 +170,4 @@
 5. **Header JSDoc** su ogni nuovo file (Scopo/Ownership/Invarianti/Failure mode).
 6. **Ogni passo chiude con `npm run verify` verde** prima di passare al successivo.
 
----
-
-*Fine documento. Aggiornare §2 (stato passi) e §3 (registro) ad ogni implementazione.*
+| 2026-08-27 | **GAME-ART G-22→G-33 wiring** | 🔄 **Pipeline live** | G-22 `decorateRoom()` cablato via ArchetypeDecor; G-31 `register()`+dispose GPU oltre hop; G-33 limestone tomba + gold props; G-26 `setAmbienceTheme`→`play()` loop WAV + alias Kenney stone_door/trap/torch; G-24 riuso clip mummy su priest/shabti/anubis (Mixamo FBX: `scripts\Download-MixamoClips.ps1`); G-28 Recast da lastre+scale; G-30 Boia Anubi mesh procedurale + `scripts\Download-AnubisMesh.ps1` (Smithsonian/ToxSam CC0). |

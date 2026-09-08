@@ -39,20 +39,22 @@ function easeOutBack(t: number): number {
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
-/** Posizione/rotazione di riposo del khopesh in mano. */
-const REST_POSITION = new THREE.Vector3(0.38, -0.36, -0.62);
-const REST_ROTATION = new THREE.Euler(0.12, -0.15, 0.06);
+/** Posizione/rotazione di riposo del khopesh in mano (ben visibile in primo piano). */
+const REST_POSITION = new THREE.Vector3(0.24, -0.20, -0.42);
+const REST_ROTATION = new THREE.Euler(0.25, -0.22, 0.15);
 
 export function createKhopeshViewmodel(): WeaponViewmodel {
   const group = new THREE.Group();
   group.position.copy(REST_POSITION);
   group.rotation.copy(REST_ROTATION);
 
-  // Materiali (bronzo scuro + impugnatura avvolta + rifiniture oro).
+  // Materiali (bronzo scuro + impugnatura avvolta + rifiniture oro con emissive).
   const bladeMaterial = new THREE.MeshStandardMaterial({
-    color: 0x9a7b4f,
-    metalness: 0.9,
-    roughness: 0.32,
+    color: 0xc49b5f,
+    metalness: 0.92,
+    roughness: 0.28,
+    emissive: 0x3a2608,
+    emissiveIntensity: 0.3,
   });
   const handleMaterial = new THREE.MeshStandardMaterial({
     color: 0x2a1e14,
@@ -182,11 +184,19 @@ function attachViewmodelBehavior(
         group.rotation.z = THREE.MathUtils.lerp(restRotation.z, 0.0, t);
         group.position.y = THREE.MathUtils.lerp(restPosition.y, restPosition.y + 0.18, t);
       } else {
-        // Ritorno elastico alla posa di riposo.
-        group.position.lerp(restPosition, 0.25);
-        group.rotation.x += (restRotation.x - group.rotation.x) * 0.25;
+        // Ritorno elastico alla posa di riposo con idle sway & breathing procedurale
+        const tSec = clockMs * 0.001;
+        const idleY = Math.sin(tSec * 1.8) * 0.008;
+        const idleX = Math.cos(tSec * 0.9) * 0.005;
+        const targetPos = new THREE.Vector3(
+          restPosition.x + idleX,
+          restPosition.y + idleY,
+          restPosition.z,
+        );
+        group.position.lerp(targetPos, 0.25);
+        group.rotation.x += (restRotation.x + Math.sin(tSec * 1.8) * 0.02 - group.rotation.x) * 0.25;
         group.rotation.y += (restRotation.y - group.rotation.y) * 0.25;
-        group.rotation.z += (restRotation.z - group.rotation.z) * 0.25;
+        group.rotation.z += (restRotation.z + Math.cos(tSec * 0.9) * 0.015 - group.rotation.z) * 0.25;
       }
     },
   };
@@ -210,8 +220,8 @@ function bronzeMaterial(): THREE.MeshStandardMaterial {
  */
 export function createStaffViewmodel(): WeaponViewmodel {
   const group = new THREE.Group();
-  const rest = new THREE.Vector3(0.30, -0.40, -0.70);
-  const restRot = new THREE.Euler(0.22, -0.10, 0.30);
+  const rest = new THREE.Vector3(0.22, -0.20, -0.44);
+  const restRot = new THREE.Euler(0.30, -0.15, 0.28);
   group.position.copy(rest);
   group.rotation.copy(restRot);
 
@@ -248,13 +258,12 @@ export function createStaffViewmodel(): WeaponViewmodel {
 }
 
 /**
- * Pala: stessa forma dell'oggetto a terra, così l'attrezzo raccolto e quello
- * in mano sono riconoscibilmente la stessa cosa.
+ * Pala: impugnatura e lama a spatola in bronzo ed ottone, ben visibile in primo piano.
  */
 export function createShovelViewmodel(): WeaponViewmodel {
   const group = new THREE.Group();
-  const rest = new THREE.Vector3(0.34, -0.42, -0.62);
-  const restRot = new THREE.Euler(0.30, -0.20, 0.42);
+  const rest = new THREE.Vector3(0.22, -0.18, -0.40);
+  const restRot = new THREE.Euler(0.40, -0.22, 0.35);
   group.position.copy(rest);
   group.rotation.copy(restRot);
 
@@ -290,8 +299,8 @@ export function createShovelViewmodel(): WeaponViewmodel {
  */
 export function createFistsViewmodel(): WeaponViewmodel {
   const group = new THREE.Group();
-  const rest = new THREE.Vector3(0.42, -0.46, -0.55);
-  const restRot = new THREE.Euler(-0.25, -0.30, 0.10);
+  const rest = new THREE.Vector3(0.25, -0.20, -0.38);
+  const restRot = new THREE.Euler(-0.20, -0.25, 0.10);
   group.position.copy(rest);
   group.rotation.copy(restRot);
 

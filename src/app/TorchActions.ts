@@ -48,14 +48,20 @@ export function resolveTorchAction(
         return unchanged(runtime, 'Raccogli la torcia prima di regolare la fiamma.');
       }
 
+      const wasEmpty = runtime.fuelSeconds <= 0;
       const result = applyTorchCommand(runtime, { kind: 'TOGGLE' });
       if (!result.changed) {
         return unchanged(runtime, 'Torcia senza carburante.');
       }
 
+      let message = result.runtime.state === 'OFF' ? 'Torcia spenta.' : 'Torcia accesa.';
+      if (result.runtime.state === 'LOW' && wasEmpty) {
+        message = 'Pietra focaia: debole fiamma d emergenza accesa (trova un braciere!).';
+      }
+
       return {
         result,
-        message: result.runtime.state === 'OFF' ? 'Torcia spenta.' : 'Torcia accesa.',
+        message,
       };
     }
 

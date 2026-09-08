@@ -4,17 +4,20 @@
  */
 
 import { type GameConfig, DEFAULT_CONFIG, GameConfigSchema } from '@/config/GameConfig.js';
-import { detectCapabilities, selectBackend } from '@/config/PerformanceTiers.js';
+import { detectCapabilities, selectBackend, selectTierConfig } from '@/config/PerformanceTiers.js';
 import { type FixedStepClock, createFixedStepClock } from '@/core/FixedStepClock.js';
 import { type Simulation, createSimulation } from '@/simulation/Simulation.js';
 import { TICK_HZ, PLAYER, TORCH, WEAPONS } from '@/content/balance.js';
 import { createLogger, configureLogger, type Logger } from '@/core/Logger.js';
 import type {
+  FloorLayoutTrapHooks,
   RendererBrazierState,
   RendererEnemyState,
   RendererHandle,
   RendererPlacedTorchState,
 } from '@/rendering/RendererService.js';
+import { TrapSystem } from '@/gameplay/TrapSystem.js';
+import type { FloorSceneLayout, FloorSceneRoom } from '@/world/FloorSceneLayout.js';
 import type { GenerationClient } from '@/workers/GenerationClient.js';
 import { QualityController } from '@/rendering/QualityController.js';
 import {
@@ -26,6 +29,8 @@ import {
 } from '@/input/ActionMap.js';
 import { createInputSystem, type InputSystem, type InputFrame } from '@/input/InputSystem.js';
 import { createHUD, type HUD, type SubtitleDirection } from '@/ui/HUD.js';
+import { AttackDirectionIndicator } from '@/ui/AttackDirectionIndicator.js';
+import { RunTimer } from '@/ui/RunTimer.js';
 import { createCinematicOverlay } from '@/ui/CinematicOverlay.js';
 import { createSettingsMenu, type SettingsMenu, type RuntimeSettings } from '@/ui/SettingsMenu.js';
 import {
@@ -63,6 +68,7 @@ import {
   readSavedRuntimeSettings,
   writeRuntimeSettingsToSave,
 } from '@/app/RuntimeSettingsPersistence.js';
+import { AssetViewerModal } from '@/ui/AssetViewerModal.js';
 import { applyViewportMetrics } from '@/app/ViewportSizing.js';
 import {
   emitBrazierEvents,
@@ -113,6 +119,10 @@ import {
   type DeathOverlay,
 } from '@/ui/DeathOverlay.js';
 import {
+  createRunSummaryOverlay,
+  type RunSummaryOverlay,
+} from '@/ui/RunSummaryOverlay.js';
+import {
   createDebugOverlay,
 } from '@/ui/DebugOverlay.js';
 import {
@@ -141,6 +151,7 @@ import { deriveEventFeedback } from '@/app/AudioEventDirector.js';
 import {
   createBrazier,
   igniteBrazier,
+  igniteBrazierWithFlint,
   refillFromBrazier,
   type BrazierState,
 } from '@/gameplay/torch/BrazierSystem.js';
@@ -182,11 +193,63 @@ import {
   upgradesFromNames,
   type CombatModifiers,
 } from '@/gameplay/upgrades/UpgradeResolver.js';
+import {
+  mapLiveIdsToSynergyInventory,
+  resolveSynergiesFromArrays,
+  synergyBossDamageBonus,
+  synergyDamageMultiplier,
+  synergyHasTrapImmunity,
+  synergyHpRegenPerKill,
+  synergyIFrameDelta,
+  synergyLootBonus,
+  synergyProjectileCount,
+  synergySpeedMultiplier,
+  type SynergyEffect,
+} from '@/gameplay/upgrades/SynergyResolver.js';
+import {
+  createPhysicsSleepBridge,
+  type EnemyPhysicsState,
+  type PhysicsSleepBridge,
+} from '@/gameplay/enemies/PhysicsSleepBridge.js';
+import type { PhysicsEnemyProxy } from '@/physics/PhysicsWorld.js';
+import { generateInscription } from '@/content/inscriptions.js';
+import { findPath } from '@/ai/navigation/GridNavigator.js';
+import {
+  bakeNavMeshFromBounds,
+  bakeNavMeshFromSurfaces,
+  firstWaypoint,
+  type RecastNavMeshHandle,
+} from '@/ai/navigation/RecastNavMesh.js';
+import {
+  buildNavGridFromBounds,
+  regionsFromSceneLayout,
+  type FloorNavGrid,
+} from '@/ai/navigation/FloorNavGrid.js';
+import { createTouchControls, type TouchControls } from '@/ui/TouchControls.js';
+import {
+  computeSwarmSteering,
+  DEFAULT_SCARAB_SWARM_CONFIG,
+  type SwarmAgent,
+} from '@/ai/steering/SwarmSteering.js';
+import {
+  createYukaEnemyAI,
+  yukaStateFromRuntime,
+  type YukaEnemyAI,
+  type YukaEnemyHandle,
+} from '@/ai/steering/YukaEnemyAI.js';
+import { RoomStreamingManager, adjacencyFromCorridors } from '@/dungeon/RoomStreamingManager.js';
+import { getRoomNarrative } from '@/gameplay/RoomNarrativeDirector.js';
+import { resolveRoomArchetype } from '@/content/RoomArchetypes.js';
+import { createRoomNarrativeOverlay, type RoomNarrativeOverlay } from '@/ui/RoomNarrativeOverlay.js';
+import { ambienceKindForTheme } from '@/audio/AmbienceTheme.js';
+import { createAnimationSystem } from '@/simulation/systems/AnimationSystem.js';
+import { ANIM_STATE, animStateFromRuntime } from '@/ecs/components/AnimationStore.js';
 import { resolveDamage } from '@/gameplay/combat/DamageResolver.js';
 import { PARRY_IFRAME_MS, PARRY_WINDOW_MS, parryWindowActive } from '@/gameplay/combat/ParryResolver.js';
 import type { MusicState } from '@/audio/MusicPreset.js';
 import { createMusicStateMachine } from '@/audio/MusicStateMachine.js';
 import type { MusicStateMachine } from '@/audio/MusicStateMachine.js';
+import type { RoomType } from '@/audio/SyntheticImpulseResponse.js';
 import {
   applyDamageToGenericEnemy,
   createGenericEncounterState,
@@ -221,6 +284,7 @@ import type {
   DailyModifier,
 } from '@/gameplay/DailyChallengeSystem.js';
 import { createGameAnalytics, type GameAnalytics } from '@/analytics/GameAnalytics.js';
+import { resolveFeatureFlags, nonDefaultFlags } from '@/config/FeatureFlags.js';
 
 export type AppState = 'uninitialized' | 'initializing' | 'running' | 'paused' | 'disposed';
 
@@ -265,11 +329,35 @@ export function createGameApplication(
   let actionMap = createActionMap();
   const input = createInputSystem(actionMap);
   const hud = createHUD();
+  quality.onThermalThrottle = (tier) => {
+    hud.showMessage(
+      `Prestazioni critiche: qualità impostata a ${tier} (surriscaldamento).`,
+      3600,
+    );
+    renderer?.applyQualityProfile(quality.profile);
+  };
+  let attackDirectionIndicator: AttackDirectionIndicator | null = null;
+  let runTimer: RunTimer | null = null;
+  let touchControls: TouchControls | null = null;
+  let floorNavGrid: FloorNavGrid | null = null;
+  let recastNav: RecastNavMeshHandle | null = null;
+  let roomStreaming: RoomStreamingManager | null = null;
+  let lastNarrativeRoomId: string | null = null;
+  let roomNarrativeOverlay: RoomNarrativeOverlay | null = null;
+  let yukaAI: YukaEnemyAI | null = null;
+  let yukaHandle: YukaEnemyHandle | null = null;
+  const appFeatureFlags = resolveFeatureFlags();
+  const tierConfig = selectTierConfig(caps, typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
+  let synergyEffects: readonly SynergyEffect[] = [];
+  let scarabStates: ScarabEncounterState[] = [];
+  const physicsSleepBridge: PhysicsSleepBridge = createPhysicsSleepBridge();
+  const enemyPhysicsProxies = new Map<EntityId, PhysicsEnemyProxy>();
   // G-15: vignette/grana/respiro del buio (DOM, zero costo GPU).
   const cinematicOverlay = createCinematicOverlay();
   const settingsMenu = createSettingsMenu();
   const progressionOverlay: ProgressionOverlay = createProgressionOverlay();
   const deathOverlay: DeathOverlay = createDeathOverlay();
+  const runSummaryOverlay: RunSummaryOverlay = createRunSummaryOverlay();
   // G-01: schermata meta-progressione permanente (IndexedDB).
   let metaProgressionScreen: MetaProgressionScreen | null = null;
   // Debug overlay (v2): F3/Backquote — profiling in-game (draw calls, ms, seed).
@@ -282,6 +370,8 @@ export function createGameApplication(
 
   let state: AppState = 'uninitialized';
   let rafId = 0;
+  /** C-02: 'renderer' = Three.setAnimationLoop (necessario per WebXR); 'raf' = fallback. */
+  let loopDriver: 'raf' | 'renderer' = 'raf';
   let lastTimeMs = 0;
   let renderer: RendererHandle | null = null;
   let generationClient: GenerationClient | null = null;
@@ -304,6 +394,8 @@ export function createGameApplication(
   let placedTorchPosition: RendererPlacedTorchState | null = null;
   let brazierStates: BrazierState[] = [];
   let digSite: DigSite | null = null;
+  /** ART-006: FSM trappole/leva del piano corrente (null se il piano non ne ha). */
+  let trapSystem: TrapSystem | null = null;
   // Pala: scavi rimanenti (0 = nessuna pala in inventario).
   let shovelDigs = 0;
   // Posizione world del pickup pala corrente (null = già raccolta o non presente).
@@ -369,6 +461,7 @@ export function createGameApplication(
   let runtimeGameplayState = createRuntimeGameplayState();
   // Stanze fisicamente visitate dal player in questo piano (si azzera a ogni cambio piano).
   let visitedRoomIds = new Set<number>();
+  let lastAudioRoomType: RoomType | null = null;
   // Slot 0=Pugni, 1=Khopesh, 2=Bastone, 3=Pala (disponibile solo se shovelDigs > 0)
   const weapons: readonly WeaponDefinition[] = [WEAPON_FISTS, WEAPON_KHOPESH, WEAPON_STAFF, WEAPON_SHOVEL];
   let currentWeaponIndex = 1;
@@ -416,6 +509,7 @@ export function createGameApplication(
   let mummyHitFlashUntilMs = 0;
   // G-18: cooldown dei passi sulla sabbia (ms).
   let footstepCooldownMs = 0;
+  let trapSfxCooldownMs = 0;
   const BRAZIER_INTERACT_RADIUS_M = 2.35;
   const DIG_SITE_INTERACT_RADIUS_M = 1.85;
   const PLACED_TORCH_PICKUP_RADIUS_M = 2.2;
@@ -439,12 +533,12 @@ export function createGameApplication(
    * BOSS se boss attivo, COMBAT se attacco in corso, TENSION se svegli, EXPLORE altrimenti.
    */
   function updateMusicState(): void {
-    const scarabCombat = scarabState?.runtime.state === 'CHARGING';
+    const scarabCombat = scarabStates.some((s) => s.runtime.state === 'CHARGING');
     const mummyCombat = mummyState?.runtime.state === 'ATTACKING';
     const genericCombat = genericEnemyState?.runtime.state === 'ATTACKING';
     const anyCombat = scarabCombat || mummyCombat || genericCombat;
     const anyAwake =
-      scarabState?.awakened === true ||
+      scarabStates.some((s) => s.awakened) ||
       mummyState?.runtime.state !== 'SLEEPING' ||
       genericEnemyState?.runtime.state !== 'DORMANT';
     const isBossActive = activeBossRuntime !== null;
@@ -466,18 +560,41 @@ export function createGameApplication(
     }
   }
 
+  function stopFrameDriver(): void {
+    if (loopDriver === 'renderer') {
+      renderer?.setAnimationLoop?.(null);
+    } else {
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    }
+  }
+
+  function startFrameDriver(): void {
+    stopFrameDriver();
+    if (renderer?.setAnimationLoop) {
+      loopDriver = 'renderer';
+      renderer.setAnimationLoop((timeMs) => {
+        loop(timeMs);
+      });
+    } else {
+      loopDriver = 'raf';
+      rafId = requestAnimationFrame(loop);
+    }
+  }
+
   // Local pause/resume functions (definiti prima di processInput che li usa)
   function localPause(reason: PauseReason = 'manual'): void {
     if (state !== 'running' && state !== 'paused') return;
 
     const addedReason = pauseReasons.add(reason);
     if (!addedReason || state === 'paused') return;
+    runTimer?.pause();
 
     const canvasWasPointerLocked = isCanvasPointerLocked();
     pendingPointerLockRestore ||= canvasWasPointerLocked;
     suppressNextPointerLockLoss = canvasWasPointerLocked;
     state = 'paused';
-    cancelAnimationFrame(rafId);
+    stopFrameDriver();
     clock.resetAccumulator();
     document.exitPointerLock();
     input.detach();
@@ -494,6 +611,7 @@ export function createGameApplication(
 
     state = 'running';
     lastTimeMs = 0;
+    runTimer?.start();
     if (renderer) {
       input.attach(renderer.canvas);
       focusCanvas();
@@ -508,7 +626,7 @@ export function createGameApplication(
       hud.showMessage('Clicca per riagganciare il mouse', 2200);
     }
     syncPointerLockState();
-    rafId = requestAnimationFrame(loop);
+    startFrameDriver();
     log.info('Game loop ripreso', { reason });
   }
 
@@ -726,6 +844,21 @@ export function createGameApplication(
       });
     };
 
+    const assetViewer = new AssetViewerModal();
+    const handleGlobalKeydown = (e: KeyboardEvent) => {
+      if (e.code === 'F3') {
+        e.preventDefault();
+        if (assetViewer.isVisible()) {
+          assetViewer.hide();
+        } else {
+          assetViewer.show();
+        }
+      } else if (e.code === 'Escape' && assetViewer.isVisible()) {
+        assetViewer.hide();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeydown);
+
     window.addEventListener('resize', scheduleResize);
     window.addEventListener('orientationchange', scheduleResize);
     viewport?.addEventListener('resize', scheduleResize);
@@ -735,6 +868,7 @@ export function createGameApplication(
     }
 
     detachViewportListeners = () => {
+      window.removeEventListener('keydown', handleGlobalKeydown);
       window.removeEventListener('resize', scheduleResize);
       window.removeEventListener('orientationchange', scheduleResize);
       viewport?.removeEventListener('resize', scheduleResize);
@@ -768,6 +902,57 @@ export function createGameApplication(
    * dove cercare, e il combattimento risultava incomprensibile.
    * Il filtro per stanza rivelata sta in buildRuntimeMinimap.
    */
+  function buildThreatChips(): import('@/ui/HUD.js').HUDThreatChip[] {
+    const chips: import('@/ui/HUD.js').HUDThreatChip[] = [];
+
+    if (sliceState && sliceState.target.hp > 0) {
+      chips.push({
+        label: sliceState.target.name,
+        kind: 'guardian',
+        awake: sliceState.target.awakened,
+        hpRatio: sliceState.target.maxHp <= 0
+          ? 0
+          : sliceState.target.hp / sliceState.target.maxHp,
+      });
+    }
+    if (mummyState && mummyState.hp > 0) {
+      chips.push({
+        label: mummyState.name,
+        kind: 'mummy',
+        awake: mummyState.runtime.state !== 'SLEEPING',
+        hpRatio: mummyState.maxHp <= 0 ? 0 : mummyState.hp / mummyState.maxHp,
+      });
+    }
+    const aliveScarabs = scarabStates.filter((s) => s.hp > 0);
+    if (aliveScarabs.length > 0) {
+      const primary = aliveScarabs[0];
+      if (primary) {
+        const hpSum = aliveScarabs.reduce((acc, s) => acc + s.hp, 0);
+        const maxSum = aliveScarabs.reduce((acc, s) => acc + s.maxHp, 0);
+        chips.push({
+          label: aliveScarabs.length > 1
+            ? `Scarabei ×${aliveScarabs.length}`
+            : primary.name,
+          kind: 'scarab',
+          awake: aliveScarabs.some((s) => s.awakened),
+          hpRatio: maxSum <= 0 ? 0 : hpSum / maxSum,
+        });
+      }
+    }
+    if (genericEnemyState && genericEnemyState.hp > 0) {
+      chips.push({
+        label: genericEnemyState.def.name,
+        kind: 'generic',
+        awake: genericEnemyState.runtime.state !== 'DORMANT',
+        hpRatio: genericEnemyState.def.baseHp <= 0
+          ? 0
+          : genericEnemyState.hp / genericEnemyState.def.baseHp,
+      });
+    }
+
+    return chips.slice(0, 4);
+  }
+
   function buildMinimapEnemies(): RuntimeMinimapEnemyInput[] {
     const result: RuntimeMinimapEnemyInput[] = [];
 
@@ -789,12 +974,13 @@ export function createGameApplication(
         hpRatio: mummyState.maxHp <= 0 ? 0 : mummyState.hp / mummyState.maxHp,
       });
     }
-    if (scarabState && scarabState.hp > 0) {
+    for (const scarab of scarabStates) {
+      if (scarab.hp <= 0) continue;
       result.push({
-        x: scarabState.position.x,
-        z: scarabState.position.z,
-        awake: scarabState.awakened,
-        hpRatio: scarabState.maxHp <= 0 ? 0 : scarabState.hp / scarabState.maxHp,
+        x: scarab.position.x,
+        z: scarab.position.z,
+        awake: scarab.awakened,
+        hpRatio: scarab.maxHp <= 0 ? 0 : scarab.hp / scarab.maxHp,
       });
     }
     if (genericEnemyState && genericEnemyState.hp > 0) {
@@ -885,6 +1071,11 @@ export function createGameApplication(
       highContrast: config.accessibility.highContrast,
       colorBlindMode: config.accessibility.colorBlindMode,
     });
+    runSummaryOverlay.applyPresentation({
+      textScale: config.accessibility.textScale,
+      highContrast: config.accessibility.highContrast,
+      colorBlindMode: config.accessibility.colorBlindMode,
+    });
     mainMenu?.applyPresentation({
       textScale: config.accessibility.textScale,
       highContrast: config.accessibility.highContrast,
@@ -932,9 +1123,7 @@ export function createGameApplication(
     return profilePersistPromise;
   }
 
-  // C-02: probe WebXR — verifica supporto + sessione immersiva con esito
-  // onesto. Il rendering VR vero (setAnimationLoop) è un prerequisito
-  // documentato in roadmap (C-02): senza refactor del loop non si finge.
+  // C-02: WebXR — sessione immersiva + setAnimationLoop (rendering VR reale).
   async function probeWebXr(): Promise<void> {
     if (typeof navigator === 'undefined' || !('xr' in navigator)) {
       hud.showMessage('WebXR non disponibile in questo browser.', 3200);
@@ -946,16 +1135,29 @@ export function createGameApplication(
         hud.showMessage('WebXR non disponibile in questo browser.', 3200);
         return;
       }
+      if (backend !== 'webgl2') {
+        hud.showMessage('WebXR richiede il backend WebGL2. Riavvia senza WebGPU.', 4200);
+        return;
+      }
       const supported = await xr.isSessionSupported('immersive-vr');
       if (!supported) {
         hud.showMessage('Nessun visore WebXR rilevato.', 3200);
         return;
       }
       const session = await xr.requestSession('immersive-vr', {
-        optionalFeatures: ['local-floor'],
+        optionalFeatures: ['local-floor', 'bounded-floor'],
       });
-      renderer?.enableXr?.(session);
-      hud.showMessage('Sessione WebXR avviata. Il rendering VR richiede la build dedicata (C-02).', 4200);
+      const ok = await renderer?.enableXr?.(session);
+      if (!ok) {
+        void session.end();
+        hud.showMessage('Collegamento WebXR al renderer fallito.', 3200);
+        return;
+      }
+      // Forza il driver setAnimationLoop (XR presenta i frame dal compositor).
+      if (state === 'running') {
+        startFrameDriver();
+      }
+      hud.showMessage('Sessione WebXR attiva. Esci dal visore per tornare al desktop.', 4200);
       log.info('WebXR: sessione immersiva avviata');
     } catch (error) {
       hud.showMessage('Avvio WebXR fallito.', 3000);
@@ -977,6 +1179,7 @@ export function createGameApplication(
   function showDeathOverlay(canRetry: boolean): void {
     // G-18: cue di morte del player (una sola volta per run fallita)
     audio.play({ name: 'player_death', volume: 0.6 });
+    runTimer?.pause();
     const deathPos = currentPlayerPosition();
     analytics.track('PLAYER_DEATH', Date.now(), {
       floor: currentFloorIndex,
@@ -1106,6 +1309,7 @@ export function createGameApplication(
     syncTorchPresentation();
     hud.showMessage('Torcia in pugno. La discesa comincia.', 2000);
     audio.play({ name: 'brazier_ignite', volume: 0.5 });
+    audio.play({ name: 'torch_ignite', volume: 0.45 });
     if (dailyContext) {
       const modNames = dailyContext.payload.modifiers
         .map((m: DailyModifier) => {
@@ -1225,6 +1429,17 @@ export function createGameApplication(
     combatModifiers = resolveCombatModifiers(
       upgradesFromNames(progressionState.discoveredGrafts, ALL_UPGRADES),
     );
+    // GAME-ART: sinergie live (maledizioni + arma + graft) → effetti di combattimento.
+    const synergyInventory = mapLiveIdsToSynergyInventory({
+      curseIds: activeCurse ? [activeCurse.definition.id] : [],
+      weaponIds: [String(currentWeapon().id)],
+      graftNames: progressionState.discoveredGrafts,
+    });
+    synergyEffects = resolveSynergiesFromArrays(
+      synergyInventory.items,
+      synergyInventory.curses,
+    );
+    playerController?.setSpeedMultiplier(synergySpeedMultiplier(synergyEffects));
     if (!isWeaponUnlocked(currentWeaponIndex)) {
       currentWeaponIndex = 1;
       weaponName = currentWeapon().name;
@@ -1308,6 +1523,273 @@ export function createGameApplication(
     };
   }
 
+  /**
+   * ART-006: ricrea TrapSystem dal layout e collega i mesh via hook del renderer.
+   * Deve essere chiamato al posto di `setFloorLayout` grezzo all'init e alla discesa.
+   */
+  function registerEnemyPhysicsProxy(
+    entityId: EntityId,
+    position: { readonly x: number; readonly y: number; readonly z: number },
+    radiusM: number,
+    heightM: number,
+    initialState: EnemyPhysicsState = 'DORMANT',
+  ): void {
+    if (!physicsWorld) return;
+    unregisterEnemyPhysicsProxy(entityId);
+    const proxy = physicsWorld.createEnemyProxy(position, radiusM, heightM);
+    enemyPhysicsProxies.set(entityId, proxy);
+    physicsSleepBridge.register(entityId, proxy);
+    if (initialState !== 'DORMANT') {
+      physicsSleepBridge.notifyStateChange(entityId, initialState);
+    }
+  }
+
+  function unregisterEnemyPhysicsProxy(entityId: EntityId): void {
+    const proxy = enemyPhysicsProxies.get(entityId);
+    if (!proxy) return;
+    physicsSleepBridge.unregister(entityId);
+    proxy.dispose();
+    enemyPhysicsProxies.delete(entityId);
+  }
+
+  function clearAllEnemyPhysicsProxies(): void {
+    for (const entityId of [...enemyPhysicsProxies.keys()]) {
+      unregisterEnemyPhysicsProxy(entityId);
+    }
+    physicsSleepBridge.sleepAll();
+  }
+
+  function syncEnemyPhysicsProxy(
+    entityId: EntityId,
+    position: { readonly x: number; readonly y: number; readonly z: number },
+    state: EnemyPhysicsState,
+  ): void {
+    const proxy = enemyPhysicsProxies.get(entityId);
+    if (!proxy) return;
+    proxy.setTranslation(position);
+    physicsSleepBridge.notifyStateChange(entityId, state);
+  }
+
+  function scarabPhysicsState(scarab: ScarabEncounterState): EnemyPhysicsState {
+    if (scarab.hp <= 0) return 'DEAD';
+    if (!scarab.awakened) return 'DORMANT';
+    if (scarab.runtime.state === 'CHARGING' || scarab.runtime.state === 'CHARGING_TELL') {
+      return 'ATTACKING';
+    }
+    return 'PURSUING';
+  }
+
+  function mummyPhysicsState(mummy: MummyEncounterState): EnemyPhysicsState {
+    if (mummy.hp <= 0) return 'DEAD';
+    if (mummy.runtime.state === 'SLEEPING') return 'DORMANT';
+    if (mummy.runtime.state === 'ATTACKING') return 'ATTACKING';
+    if (mummy.runtime.state === 'RECOVERING') return 'RECOVERING';
+    return 'PURSUING';
+  }
+
+  function genericPhysicsState(enemy: GenericEncounterState): EnemyPhysicsState {
+    if (enemy.hp <= 0 || enemy.runtime.state === 'DEAD') return 'DEAD';
+    switch (enemy.runtime.state) {
+      case 'DORMANT':
+        return 'DORMANT';
+      case 'ATTACKING':
+        return 'ATTACKING';
+      case 'RECOVERING':
+        return 'RECOVERING';
+      case 'STAGGERED':
+        return 'STAGGERED';
+      default:
+        return 'PURSUING';
+    }
+  }
+
+  function resolveAudioRoomType(
+    layout: FloorSceneLayout,
+    x: number,
+    z: number,
+  ): RoomType {
+    for (const corridor of layout.corridors) {
+      const b = corridor.bounds;
+      if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) {
+        return 'CORRIDOR';
+      }
+    }
+    const room = layout.rooms.find(
+      (r) =>
+        x >= r.bounds.minX && x <= r.bounds.maxX &&
+        z >= r.bounds.minZ && z <= r.bounds.maxZ,
+    );
+    return audioRoomTypeForSceneRoom(room, layout.floorIndex);
+  }
+
+  function audioRoomTypeForSceneRoom(
+    room: FloorSceneRoom | undefined,
+    floorIndex: number,
+  ): RoomType {
+    if (!room) return 'CHAMBER';
+    if (room.role === 'STAIR' || room.role === 'EXIT') return 'SHAFT';
+    if (room.role === 'TREASURE' || room.role === 'MAP' || room.theme === 'ROYAL') {
+      return 'THRONE_ROOM';
+    }
+    if (
+      room.theme === 'FUNERARY' ||
+      room.role === 'COMBAT' && floorIndex >= 5
+    ) {
+      return 'BURIAL_CHAMBER';
+    }
+    return 'CHAMBER';
+  }
+
+  function syncAmbienceRoomReverb(playerX: number, playerZ: number): void {
+    if (!sliceState) return;
+    const next = resolveAudioRoomType(sliceState.sceneLayout, playerX, playerZ);
+    if (next !== lastAudioRoomType) {
+      lastAudioRoomType = next;
+      audio.setRoomType(next);
+    }
+
+    const currentRoom = sliceState.sceneLayout.rooms.find(
+      (r) =>
+        playerX >= r.bounds.minX && playerX <= r.bounds.maxX &&
+        playerZ >= r.bounds.minZ && playerZ <= r.bounds.maxZ,
+    );
+    if (!currentRoom) return;
+    const roomKey = String(currentRoom.roomId);
+    if (roomKey === lastNarrativeRoomId) return;
+    lastNarrativeRoomId = roomKey;
+
+    const archetype = resolveRoomArchetype(
+      currentFloorIndex,
+      Number(currentRoom.roomId),
+      currentRoom.role,
+      currentRoom.theme,
+    );
+    const narrative = getRoomNarrative(
+      sliceState.floor.seed,
+      currentFloorIndex,
+      Number(currentRoom.roomId),
+      currentRoom.theme,
+      archetype.environmentalClues,
+    );
+    roomNarrativeOverlay?.show(narrative);
+
+    audio.setAmbienceTheme(ambienceKindForTheme(currentRoom.theme));
+
+    if (roomStreaming && appFeatureFlags.roomStreaming) {
+      const graph = adjacencyFromCorridors(
+        sliceState.sceneLayout.rooms.map((r) => String(r.roomId)),
+        sliceState.sceneLayout.corridors,
+      );
+      const result = roomStreaming.onPlayerEnterRoom(roomKey, graph);
+      renderer?.setStreamedRoomIds?.(result.needed);
+    }
+  }
+
+  function showFloorInscription(seed: number, floorIndex: number, theme?: string): void {
+    audio.setAmbienceFloor(floorIndex);
+    if (theme) {
+      hud.showMessage(`Piano ${floorIndex} — ${theme}`, 2400);
+    }
+    const inscription = generateInscription(seed);
+    if (inscription.glyphs.length > 0) {
+      hud.showContextualHint({
+        id: `inscription-floor-${floorIndex}`,
+        text: `${inscription.preamble} ${inscription.glyphs}`,
+      });
+    }
+  }
+
+  function rebuildFloorNavGrid(layout: FloorSceneLayout): void {
+    floorNavGrid = buildNavGridFromBounds(regionsFromSceneLayout(layout));
+    recastNav?.dispose();
+    recastNav = null;
+    if (appFeatureFlags.roomStreaming) {
+      roomStreaming = new RoomStreamingManager({
+        maxHop: tierConfig.maxRoomHops,
+        maxLoaded: 12,
+      });
+      renderer?.bindRoomStreaming?.(roomStreaming);
+    }
+  }
+
+  function bindYukaToGeneric(state: GenericEncounterState | null): void {
+    if (!appFeatureFlags.yukaSteering) return;
+    yukaAI ??= createYukaEnemyAI();
+    yukaAI.clear();
+    yukaHandle = null;
+    if (!state) return;
+    yukaHandle = yukaAI.spawn(state.entityId, state.position, state.def.speedMps);
+    simulation.world.animation.set(
+      state.entityId,
+      ANIM_STATE.IDLE,
+    );
+  }
+
+  function tickYukaForGeneric(
+    playerPos: { readonly x: number; readonly y: number; readonly z: number },
+    usedRecast: boolean,
+  ): void {
+    if (!appFeatureFlags.yukaSteering || !yukaAI || !yukaHandle || !genericEnemyState) return;
+    yukaAI.setPlayerPosition(playerPos);
+    yukaHandle.setState(yukaStateFromRuntime(genericEnemyState.runtime.state));
+    yukaHandle.setPosition(genericEnemyState.position);
+    yukaAI.update(1 / TICK_HZ);
+    if (!usedRecast && genericEnemyState.runtime.state === 'PURSUING') {
+      yukaHandle.syncTo(genericEnemyState.position);
+    }
+    simulation.world.animation.set(
+      genericEnemyState.entityId,
+      animStateFromRuntime(genericEnemyState.runtime.state),
+    );
+  }
+
+  function bindTrapSystemToFloor(layout: FloorSceneLayout): void {
+    rebuildFloorNavGrid(layout);
+    const hasTraps = layout.traps.length > 0 || layout.leverPassage !== null;
+    trapSystem = hasTraps ? new TrapSystem(layout.traps, layout.leverPassage) : null;
+    const hooks: FloorLayoutTrapHooks | undefined = trapSystem
+      ? {
+          onPressurePlateReady: (trapId, setSpikesY) => {
+            trapSystem?.registerPressurePlateAnimator(trapId, setSpikesY);
+          },
+          onPendulumReady: (trapId, setAngleRad) => {
+            trapSystem?.registerPendulumAnimator(trapId, setAngleRad);
+          },
+          onDartReady: (trapId, setDart) => {
+            trapSystem?.registerDartAnimator(trapId, setDart);
+          },
+          onBoulderReady: (trapId, setOffsetM) => {
+            trapSystem?.registerBoulderAnimator(trapId, setOffsetM);
+          },
+          onLeverReady: (_leverId, setPose) => {
+            trapSystem?.registerLeverAnimator(setPose);
+          },
+        }
+      : undefined;
+    renderer?.setFloorLayout(layout, hooks);
+    if (appFeatureFlags.recastNavmesh) {
+      void renderer?.whenFloorLayoutReady?.().then(async () => {
+        const surfaces = renderer?.getNavBakeSurfaces?.() ?? [];
+        recastNav = surfaces.length > 0
+          ? await bakeNavMeshFromSurfaces(surfaces)
+          : await bakeNavMeshFromBounds(regionsFromSceneLayout(layout));
+      });
+    }
+  }
+
+  function tryHandleLeverInteract(
+    playerPosition: { readonly x: number; readonly z: number } | null,
+  ): boolean {
+    if (!trapSystem || !playerPosition) return false;
+    if (trapSystem.getLeverState() !== 'READY') return false;
+    const activated = trapSystem.tryActivateLever(playerPosition.x, playerPosition.z);
+    if (!activated) return false;
+    hud.showMessage('Leva tirata — il sigillo di pietra scende.', 2600);
+    audio.play({ name: 'door_creak', volume: 0.7 });
+    audio.play({ name: 'stone_door', volume: 0.65 });
+    return true;
+  }
+
   function applyDamageToPlayer(
     baseDamageHp: number,
     position: { readonly x: number; readonly y: number; readonly z: number },
@@ -1353,6 +1835,21 @@ export function createGameApplication(
     // G-07: feedback visivo del danno subito — vibrazione camera proporzionale,
     // attenuata da reduceCameraShake nel renderer.
     renderer?.addCameraShake(Math.min(1, 0.35 + outcome.finalDamageHp / 60));
+    // AC-03: freccia 8-dir verso la sorgente del colpo (relativa allo sguardo).
+    if (attackDirectionIndicator && playerController) {
+      const playerPos = playerController.getState().position;
+      const dx = position.x - playerPos.x;
+      const dz = position.z - playerPos.z;
+      if (Math.hypot(dx, dz) > 0.15) {
+        const angleToHit = Math.atan2(dx, dz);
+        const angleForward = Math.atan2(-Math.sin(cameraYaw), -Math.cos(cameraYaw));
+        let rel = angleToHit - angleForward;
+        while (rel > Math.PI) rel -= Math.PI * 2;
+        while (rel < -Math.PI) rel += Math.PI * 2;
+        const deg = ((rel * 180) / Math.PI + 360) % 360;
+        attackDirectionIndicator.show(deg);
+      }
+    }
     // Tutorial graduale: primo danno subito e soglia critica (una volta sola).
     if (remainingHp > 0 && remainingHp <= Math.round(playerMaxHp * 0.3)) {
       hud.showContextualHint({
@@ -1467,6 +1964,19 @@ export function createGameApplication(
           runStats = { ...runStats, kaEarnedThisRun: runStats.kaEarnedThisRun + kaMultiplier };
         }
       }
+
+      // GAME-ART: sinergia HP_REGEN_PER_KILL (es. Ankh + Fame del Deserto).
+      if (event.kind === 'ENEMY_DIED') {
+        const regenHp = synergyHpRegenPerKill(synergyEffects);
+        if (regenHp > 0 && playerEntityId !== null) {
+          const health = currentPlayerHealth();
+          if (health && health.hp < health.maxHp) {
+            const nextHp = Math.min(health.maxHp, health.hp + regenHp);
+            simulation.world.health.set(playerEntityId, nextHp, health.maxHp);
+            hud.showMessage(`Sinergia: +${regenHp} HP`, 1400);
+          }
+        }
+      }
       shouldPersistProfile ||= shouldPersistAfterEvent(event);
 
       const feedback = deriveEventFeedback(event, listenerPosition);
@@ -1526,6 +2036,15 @@ export function createGameApplication(
               y: 0,
               z: event.position.z,
             });
+            renderer.emitSparks(
+              {
+                x: event.position.x,
+                y: event.position.y + 0.6,
+                z: event.position.z,
+              },
+              0xd4a05a,
+              36,
+            );
           }
           {
             const digPos = eventPosition(event);
@@ -1771,9 +2290,15 @@ export function createGameApplication(
     }
 
     if (!nearby.state.lit) {
-      const ignition = igniteBrazier(nearby.state, torchRuntime.fuelSeconds);
+      let ignition = igniteBrazier(nearby.state, torchRuntime.fuelSeconds);
+      let usedFlint = false;
       if (!ignition) {
-        hud.showMessage('Serve una torcia accesa e abbastanza combustibile.', 1800);
+        // Fallback: pietra focaia d'emergenza
+        ignition = igniteBrazierWithFlint(nearby.state);
+        usedFlint = true;
+      }
+      if (!ignition) {
+        hud.showMessage('Impossibile accendere il braciere.', 1800);
         return true;
       }
       const previousRuntime = torchRuntime;
@@ -1791,7 +2316,12 @@ export function createGameApplication(
       // prima era solo un cambio di numeri nella HUD.
       renderer?.playTorchIgnite?.();
       syncTorchPresentation();
-      hud.showMessage('Braciere acceso. La stanza respira di nuovo.', 2200);
+      hud.showMessage(
+        usedFlint
+          ? 'Braciere acceso con pietra focaia! Premi di nuovo E per ricaricare la torcia.'
+          : 'Braciere acceso. La stanza respira di nuovo.',
+        2400,
+      );
       hud.showContextualHint({
         id: 'hint-brazier',
         text: "Braciere acceso: l'oscurità arretra e la mappa si rivela.",
@@ -1889,6 +2419,22 @@ export function createGameApplication(
   async function descendToNextFloor(): Promise<boolean> {
     const nextIndex = currentFloorIndex + 1;
     if (nextIndex > MAX_FLOORS) {
+      runStats = { ...runStats, floorsCleared: MAX_FLOORS };
+      settingsMenu.hide();
+      progressionOverlay.hide();
+      localPause('death');
+      runSummaryOverlay.show({
+        victory: true,
+        floorsCleared: MAX_FLOORS,
+        totalFloors: MAX_FLOORS,
+        enemiesDefeated: runStats.enemiesDefeated,
+        goldEarned: runStats.goldEarned + runtimeGameplayState.goldCoins,
+        kaEarnedThisRun: runStats.kaEarnedThisRun,
+        runDurationMs: Date.now() - runStats.runStartMs,
+        seed: sliceState?.floor.seed ?? 42,
+      });
+      hud.showMessage('☥ PIRAMIDE COMPLETATA! TRIONFO NELLA NECROPOLI ☥', 5000);
+      audio.play({ name: 'fragment_pickup', volume: 0.9 });
       return false;
     }
     // Run summary (v2): il piano corrente è stato completato
@@ -1926,6 +2472,7 @@ export function createGameApplication(
       if (cursed.kaPerKillBonus > 0) {
         log.info('Furia degli Sciacalli attiva', { kaPerKill: cursed.kaPerKillBonus, budgetMult: cursed.enemyBudgetMultiplier });
       }
+      syncProgressionRuntimeBonuses();
     }
     log.info('Discesa al piano successivo', {
       floorIndex: nextIndex,
@@ -1937,10 +2484,12 @@ export function createGameApplication(
 
     // Reset dei runtime per-piano
     visitedRoomIds = new Set();
-    scarabState = null;
+    clearAllEnemyPhysicsProxies();
+    clearScarabSwarm();
     mummyState = null;
     genericEnemyState = null;
     activeBossRuntime = null;
+    trapSystem = null;
     hud.updateBossBar(null);
     enemyHurtboxes.clear();
     playerHitRegistry.clear();
@@ -1964,8 +2513,7 @@ export function createGameApplication(
     });
     const encounterPlan = enemySpawnDirector.planNext();
     if (encounterPlan?.enemyType === 'SCARAB') {
-      const entityId = simulation.world.createEntity();
-      scarabState = createScarabEncounterState(entityId, encounterPlan.position);
+      spawnScarabSwarm(encounterPlan.position);
     } else if (encounterPlan) {
       const entityId = simulation.world.createEntity();
       genericEnemyState = createGenericEncounterState(
@@ -1975,6 +2523,12 @@ export function createGameApplication(
       );
       if (dailyMods.has('FAST_ENEMIES') && genericEnemyState) {
         genericEnemyState = { ...genericEnemyState, def: { ...genericEnemyState.def, speedMps: genericEnemyState.def.speedMps * 1.5 } };
+      }
+      if (genericEnemyState) {
+        const r = genericEnemyState.archetype === 'COBRA' ? 0.3 : 0.55;
+        const h = genericEnemyState.archetype === 'COBRA' ? 0.7 : 1.75;
+        registerEnemyPhysicsProxy(entityId, genericEnemyState.position, r, h, 'DORMANT');
+        bindYukaToGeneric(genericEnemyState);
       }
       log.info('Director: spawn iniziale del nuovo piano', { enemyType: encounterPlan.enemyType });
     }
@@ -2017,9 +2571,16 @@ export function createGameApplication(
     // Layout al renderer + respawn player alla entry del piano.
     // v2: dissolvenza nera — copre il rebuild della scena (main thread) e
     // rende la discesa cinematografica invece di un frame drop visibile.
+    const descentInscription = generateInscription(nextSlice.floor.seed);
+    const captionLines = [
+      `Piano ${nextIndex}`,
+      progression.theme,
+      descentInscription.glyphs.slice(0, 12),
+    ].filter((line) => line.length > 0);
+    cinematicOverlay?.setFloorCaption(captionLines.join('\n'));
     cinematicOverlay?.fadeToBlack(true);
-    await new Promise((resolve) => setTimeout(resolve, 380));
-    renderer?.setFloorLayout(nextSlice.sceneLayout);
+    await new Promise((resolve) => setTimeout(resolve, 720));
+    bindTrapSystemToFloor(nextSlice.sceneLayout);
     renderer?.setShovelPickup(shovelPickupPos);
     renderer?.applyFloorPalette(progression.palette);
     syncWorldInteractables();
@@ -2036,8 +2597,10 @@ export function createGameApplication(
     }
     syncVerticalSlicePresentation();
     syncTorchPresentation();
+    lastAudioRoomType = null;
     cinematicOverlay?.fadeToBlack(false);
-    hud.showMessage(`Piano ${nextIndex} — ${progression.theme}`, 2800);
+    cinematicOverlay?.setFloorCaption(null);
+    showFloorInscription(nextSlice.floor.seed, nextIndex, progression.theme);
     analytics.setFloor(nextIndex);
     analytics.track('FLOOR_START', Date.now(), { floor: nextIndex });
     if (dailyMods.has('SPEED_RUN')) {
@@ -2113,18 +2676,18 @@ export function createGameApplication(
       },
     ];
 
-    if (scarabState) {
+    for (const scarab of scarabStates) {
       enemyStates.push({
         kind: 'SCARAB',
-        x: scarabState.position.x,
-        y: scarabState.position.y,
-        z: scarabState.position.z,
+        x: scarab.position.x,
+        y: scarab.position.y,
+        z: scarab.position.z,
         modelScale: 0.62,
-        hpRatio: scarabState.maxHp <= 0 ? 0 : scarabState.hp / scarabState.maxHp,
-        alive: scarabState.hp > 0,
-        awakened: scarabState.awakened,
+        hpRatio: scarab.maxHp <= 0 ? 0 : scarab.hp / scarab.maxHp,
+        alive: scarab.hp > 0,
+        awakened: scarab.awakened,
         hitFlash: nowMs <= scarabHitFlashUntilMs,
-        telegraphStrength: getScarabTelegraphStrength(scarabState),
+        telegraphStrength: getScarabTelegraphStrength(scarab),
       });
     }
 
@@ -2199,43 +2762,116 @@ export function createGameApplication(
     });
   }
 
-  function syncScarabEntityState(): void {
-    if (!scarabState) {
-      return;
-    }
-
-    simulation.world.transform.setPosition(
-      scarabState.entityId,
-      scarabState.position.x,
-      scarabState.position.y,
-      scarabState.position.z,
-    );
-    simulation.world.health.set(scarabState.entityId, scarabState.hp, scarabState.maxHp);
-
-    if (scarabState.hp <= 0) {
-      enemyHurtboxes.remove(scarabState.entityId);
-      return;
-    }
-
-    const existing = enemyHurtboxes.getByEntity(scarabState.entityId);
-    if (existing) {
-      enemyHurtboxes.update(
-        scarabState.entityId,
-        scarabState.position.x,
-        scarabState.position.y,
-        scarabState.position.z,
+  function spawnScarabSwarm(
+    center: { readonly x: number; readonly y: number; readonly z: number },
+  ): void {
+    const offsets = [
+      { x: 0, z: 0 },
+      { x: 1.15, z: 0.85 },
+      { x: -1.05, z: 0.95 },
+    ] as const;
+    scarabStates = offsets.map((off) => {
+      const entityId = simulation.world.createEntity();
+      const state = createScarabEncounterState(entityId, {
+        x: center.x + off.x,
+        y: center.y,
+        z: center.z + off.z,
+      });
+      registerEnemyPhysicsProxy(
+        entityId,
+        state.position,
+        SCARAB_HURTBOX_RADIUS_M,
+        SCARAB_HURTBOX_HEIGHT_M,
+        'DORMANT',
       );
-      return;
-    }
-
-    enemyHurtboxes.add({
-      entityId: scarabState.entityId,
-      centerX: scarabState.position.x,
-      centerY: scarabState.position.y,
-      centerZ: scarabState.position.z,
-      radiusM: SCARAB_HURTBOX_RADIUS_M,
-      heightM: SCARAB_HURTBOX_HEIGHT_M,
+      return state;
     });
+    scarabState = scarabStates[0] ?? null;
+  }
+
+  function clearScarabSwarm(): void {
+    for (const scarab of scarabStates) {
+      unregisterEnemyPhysicsProxy(scarab.entityId);
+    }
+    scarabStates = [];
+    scarabState = null;
+  }
+
+  function syncPrimaryScarabRef(): void {
+    scarabState =
+      scarabStates.find((s) => s.hp > 0) ??
+      scarabStates[0] ??
+      null;
+  }
+
+  function applyScarabSwarmSteering(
+    playerPosition: { readonly x: number; readonly y: number; readonly z: number },
+    deltaSeconds: number,
+  ): void {
+    const alive = scarabStates.filter((s) => s.hp > 0);
+    if (alive.length < 3) return;
+
+    const agents: SwarmAgent[] = alive.map((s) => ({
+      entityId: s.entityId,
+      position: { x: s.position.x, y: s.position.y, z: s.position.z },
+      velocity: { x: 0, y: 0, z: 0 },
+      isCharging: s.runtime.state === 'CHARGING',
+      chargeCooldownTicks: 0,
+    }));
+    const target = { x: playerPosition.x, y: playerPosition.y, z: playerPosition.z };
+    const blendMps = DEFAULT_SCARAB_SWARM_CONFIG.maxSpeed * 0.35;
+
+    for (let i = 0; i < alive.length; i++) {
+      const scarab = alive[i];
+      const agent = agents[i];
+      if (!scarab || !agent) continue;
+      if (!scarab.awakened || scarab.runtime.state === 'CHARGING') continue;
+      const steer = computeSwarmSteering(agent, agents, target, DEFAULT_SCARAB_SWARM_CONFIG);
+      scarab.position = {
+        x: scarab.position.x + steer.x * blendMps * deltaSeconds,
+        y: scarab.position.y,
+        z: scarab.position.z + steer.z * blendMps * deltaSeconds,
+      };
+    }
+  }
+
+  function syncScarabEntityState(): void {
+    syncPrimaryScarabRef();
+    for (const scarab of scarabStates) {
+      simulation.world.transform.setPosition(
+        scarab.entityId,
+        scarab.position.x,
+        scarab.position.y,
+        scarab.position.z,
+      );
+      simulation.world.health.set(scarab.entityId, scarab.hp, scarab.maxHp);
+      syncEnemyPhysicsProxy(scarab.entityId, scarab.position, scarabPhysicsState(scarab));
+
+      if (scarab.hp <= 0) {
+        enemyHurtboxes.remove(scarab.entityId);
+        continue;
+      }
+
+      const existing = enemyHurtboxes.getByEntity(scarab.entityId);
+      if (existing) {
+        enemyHurtboxes.update(
+          scarab.entityId,
+          scarab.position.x,
+          scarab.position.y,
+          scarab.position.z,
+        );
+        continue;
+      }
+
+      enemyHurtboxes.add({
+        entityId: scarab.entityId,
+        centerX: scarab.position.x,
+        centerY: scarab.position.y,
+        centerZ: scarab.position.z,
+        radiusM: SCARAB_HURTBOX_RADIUS_M,
+        heightM: SCARAB_HURTBOX_HEIGHT_M,
+      });
+    }
   }
 
   function syncMummyEntityState(): void {
@@ -2250,6 +2886,7 @@ export function createGameApplication(
       mummyState.position.z,
     );
     simulation.world.health.set(mummyState.entityId, mummyState.hp, mummyState.maxHp);
+    syncEnemyPhysicsProxy(mummyState.entityId, mummyState.position, mummyPhysicsState(mummyState));
 
     if (mummyState.hp <= 0) {
       enemyHurtboxes.remove(mummyState.entityId);
@@ -2290,6 +2927,11 @@ export function createGameApplication(
       genericEnemyState.position.z,
     );
     simulation.world.health.set(genericEnemyState.entityId, genericEnemyState.hp, genericEnemyState.def.baseHp);
+    syncEnemyPhysicsProxy(
+      genericEnemyState.entityId,
+      genericEnemyState.position,
+      genericPhysicsState(genericEnemyState),
+    );
 
     if (genericEnemyState.hp <= 0) {
       enemyHurtboxes.remove(genericEnemyState.entityId);
@@ -2344,10 +2986,22 @@ export function createGameApplication(
     from: { readonly x: number; readonly y: number; readonly z: number },
     to: { readonly x: number; readonly y: number; readonly z: number },
   ): boolean {
+    const dist = Math.hypot(to.x - from.x, to.z - from.z);
+    if (dist <= 2.8) {
+      // In mischia ravvicinata il fendente passa sempre a meno di un muro alto
+      if (physicsWorld) {
+        return physicsWorld.hasLineOfSight(
+          { x: from.x, y: from.y + 1.1, z: from.z },
+          { x: to.x, y: to.y + 1.1, z: to.z },
+        );
+      }
+      return true;
+    }
+
     if (physicsWorld) {
       return physicsWorld.hasLineOfSight(
-        { x: from.x, y: from.y + 0.35, z: from.z },
-        { x: to.x, y: to.y + 0.35, z: to.z },
+        { x: from.x, y: from.y + 1.1, z: from.z },
+        { x: to.x, y: to.y + 1.1, z: to.z },
       );
     }
 
@@ -2366,11 +3020,12 @@ export function createGameApplication(
     const floorSeed = sliceState?.floor.seed ?? 0;
     const rollValue = hash32(floorSeed, entityId) / 0x100000000;
     const base = rollGoldDrop(tier, rollValue);
+    const lootBonus = synergyLootBonus(synergyEffects);
     // NEW-3: "Fame del Deserto" raddoppia l'oro raccolto
     if (activeCurse?.definition.id === 'fame-del-deserto') {
-      return base * 2;
+      return base * 2 + lootBonus;
     }
-    return base;
+    return base + lootBonus;
   }
 
   function resolveVerticalSliceAttack(
@@ -2382,25 +3037,36 @@ export function createGameApplication(
     }
 
     const playerState = playerController.getState();
-    const hitTargets = collectAttackHits({
-      attackerId: playerEntityId,
-      attack,
-      attackerPose: {
-        x: playerState.position.x,
-        y: playerState.position.y,
-        z: playerState.position.z,
-        yaw: cameraYaw,
-      },
-      hurtboxes: enemyHurtboxes,
-      activeStartTick,
-      hitRegistry: playerHitRegistry,
-      hasLineOfSight: (entry) =>
-        hasRuntimeLineOfSight(playerState.position, {
-          x: entry.centerX,
-          y: entry.centerY,
-          z: entry.centerZ,
-        }),
-    });
+    const extraSwings = synergyProjectileCount(synergyEffects);
+    const yawOffsets = [0];
+    for (let i = 0; i < extraSwings; i++) {
+      const sign = i % 2 === 0 ? 1 : -1;
+      yawOffsets.push(sign * 0.14 * (Math.floor(i / 2) + 1));
+    }
+    const hitTargetSet = new Set<EntityId>();
+    for (const yawOff of yawOffsets) {
+      const hits = collectAttackHits({
+        attackerId: playerEntityId,
+        attack,
+        attackerPose: {
+          x: playerState.position.x,
+          y: playerState.position.y,
+          z: playerState.position.z,
+          yaw: cameraYaw + yawOff,
+        },
+        hurtboxes: enemyHurtboxes,
+        activeStartTick,
+        hitRegistry: playerHitRegistry,
+        hasLineOfSight: (entry) =>
+          hasRuntimeLineOfSight(playerState.position, {
+            x: entry.centerX,
+            y: entry.centerY,
+            z: entry.centerZ,
+          }),
+      });
+      for (const id of hits) hitTargetSet.add(id);
+    }
+    const hitTargets = [...hitTargetSet];
 
     if (hitTargets.length === 0) {
       return false;
@@ -2409,6 +3075,7 @@ export function createGameApplication(
     let connected = false;
     // v2: hitmarker differenziale — cattura il crit dell'ultimo colpo a segno
     let lastHitCritical = false;
+    const bossDamageMult = 1 + synergyBossDamageBonus(synergyEffects);
 
     for (const targetId of hitTargets) {
       // G-05: danno con modifier dei graft — la guardiana è una MUMMY (undead),
@@ -2419,8 +3086,11 @@ export function createGameApplication(
       const graftDamage = resolvePlayerDamage(attack.damage, combatModifiers, {
         targetIsUndead,
       });
+      const isBossTarget = targetId === guardianEntitySync.entityId && activeBossRuntime !== null;
+      const synergyScaledDamage =
+        graftDamage * synergyDamageMultiplier(synergyEffects) * (isBossTarget ? bossDamageMult : 1);
       const outcome = resolveDamage({
-        baseDamageHp: graftDamage,
+        baseDamageHp: synergyScaledDamage,
         attackModifier: 1,
         sourceModifier: 1,
         targetArmor: 0,
@@ -2468,27 +3138,36 @@ export function createGameApplication(
           const bossHp = activeBossRuntime ? ` (${activeBossRuntime.hp}/${activeBossRuntime.maxHp})` : '';
           hud.showMessage(`Colpo a segno: -${resolution.damageHp} HP${bossHp}`);
         }
-      } else if (targetId === scarabState?.entityId) {
-        const resolution = applyDamageToScarab(scarabState, outcome.finalDamageHp);
-        simulation.world.health.set(targetId, resolution.targetHp, scarabState.maxHp);
+      } else if (scarabStates.some((s) => s.entityId === targetId)) {
+        const hitScarab = scarabStates.find((s) => s.entityId === targetId);
+        if (!hitScarab) {
+          continue;
+        }
+        const resolution = applyDamageToScarab(hitScarab, outcome.finalDamageHp);
+        simulation.world.health.set(targetId, resolution.targetHp, hitScarab.maxHp);
         scarabHitFlashUntilMs = performance.now() + 140;
         connected = true;
+        syncPrimaryScarabRef();
 
         if (resolution.killed) {
           simulation.events.emit({
             kind: 'ENEMY_DIED',
             entityId: targetId,
-            position: scarabState.position,
+            position: hitScarab.position,
             data: {
-              enemy: scarabState.name,
+              enemy: hitScarab.name,
               archetype: 'SCARAB',
               attackId: attack.id,
               goldDropped: rollEnemyGoldDrop(1, targetId),
             },
           });
           runStats = { ...runStats, enemiesDefeated: runStats.enemiesDefeated + 1 };
-          analytics.track('ENEMY_KILLED', Date.now(), { enemy: scarabState.name, archetype: 'SCARAB', floor: currentFloorIndex });
-          hud.showMessage('Scarabeo spezzato.', 1800);
+          analytics.track('ENEMY_KILLED', Date.now(), { enemy: hitScarab.name, archetype: 'SCARAB', floor: currentFloorIndex });
+          const remaining = scarabStates.filter((s) => s.hp > 0).length;
+          hud.showMessage(
+            remaining > 0 ? `Scarabeo spezzato (${remaining} restano).` : 'Sciame spezzato.',
+            1800,
+          );
         } else {
           hud.showMessage(`Carapace infranto: -${resolution.damageHp} HP`, 1200);
         }
@@ -2559,7 +3238,14 @@ export function createGameApplication(
         position: { x: hitBox.centerX, y: hitBox.centerY, z: hitBox.centerZ },
       }
       : { name: 'attack_hit', volume: 0.5 });
-    renderer?.addCameraShake(0.14);
+    renderer?.addCameraShake(lastHitCritical ? 0.22 : 0.14);
+    if (hitBox && renderer) {
+      renderer.emitSparks(
+        { x: hitBox.centerX, y: hitBox.centerY, z: hitBox.centerZ },
+        lastHitCritical ? 0xff3a1a : 0xffd27a,
+        lastHitCritical ? 24 : 12,
+      );
+    }
     // v2: hitmarker differenziale — oro su colpo (critico = rosso)
     hud.showHitmarker(lastHitCritical ? 'crit' : 'hit');
     // NEW-1: hitstop — 4 tick di pausa del loop fisico (il rendering continua):
@@ -2590,6 +3276,10 @@ export function createGameApplication(
           name: 'door_creak', volume: 0.6,
           position: sliceState.sceneLayout.exitPosition,
         });
+        audio.play({
+          name: 'stone_door', volume: 0.55,
+          position: sliceState.sceneLayout.exitPosition,
+        });
         simulation.events.emit({
           kind: 'FLOOR_COMPLETE',
           data: {
@@ -2606,6 +3296,10 @@ export function createGameApplication(
         renderer?.interactDoor();
         audio.play({
           name: 'door_creak', volume: 0.6,
+          position: sliceState.sceneLayout.exitPosition,
+        });
+        audio.play({
+          name: 'stone_door', volume: 0.55,
           position: sliceState.sceneLayout.exitPosition,
         });
         hud.showContextualHint({
@@ -2686,6 +3380,8 @@ export function createGameApplication(
         _frame.consume(ActionKind.Interact);
       } else if (tryPickUpIntroTorch(playerPosition)) {
         _frame.consume(ActionKind.Interact);
+      } else if (tryHandleLeverInteract(playerPosition)) {
+        _frame.consume(ActionKind.Interact);
       } else if (tryHandleObjectiveInteract()) {
         _frame.consume(ActionKind.Interact);
       } else if (tryHandleBrazierInteract()) {
@@ -2697,20 +3393,24 @@ export function createGameApplication(
           hud.showMessage('Serve una Pala per scavare. Cercane una nella cripta.', 2200);
           hud.showContextualHint({
             id: 'hint-need-shovel',
-            text: 'La pala è raccoglibile (E) nelle stanze. Una volta raccolta, equipaggiala con il tasto 4.',
+            text: 'Trova una pala nel dungeon e premi [E] o [G] vicino al marcatore di scavo.',
           });
-        } else if (currentWeaponIndex !== 3) {
-          hud.showMessage(`Equipaggia la Pala con [4] per scavare (${String(shovelDigs)} usi rimasti).`, 2000);
-          _frame.consume(ActionKind.Interact);
         } else {
+          // Auto-equipaggia la pala se non ancora in mano
+          if (currentWeaponIndex !== 3) {
+            currentWeaponIndex = 3;
+            weaponName = `Pala (${String(shovelDigs)} usi)`;
+            renderer?.setActiveWeaponViewmodel?.('shovel');
+          }
+          renderer?.playWeaponSwing();
           hud.showContextualHint({
             id: 'hint-dig',
-            text: 'Tieni premuto E per scavare: la sabbia può nascondere tesori e mappe.',
+            text: 'Tieni premuto [E] o [G] per scavare la terra e rivelare il tesoro nascosto.',
           });
           hud.showMessage(
             torchRuntime.state === 'OFF'
               ? 'Serve una torcia accesa per scavare.'
-              : `Mantieni E per scavare (${String(shovelDigs)} usi rimasti).`,
+              : `Scavo in corso con la Pala (${String(shovelDigs)} usi)... tieni premuto!`,
             1600,
           );
         }
@@ -2736,7 +3436,9 @@ export function createGameApplication(
       });
       // Passo di Bastet: i-frame nella parte centrale della schivata.
       if (runtimeBonuses.hasDodgeIFrames) {
-        dodgeIFramesUntilMs = performance.now() + DODGE_IFRAME_MS;
+        const iframeFrames = synergyIFrameDelta(synergyEffects);
+        const dodgeMs = Math.max(40, DODGE_IFRAME_MS + iframeFrames * (1000 / 60));
+        dodgeIFramesUntilMs = performance.now() + dodgeMs;
         hud.showMessage('Passo di Bastet: scatto intangibile.', 900);
       }
       _frame.consume(ActionKind.Dodge);
@@ -2748,7 +3450,11 @@ export function createGameApplication(
       // è lo stesso whoosh della schivata; il successo usa 'parry_success'.
       log.info('Parry: guardia alzata');
       parryWindowUntilMs = performance.now() + PARRY_WINDOW_MS;
-      parryIFramesUntilMs = performance.now() + PARRY_IFRAME_MS;
+      {
+        const iframeFrames = synergyIFrameDelta(synergyEffects);
+        const parryMs = Math.max(80, PARRY_IFRAME_MS + iframeFrames * (1000 / 60));
+        parryIFramesUntilMs = performance.now() + parryMs;
+      }
       audio.play({ name: 'player_dodge', volume: 0.35 });
       renderer?.playWeaponParry();
       _frame.consume(ActionKind.Parry);
@@ -2909,6 +3615,7 @@ export function createGameApplication(
           playerPosition.z >= r.bounds.minZ && playerPosition.z <= r.bounds.maxZ,
       );
       if (currentRoom) visitedRoomIds.add(Number(currentRoom.roomId));
+      syncAmbienceRoomReverb(playerPosition.x, playerPosition.z);
     }
 
     const digProgressSuffix =
@@ -2946,6 +3653,7 @@ export function createGameApplication(
           enemies: buildMinimapEnemies(),
         })
         : null,
+      threats: buildThreatChips(),
     });
 
     // G-15: respiro del buio — si intensifica con la darkness accumulata e
@@ -2986,16 +3694,34 @@ export function createGameApplication(
       }
     }
 
-    // Process input
+    // Process input — touch virtuale prima di beginFrame (edge buttons + look).
+    if (touchControls) {
+      const touch = touchControls.sample();
+      input.setVirtualAxes({
+        moveX: touch.moveX,
+        moveZ: touch.moveZ,
+        lookDX: touch.lookDX,
+        lookDY: touch.lookDY,
+      });
+      const virtualDown = new Set<ActionKind>();
+      if (touch.attack) virtualDown.add(ActionKind.Attack);
+      if (touch.parry) virtualDown.add(ActionKind.Parry);
+      if (touch.jump) virtualDown.add(ActionKind.Jump);
+      if (touch.interact) virtualDown.add(ActionKind.Interact);
+      if (touch.torch) virtualDown.add(ActionKind.TorchToggle);
+      input.setVirtualButtons(virtualDown);
+    }
     input.beginFrame();
     processInput(input.frame);
     const frameEvents: DomainEvent[] = [];
     drainPendingFrameEvents(frameEvents);
 
-    // Mouse-look: accumulato una volta per frame di rendering (non per tick
-    // fisso di simulazione, altrimenti la sensibilità dipenderebbe dal
-    // numero di step fissi eseguiti in questo frame).
-    if (document.pointerLockElement) {
+    // Mouse-look: pointer lock OPPURE look virtuale (touch) sullo stesso delta.
+    const hasLookDelta =
+      document.pointerLockElement !== null ||
+      input.frame.mouseDeltaX !== 0 ||
+      input.frame.mouseDeltaY !== 0;
+    if (hasLookDelta) {
       const sens = 0.002 * config.controls.mouseSensitivity;
       const pitchDirection = config.controls.invertY ? 1 : -1;
       // G-18 V3: smoothing esponenziale — il delta grezzo alimenta un filtro
@@ -3068,6 +3794,33 @@ export function createGameApplication(
       enemySpawnDirector?.tick();
       if (sliceState && playerController && !sliceState.completed && !sliceState.failed) {
         const playerState = playerController.getState();
+        // ART-006: trappole e leva — danno + animazioni mesh ogni tick fisso.
+        if (trapSystem) {
+          const trapDamageHp = trapSystem.tick(playerState.position.x, playerState.position.z);
+          trapSfxCooldownMs = Math.max(0, trapSfxCooldownMs - clock.tickDurationMs);
+          if (trapDamageHp > 0) {
+            if (trapSfxCooldownMs <= 0) {
+              audio.play({ name: 'trap_trigger', volume: 0.55 });
+              trapSfxCooldownMs = 900;
+            }
+            if (synergyHasTrapImmunity(synergyEffects)) {
+              hud.showMessage('Sinergia: la trappola non ti tocca.', 900);
+            } else {
+            const appliedDamageHp = applyDamageToPlayer(
+              trapDamageHp,
+              playerState.position,
+              'Trappola',
+            );
+            if (appliedDamageHp > 0) {
+              hud.showMessage('Una trappola ti colpisce!', 1600);
+              if ((currentPlayerHealth()?.hp ?? 0) <= 0) {
+                markSliceFailed(sliceState);
+                hud.showMessage('Sei stato abbattuto nella cripta.', 3200);
+              }
+            }
+            }
+          }
+        }
         // G-18: passi sulla sabbia — rate-limit 0.45s, solo se in movimento
         const horizontalSpeed = Math.hypot(playerState.velocity.x, playerState.velocity.z);
         if (playerState.grounded && horizontalSpeed > 0.6) {
@@ -3087,7 +3840,15 @@ export function createGameApplication(
             footstepCooldownMs = 450;
           }
         }
-        if (digSite && !digSite.completed && currentWeaponIndex === 3 && shovelDigs > 0 && input.frame.isDown(ActionKind.Interact) && isNearDigSite(playerState.position)) {
+        const isDigKeyDown = input.frame.isDown(ActionKind.Interact) || input.frame.isDown(ActionKind.Dig) || input.frame.isDown(ActionKind.WeaponSlot4);
+        if (digSite && !digSite.completed && shovelDigs > 0 && isDigKeyDown && isNearDigSite(playerState.position)) {
+          if (currentWeaponIndex !== 3) {
+            currentWeaponIndex = 3;
+            weaponName = `Pala (${String(shovelDigs)} usi)`;
+            renderer?.setActiveWeaponViewmodel?.('shovel');
+          }
+          // Riproduce l'affondo della pala nel terreno
+          renderer?.playWeaponSwing();
           const digEvent = tickDig(digSite, torchRuntime.state !== 'OFF');
           if (digEvent) {
             emitDigEvents(simulation.events, digEvent, {
@@ -3121,22 +3882,31 @@ export function createGameApplication(
             hud.showMessage('Sei stato abbattuto nella cripta.', 3200);
           }
         }
-        if (scarabState && scarabState.hp > 0) {
-          const scarabTick = tickScarabEncounter(scarabState, {
-            playerPosition: playerState.position,
-            deltaSeconds: 1 / TICK_HZ,
-            hasLineOfSight: hasRuntimeLineOfSight(scarabState.position, playerState.position),
-            torchAttractor: placedTorchPosition,
-            noiseAttractor: runtimeStimulusState.activeStimulus?.position ?? null,
-          });
-          if (scarabTick.message) {
-            hud.showMessage(scarabTick.message, scarabTick.playerDamageHp > 0 ? 1800 : 1300);
+        if (scarabStates.some((s) => s.hp > 0)) {
+          let scarabMessage: string | null = null;
+          let scarabDamageHp = 0;
+          for (const scarab of scarabStates) {
+            if (scarab.hp <= 0) continue;
+            const scarabTick = tickScarabEncounter(scarab, {
+              playerPosition: playerState.position,
+              deltaSeconds: 1 / TICK_HZ,
+              hasLineOfSight: hasRuntimeLineOfSight(scarab.position, playerState.position),
+              torchAttractor: placedTorchPosition,
+              noiseAttractor: runtimeStimulusState.activeStimulus?.position ?? null,
+            });
+            if (scarabTick.message) scarabMessage = scarabTick.message;
+            scarabDamageHp += scarabTick.playerDamageHp;
           }
-          if (scarabTick.playerDamageHp > 0) {
+          applyScarabSwarmSteering(playerState.position, 1 / TICK_HZ);
+          syncPrimaryScarabRef();
+          if (scarabMessage) {
+            hud.showMessage(scarabMessage, scarabDamageHp > 0 ? 1800 : 1300);
+          }
+          if (scarabDamageHp > 0) {
             const appliedDamageHp = applyDamageToPlayer(
-              scarabTick.playerDamageHp,
+              scarabDamageHp,
               playerState.position,
-              scarabState.name,
+              scarabState?.name ?? 'Scarabeo',
             );
             if ((currentPlayerHealth()?.hp ?? 0) <= 0 && appliedDamageHp > 0) {
               markSliceFailed(sliceState);
@@ -3191,6 +3961,37 @@ export function createGameApplication(
 
         if (genericEnemyState && isGenericEnemyAlive(genericEnemyState)) {
           const genericPosition = genericEnemyState.position;
+          let pursuitTarget: { x: number; z: number } | null = null;
+          const recastPath = recastNav?.computePath(
+            { x: genericPosition.x, y: genericPosition.y, z: genericPosition.z },
+            { x: playerState.position.x, y: playerState.position.y, z: playerState.position.z },
+          );
+          const recastNext = recastPath ? firstWaypoint(recastPath) : null;
+          if (recastNext) {
+            pursuitTarget = { x: recastNext.x, z: recastNext.z };
+          } else if (floorNavGrid) {
+            const start = floorNavGrid.worldToCell(genericPosition.x, genericPosition.z);
+            const goal = floorNavGrid.worldToCell(
+              playerState.position.x,
+              playerState.position.z,
+            );
+            const path = findPath(
+              floorNavGrid.grid,
+              start.x,
+              start.z,
+              goal.x,
+              goal.z,
+            );
+            // findPath emette waypoint in metri locali griglia (cx * cellSize).
+            const next = path?.waypoints[0];
+            if (next) {
+              const half = floorNavGrid.grid.cellSizeM * 0.5;
+              pursuitTarget = {
+                x: floorNavGrid.originX + next.x + half,
+                z: floorNavGrid.originZ + next.z + half,
+              };
+            }
+          }
           const genericTick = tickGenericEncounter(genericEnemyState, {
             playerPosition: playerState.position,
             playerYaw: cameraYaw,
@@ -3211,7 +4012,9 @@ export function createGameApplication(
                   intensity: runtimeStimulusState.activeStimulus.intensity,
                 }
               : null,
+            pursuitTarget,
           });
+          tickYukaForGeneric(playerState.position, recastNext !== null);
           if (genericTick.parried) {
             audio.play({
               name: 'parry_success', volume: 0.7,
@@ -3259,31 +4062,47 @@ export function createGameApplication(
         // prossimo incontro finché il budget del piano lo consente. Ogni slot
         // (scarab/mummy/generic) è indipendente: lo spawn usa lo slot libero.
         // (Il blocco esterno garantisce già !sliceState.completed.)
-        const scarabDead = scarabState !== null && scarabState.hp <= 0;
+        const scarabDead =
+          scarabStates.length > 0 && scarabStates.every((s) => s.hp <= 0);
         const mummyDead = mummyState !== null && mummyState.hp <= 0;
         const genericDead = genericEnemyState !== null && !isGenericEnemyAlive(genericEnemyState);
         if (scarabDead || mummyDead || genericDead) {
           const followUp = enemySpawnDirector?.planNext() ?? null;
           if (followUp?.enemyType === 'SCARAB') {
-            const followUpEntityId = simulation.world.createEntity();
-            scarabState = createScarabEncounterState(followUpEntityId, followUp.position);
+            spawnScarabSwarm(followUp.position);
             log.info('Director: follow-up scarabeo pianificato', {
               roomId: followUp.roomId,
               budgetRemaining: followUp.budgetRemaining,
             });
-            hud.showMessage('La sabbia si muove: un altro scarabeo emerge.', 2400);
-            if (mummyDead) mummyState = null;
-            if (genericDead) genericEnemyState = null;
+            hud.showMessage('La sabbia si muove: uno sciame di scarabei emerge.', 2400);
+            if (mummyDead && mummyState) {
+              unregisterEnemyPhysicsProxy(mummyState.entityId);
+              mummyState = null;
+            }
+            if (genericDead && genericEnemyState) {
+              unregisterEnemyPhysicsProxy(genericEnemyState.entityId);
+              genericEnemyState = null;
+            }
           } else if (followUp?.enemyType === 'MUMMY') {
             const followUpEntityId = simulation.world.createEntity();
             mummyState = createMummyEncounterState(followUpEntityId, followUp.position);
+            registerEnemyPhysicsProxy(
+              followUpEntityId,
+              followUp.position,
+              MUMMY_HURTBOX_RADIUS_M,
+              MUMMY_HURTBOX_HEIGHT_M,
+              'DORMANT',
+            );
             log.info('Director: follow-up mummia materializzato', {
               roomId: followUp.roomId,
               budgetRemaining: followUp.budgetRemaining,
             });
             hud.showMessage('Un sarcofago si apre: una mummia emerge.', 2400);
-            if (scarabDead) scarabState = null;
-            if (genericDead) genericEnemyState = null;
+            if (scarabDead) clearScarabSwarm();
+            if (genericDead && genericEnemyState) {
+              unregisterEnemyPhysicsProxy(genericEnemyState.entityId);
+              genericEnemyState = null;
+            }
           } else if (followUp) {
             // G-13: QUALSIASI altro archetipo (COBRA, SHABTI, PRIEST,
             // SOBEK_SPAWN, ROYAL_MUMMY) → runtime data-driven generico.
@@ -3296,26 +4115,34 @@ export function createGameApplication(
             if (dailyMods.has('FAST_ENEMIES') && genericEnemyState) {
               genericEnemyState = { ...genericEnemyState, def: { ...genericEnemyState.def, speedMps: genericEnemyState.def.speedMps * 1.5 } };
             }
+            if (genericEnemyState) {
+              const r = genericEnemyState.archetype === 'COBRA' ? 0.3 : 0.55;
+              const h = genericEnemyState.archetype === 'COBRA' ? 0.7 : 1.75;
+              registerEnemyPhysicsProxy(followUpEntityId, genericEnemyState.position, r, h, 'DORMANT');
+            }
             log.info('Director: follow-up archetipo materializzato', {
               enemyType: followUp.enemyType,
               roomId: followUp.roomId,
             });
             hud.showMessage('Le ombre della cripta si condensano in una forma minacciosa.', 2400);
             if (scarabDead) {
-              scarabState = null;
+              clearScarabSwarm();
             }
-            if (mummyDead) {
+            if (mummyDead && mummyState) {
+              unregisterEnemyPhysicsProxy(mummyState.entityId);
               mummyState = null;
             }
           } else {
             log.info('Director: budget esaurito, nessun follow-up');
             if (scarabDead) {
-              scarabState = null;
+              clearScarabSwarm();
             }
-            if (mummyDead) {
+            if (mummyDead && mummyState) {
+              unregisterEnemyPhysicsProxy(mummyState.entityId);
               mummyState = null;
             }
-            if (genericDead) {
+            if (genericDead && genericEnemyState) {
+              unregisterEnemyPhysicsProxy(genericEnemyState.entityId);
               genericEnemyState = null;
             }
           }
@@ -3417,10 +4244,23 @@ export function createGameApplication(
       });
     }
 
+    // GFX-02: adattamento dinamico delle performance per garantire 60 FPS stabili
+    if (deltaMs > 0) {
+      const prevTier = quality.profile.tier;
+      quality.adaptTo(deltaMs);
+      if (quality.profile.tier !== prevTier && renderer) {
+        renderer.applyQualityProfile(quality.profile);
+      }
+    }
+
     // Render
     renderer?.render(deltaMs);
 
-    rafId = requestAnimationFrame(loop);
+    // C-02: con setAnimationLoop il renderer riprogramma il frame;
+    // con RAF dobbiamo riarmare manualmente.
+    if (loopDriver === 'raf') {
+      rafId = requestAnimationFrame(loop);
+    }
   }
 
   return {
@@ -3439,6 +4279,11 @@ export function createGameApplication(
 
       state = 'initializing';
       log.info('Inizializzazione GameApplication', { backend });
+      const featureFlags = resolveFeatureFlags();
+      log.info('Feature flags risolti', {
+        flags: featureFlags,
+        nonDefault: nonDefaultFlags(featureFlags),
+      });
 
       onStatus?.('Caricamento profilo...');
       try {
@@ -3484,8 +4329,7 @@ export function createGameApplication(
       // Il vertical slice materializza solo SCARAB (runtime ECS dedicato).
       // Gli altri archetipi pianificati dal Director restano per l'EnemySpawnSystem (G-03).
       if (encounterPlan?.enemyType === 'SCARAB') {
-        const scarabEntityId = simulation.world.createEntity();
-        scarabState = createScarabEncounterState(scarabEntityId, encounterPlan.position);
+        spawnScarabSwarm(encounterPlan.position);
         log.info('Scarab encounter pianificata dal Director', {
           roomId: encounterPlan.roomId,
           distanceToPlayerM: encounterPlan.distanceToPlayerM,
@@ -3540,7 +4384,7 @@ export function createGameApplication(
         renderer = createThreeRenderer(backend, canvas, physicsWorld);
         await renderer.init();
         installPointerLockListeners();
-        renderer.setFloorLayout(sliceState.sceneLayout);
+        bindTrapSystemToFloor(sliceState.sceneLayout);
         renderer.setShovelPickup(shovelPickupPos);
         // QC-1: applica subito il profilo di qualità iniziale
         renderer.applyQualityProfile(quality.profile);
@@ -3584,12 +4428,15 @@ export function createGameApplication(
       const inputSource: InputSource = {
         poll(): PlayerInput {
           const f = input.frame;
-          const moveZ =
+          const keyZ =
             (f.isDown(ActionKind.MoveForward) ? 1 : 0) -
             (f.isDown(ActionKind.MoveBackward) ? 1 : 0);
-          const moveX =
+          const keyX =
             (f.isDown(ActionKind.MoveRight) ? 1 : 0) -
             (f.isDown(ActionKind.MoveLeft) ? 1 : 0);
+          const virtual = input.getVirtualMove();
+          const moveX = Math.max(-1, Math.min(1, keyX + virtual.x));
+          const moveZ = Math.max(-1, Math.min(1, keyZ + virtual.z));
           return {
             moveX,
             moveZ,
@@ -3615,6 +4462,7 @@ export function createGameApplication(
         }),
       );
       simulation.scheduler.register(createPhysicsSystem(physicsWorld));
+      simulation.scheduler.register(createAnimationSystem(simulation.world));
 
       // Input system: attach to canvas
       onStatus?.('Collegamento controlli...');
@@ -3627,9 +4475,26 @@ export function createGameApplication(
       const parent = canvas.parentElement;
       if (parent) {
         hud.mount(parent);
+        attackDirectionIndicator = new AttackDirectionIndicator(parent);
+        runTimer = new RunTimer(parent);
+        runTimer.start();
+        roomNarrativeOverlay = createRoomNarrativeOverlay(parent);
+        if (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) {
+          touchControls = createTouchControls();
+          touchControls.mount(parent);
+          // M-01: giroscopio — permesso iOS al primo tocco sull'overlay.
+          parent.addEventListener(
+            'pointerdown',
+            () => {
+              void touchControls?.enableGyroscope();
+            },
+            { once: true },
+          );
+        }
         settingsMenu.mount(parent);
         progressionOverlay.mount(parent);
         deathOverlay.mount(parent);
+        runSummaryOverlay.mount(parent);
         debugOverlay.mount(parent);
         mainMenu = createMainMenu();
         mainMenu.mount(parent);
@@ -3647,6 +4512,7 @@ export function createGameApplication(
       persistRuntimeSettings();
       updateHUD();
       hud.showMessage(`Guardiano tracciato: ${sliceState.target.name}`, 2800);
+      showFloorInscription(sliceState.floor.seed, currentFloorIndex);
 
       // Il tutorial appare dopo il click su "INIZIA LA DISCESA" (menu principale),
       // non all'avvio: prima l'utente vede il menu e sceglie.
@@ -3702,6 +4568,25 @@ export function createGameApplication(
         window.location.reload();
       };
       deathOverlay.applyPresentation({
+        textScale: config.accessibility.textScale,
+        highContrast: config.accessibility.highContrast,
+        colorBlindMode: config.accessibility.colorBlindMode,
+      });
+      runSummaryOverlay.onRetry = () => {
+        window.location.reload();
+      };
+      runSummaryOverlay.onReturnToMenu = () => {
+        runSummaryOverlay.hide();
+        localPause('menu');
+        if (mainMenu && saveData) {
+          mainMenu.show({
+            fragments: saveData.payload.fragments,
+            pyramidsUnlocked: saveData.payload.pyramidsUnlocked,
+            bestiaryEntries: saveData.payload.bestiaryEntries.length,
+          });
+        }
+      };
+      runSummaryOverlay.applyPresentation({
         textScale: config.accessibility.textScale,
         highContrast: config.accessibility.highContrast,
         colorBlindMode: config.accessibility.colorBlindMode,
@@ -3773,8 +4658,8 @@ export function createGameApplication(
     start(): void {
       if (state !== 'running') return;
       lastTimeMs = 0;
-      rafId = requestAnimationFrame(loop);
-      log.info('Game loop avviato');
+      startFrameDriver();
+      log.info('Game loop avviato', { driver: loopDriver });
     },
 
     pause(reason: PauseReason = 'manual'): void {
@@ -3788,7 +4673,8 @@ export function createGameApplication(
     dispose(): void {
       if (state === 'disposed') return;
       analytics.track('SESSION_END', Date.now(), { floorsCleared: runStats.floorsCleared, kills: runStats.enemiesDefeated });
-      cancelAnimationFrame(rafId);
+      stopFrameDriver();
+      renderer?.disableXr?.();
       detachViewportListeners?.();
       detachViewportListeners = null;
       detachCanvasClick?.();
@@ -3796,11 +4682,27 @@ export function createGameApplication(
       detachPointerLockListeners?.();
       detachPointerLockListeners = null;
       input.dispose();
+      attackDirectionIndicator?.dispose();
+      attackDirectionIndicator = null;
+      runTimer?.dispose();
+      runTimer = null;
+      touchControls?.dispose();
+      touchControls = null;
+      floorNavGrid = null;
+      synergyEffects = [];
       hud.dispose();
+      roomNarrativeOverlay?.dispose();
+      roomNarrativeOverlay = null;
+      recastNav?.dispose();
+      recastNav = null;
+      yukaAI?.clear();
+      yukaAI = null;
+      yukaHandle = null;
       cinematicOverlay?.dispose();
       settingsMenu.dispose();
       progressionOverlay.dispose();
       deathOverlay.dispose();
+      runSummaryOverlay.dispose();
       mainMenu?.dispose();
       mainMenu = null;
       metaProgressionScreen?.dispose();
@@ -3820,6 +4722,8 @@ export function createGameApplication(
       guardianRuntime = null;
       enemyHurtboxes.clear();
       playerHitRegistry.clear();
+      clearAllEnemyPhysicsProxies();
+      scarabStates = [];
       scarabState = null;
       mummyState = null;
       genericEnemyState = null;

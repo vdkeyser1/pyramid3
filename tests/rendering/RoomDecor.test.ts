@@ -4,6 +4,7 @@ import type { RoomId } from '@/procedural/Ids.js';
 import type { RoomRole } from '@/procedural/FloorValidator.js';
 import type { FloorSceneLayout, FloorSceneRoom } from '@/world/FloorSceneLayout.js';
 import { decorateRooms } from '@/rendering/RoomDecor.js';
+import { placeArchetypeDecor } from '@/rendering/ArchetypeDecor.js';
 
 function makeRoom(roomId: number, role: RoomRole, minX: number, minZ: number, maxX: number, maxZ: number): FloorSceneRoom {
   const id = roomId as unknown as RoomId;
@@ -45,6 +46,9 @@ function makeLayout(): FloorSceneLayout {
     doorways: [],
     digSite: null,
     shovelPickup: null,
+    traps: [],
+    leverPassage: null,
+    specialProps: [],
   };
 }
 
@@ -136,5 +140,19 @@ describe('RoomDecor (G-14)', () => {
         expect(z).toBeLessThan(max - 1.4);
       }
     }
+  });
+});
+
+describe('ArchetypeDecor (G-22)', () => {
+  it('piazza props decorateRoom nel dungeonRoot', () => {
+    const root = new THREE.Group();
+    const layout = makeLayout();
+    const group = placeArchetypeDecor({
+      layout,
+      dungeonRoot: root,
+      wallMaterial: new THREE.MeshStandardMaterial(),
+    });
+    expect(group.name).toBe('archetype-decor');
+    expect(root.children).toContain(group);
   });
 });

@@ -9,13 +9,14 @@
 
 ## 1. Asset 3D — Nemici, personaggio, ambiente (G-13, G-14)
 
-### 1.1 Kit ambientali modulari (CC0)
+### 1.1 Kit ambientali — PIRAMIDE egizia (non dungeon medievale)
 
 | Risorsa | Licenza | Cosa contiene | Uso nel gioco |
 |---|---|---|---|
-| **Quaternius — Ultimate Modular Ruins** (`quaternius.com/packs/ultimatemodularruins.html`) | **CC0** | Pack modulare di rovine: muri, colonne, archi, pavimenti, scale, detriti | Kit base per stanze/corridoi procedurali al posto dei box Three.js; dimensioni allineabili alla griglia `ROOM_SIZE_M = 12` |
-| **Quaternius — Ultimate Animated Monsters / Creatures** (`quaternius.com`) | CC0 | Creature animate low-poly (retarget Mixamo-ready) | Base per MUMMY/SCARAB/SHABTI con animazioni già pronte |
-| **Kenney — Game Assets** (`kenney.nl/assets`) | **CC0** | Oltre 30 pack: nature, castle, platformer, UI | Props generici (urne, casse, torce) e UI supplementare; licenza CC0 commerciale-safe |
+| **Ambiente procedurale in-engine** | — | Colonne papiriformi, soglie dorati, false porte, soffitto stellato, lampade a olio | **Preferito** — identità Egyptian Noir senza pack Medieval |
+| **ToxSam/open-source-3D-assets** (GitHub, CC0) | CC0 | Landmark egizi: Anubi, obelisco, sarcofago, braciere, geroglifici | ✅ integrati in `public/assets/landmarks/` |
+| **Kenney Mini Dungeon** (solo `-KenneyStoneOnly`) | CC0 | pot/rocks/stairs neutri | Filler opzionale — **no** barrel/gate/banner |
+| ~~Quaternius Ultimate Modular Ruins~~ | CC0 Medieval | Muri/archi fantasy | ❌ **Non usare** — fuori tema piramide |
 
 ### 1.2 Modelli singoli (Sketchfab — filtrare per licenza CC)
 

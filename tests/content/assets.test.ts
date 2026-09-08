@@ -12,9 +12,9 @@ describe('AssetManifest (G-17)', () => {
     expect(validateAssetManifest()).toEqual([]);
   });
 
-  it('copre tutti gli 8 archetipi nemici', () => {
-    expect(ENEMY_ASSETS).toHaveLength(8);
-    for (const archetype of ['SCARAB', 'MUMMY', 'COBRA', 'SHABTI', 'PRIEST', 'SOBEK_SPAWN', 'ROYAL_MUMMY', 'WITNESS']) {
+  it('copre tutti i 9 archetipi nemici', () => {
+    expect(ENEMY_ASSETS).toHaveLength(9);
+    for (const archetype of ['SCARAB', 'MUMMY', 'COBRA', 'SHABTI', 'PRIEST', 'SOBEK_SPAWN', 'ROYAL_MUMMY', 'ANUBIS_EXECUTIONER', 'WITNESS']) {
       expect(enemyAssetFor(archetype as never)).not.toBeNull();
     }
   });

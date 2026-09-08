@@ -37,6 +37,12 @@ export interface FrustumCuller {
   clearRooms(): void;
 
   /**
+   * G-31: solo queste stanze possono diventare visibili (hop BFS).
+   * `null` = nessuna restrizione di streaming.
+   */
+  setActiveRoomIds(ids: ReadonlySet<string> | null): void;
+
+  /**
    * Aggiorna visibilità di tutte le stanze in base al frustum corrente.
    * Chiamare ogni frame, DOPO camera.updateMatrixWorld().
    *
@@ -62,6 +68,7 @@ const _boxMax = new THREE.Vector3();
 
 export function createFrustumCuller(): FrustumCuller {
   const rooms = new Map<string, RoomBounds>();
+  let activeIds: Set<string> | null = null;
 
   return {
     registerRoom(bounds) {
@@ -71,6 +78,11 @@ export function createFrustumCuller(): FrustumCuller {
 
     clearRooms() {
       rooms.clear();
+      activeIds = null;
+    },
+
+    setActiveRoomIds(ids) {
+      activeIds = ids ? new Set(ids) : null;
     },
 
     update(camera, expansionM = 1.0) {
@@ -98,7 +110,8 @@ export function createFrustumCuller(): FrustumCuller {
         );
         _box.set(_boxMin, _boxMax);
 
-        const isVisible = _frustum.intersectsBox(_box);
+        const hopAllowed = activeIds === null || activeIds.has(room.id);
+        const isVisible = hopAllowed && _frustum.intersectsBox(_box);
         room.group.visible = isVisible;
         if (isVisible) visible++;
       }

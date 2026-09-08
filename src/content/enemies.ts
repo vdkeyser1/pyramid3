@@ -13,6 +13,7 @@ export type EnemyArchetype =
   | 'PRIEST'
   | 'SOBEK_SPAWN'
   | 'ROYAL_MUMMY'
+  | 'ANUBIS_EXECUTIONER'
   | 'WITNESS';
 
 export type EnemyState =
@@ -278,6 +279,44 @@ export const ENEMIES: Record<EnemyArchetype, EnemyDef> = {
         arcDeg: 10,
         isHeavy: true,
         stagger: 1.5,
+        audioCue: 'royal_curse',
+      },
+    ],
+  },
+  ANUBIS_EXECUTIONER: {
+    archetype: 'ANUBIS_EXECUTIONER',
+    name: 'Boia di Anubi',
+    baseHp: 160,
+    speedMps: 2.2,
+    torchAffinity: -0.3,
+    viewAngleDeg: 90,
+    viewRadiusM: 10,
+    hearRadiusM: 12,
+    isCorrupted: true,
+    tier: 2,
+    attacks: [
+      {
+        name: 'Falciata Rituale',
+        damageHp: 22,
+        anticipationTicks: TICK_60(0.85),
+        activeTicks: TICK_60(0.3),
+        recoveryTicks: TICK_60(1.2),
+        range: 2.8,
+        arcDeg: 180,
+        isHeavy: true,
+        stagger: 1.2,
+        audioCue: 'shabti_swing',
+      },
+      {
+        name: 'Richiamo delle Ombre',
+        damageHp: 10,
+        anticipationTicks: TICK_60(1.2),
+        activeTicks: TICK_60(0.2),
+        recoveryTicks: TICK_60(1.8),
+        range: 6.0,
+        arcDeg: 60,
+        isHeavy: false,
+        stagger: 0.8,
         audioCue: 'royal_curse',
       },
     ],

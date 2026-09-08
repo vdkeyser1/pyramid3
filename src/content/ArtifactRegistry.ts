@@ -5,7 +5,7 @@
  */
 
 export type ArtifactRarity = 'common' | 'uncommon' | 'rare' | 'legendary';
-export type ArtifactSource = 'smithsonian' | 'quaternius' | 'sketchfab-cc0' | 'kaykit' | 'procedural';
+export type ArtifactSource = 'smithsonian' | 'quaternius' | 'sketchfab-cc0' | 'kaykit' | 'kenney' | 'procedural';
 
 export interface ArtifactDef {
   readonly id: string;
@@ -56,18 +56,10 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     description: 'Simbolo del dio sole nascente. Concede rigenerazione HP +2/s per 30s.',
     source: 'smithsonian',
   },
-  // ── Kenney Mini Dungeon CC0 ───────────────────────────────────────────────
-  {
-    id: 'ruins_column',
-    url: '/models/ruins/column.glb',
-    displayName: 'Colonna di Pietra',
-    loreName: null,
-    rarity: 'common',
-    interactable: false,
-    scale: 1.0,
-    description: null,
-    source: 'quaternius',
-  },
+  // ── Filler pietra neutro (Kenney Mini Dungeon CC0) ────────────────────────
+  // Solo silhouette accettabili in tomba: anfora / detriti / scala.
+  // RIMOSSI: barrel, gate, chest, banner, wood-* (leggono da taverna/dungeon).
+  // Colonnate in scena = EgyptianColumn procedurale, non `ruins_column`.
   {
     id: 'ruins_pot',
     url: '/models/ruins/pot.glb',
@@ -76,8 +68,8 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     rarity: 'common',
     interactable: false,
     scale: 0.7,
-    description: null,
-    source: 'quaternius',
+    description: 'Anfora funeraria — filler di corridoio.',
+    source: 'kenney',
   },
   {
     id: 'ruins_rocks',
@@ -88,31 +80,20 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     interactable: false,
     scale: 1.0,
     description: null,
-    source: 'quaternius',
+    source: 'kenney',
   },
   {
-    id: 'ruins_barrel',
-    url: '/models/ruins/barrel.glb',
-    displayName: 'Botte',
+    id: 'ruins_stairs',
+    url: '/models/ruins/stairs.glb',
+    displayName: 'Scala di Pietra',
     loreName: null,
     rarity: 'common',
     interactable: false,
-    scale: 0.6,
+    scale: 1.0,
     description: null,
-    source: 'quaternius',
+    source: 'kenney',
   },
-  {
-    id: 'ruins_trap',
-    url: '/models/ruins/trap.glb',
-    displayName: 'Trappola a Lame',
-    loreName: null,
-    rarity: 'uncommon',
-    interactable: false,
-    scale: 0.9,
-    description: null,
-    source: 'quaternius',
-  },
-  // ── KayKit CC0 ───────────────────────────────────────────────────────────
+  // ── KayKit CC0 (bauli loot — non moduli ambiente) ─────────────────────────
   {
     id: 'chest_gold',
     url: '/assets/props/chest_gold.glb',
@@ -135,11 +116,8 @@ export const ArtifactRegistry: readonly ArtifactDef[] = [
     description: null,
     source: 'kaykit',
   },
-  // NOTA: le colonne e i pilastri KayKit (`column.glb`, `pillar_decorated.glb`)
-  // sono stati rimossi da questo registro. Vengono dal pack KayKit Dungeon,
-  // decorato con armi e scudi di fantasy medievale: fuori tema in una piramide
-  // egizia. Le colonnate usano `ruins_column` (Kenney CC0), geometricamente
-  // neutra. I bauli restano perché non hanno marcatori stilistici evidenti.
+  // NOTA: KayKit Dungeon (colonne/scudi) e Kenney barrel/gate/banner sono fuori
+  // tema — questa è una PIRAMIDE egizia, non un dungeon medievale.
 ] as const;
 
 /** Lookup veloce per id. */

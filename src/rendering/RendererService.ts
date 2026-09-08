@@ -38,6 +38,7 @@ export type RendererEnemyKind =
   | 'SHABTI'
   | 'PRIEST'
   | 'SOBEK_SPAWN'
+  | 'ANUBIS_EXECUTIONER'
   | 'WITNESS';
 
 export interface RendererEnemyState {
@@ -57,6 +58,33 @@ export interface RendererEnemyState {
 export interface RendererObjectiveState {
   readonly exitUnlocked: boolean;
   readonly completed: boolean;
+}
+
+/**
+ * Hook ART-006: il renderer costruisce i mesh e consegna setter di animazione
+ * (senza esporre Object3D) così GameApplication può registrarli in TrapSystem.
+ */
+export interface FloorLayoutTrapHooks {
+  readonly onPressurePlateReady?: (
+    trapId: string,
+    setSpikesY: (spikesGroupY: number) => void,
+  ) => void;
+  readonly onPendulumReady?: (
+    trapId: string,
+    setAngleRad: (angleRad: number) => void,
+  ) => void;
+  readonly onDartReady?: (
+    trapId: string,
+    setDart: (travel01: number, visible: boolean) => void,
+  ) => void;
+  readonly onBoulderReady?: (
+    trapId: string,
+    setOffsetM: (offsetM: number) => void,
+  ) => void;
+  readonly onLeverReady?: (
+    leverId: string,
+    setPose: (handleAngleRad: number, sealY: number) => void,
+  ) => void;
 }
 
 export interface RendererPlacedTorchState {
@@ -142,8 +170,21 @@ export interface RendererHandle {
    */
   setActiveWeaponViewmodel?(weaponId: string): void;
 
-  /** C-02: aggancia una sessione WebXR al renderer (probe sperimentale). */
-  enableXr?(session: unknown): void;
+  /** C-02: aggancia una sessione WebXR e passa il loop a setAnimationLoop. */
+  enableXr?(session: unknown): Promise<boolean>;
+
+  /** C-02: termina la sessione XR e ripristina il loop desktop. */
+  disableXr?(): void;
+
+  /**
+   * C-02: registra il frame callback (Three.js setAnimationLoop).
+   * Su WebGL+XR il callback è guidato dal compositor VR; altrimenti da RAF.
+   * Passa null per fermare il loop del renderer.
+   */
+  setAnimationLoop?(callback: ((timeMs: number) => void) | null): void;
+
+  /** True se una sessione XR è attiva e presenta frame. */
+  isXrActive?(): boolean;
 
   /** Aggiorna i marker dei nemici attivi del vertical slice. */
   setEnemyStates(states: readonly RendererEnemyState[]): void;
@@ -154,8 +195,12 @@ export interface RendererHandle {
   /** Aggiorna lo stato visuale dell'uscita del vertical slice. */
   setObjectiveState(state: RendererObjectiveState): void;
 
-  /** Aggiorna il layout visuale derivato dal FloorModel. */
-  setFloorLayout(layout: FloorSceneLayout | null): void;
+  /**
+   * Aggiorna il layout visuale derivato dal FloorModel.
+   * `trapHooks` collega i mesh ART-006 a TrapSystem senza esporre Three.js
+   * all'orchestratore: il renderer consegna solo setter di pose.
+   */
+  setFloorLayout(layout: FloorSceneLayout | null, trapHooks?: FloorLayoutTrapHooks): void;
 
   /** G-10: applica la palette del piano (muri, pavimento, accenti, buio). */
   applyFloorPalette(palette: { readonly wallHex: number; readonly floorHex: number; readonly accentHex: number; readonly darknessFactor: number }): void;
@@ -166,7 +211,42 @@ export interface RendererHandle {
     readonly resolutionScale: number;
     readonly shadowMapSize: number;
     readonly usePostFx: boolean;
+    readonly ssaoEnabled?: boolean;
+    readonly bloomStrength?: number;
   }): void;
+
+  /**
+   * G-31: limita le stanze visibili al set entro MAX_HOP dal player.
+   * `null` = tutte le stanze registrate nel FrustumCuller.
+   */
+  setStreamedRoomIds?(ids: ReadonlySet<string> | null): void;
+
+  /**
+   * G-31: registra i Group stanza sul RoomStreamingManager (dispose oltre hop).
+   * No-op se il manager è null.
+   */
+  bindRoomStreaming?(manager: {
+    clear(): void;
+    register(handle: {
+      readonly id: string;
+      setVisible(visible: boolean): void;
+      dispose(): void;
+    }): void;
+  } | null): void;
+
+  /**
+   * G-28: superfici pavimento reali (lastre + gradini) per il bake Recast.
+   */
+  getNavBakeSurfaces?(): readonly {
+    readonly x: number;
+    readonly y: number;
+    readonly z: number;
+    readonly width: number;
+    readonly depth: number;
+  }[];
+
+  /** Risolve quando rebuildFloorLayout ha finito (navmesh + streaming). */
+  whenFloorLayoutReady?(): Promise<void>;
 
   /** G-05: mostra/nasconde il reliquiario del tesoro dissotterrato (loot fisico). */
   setLootReliquary(position: { readonly x: number; readonly y: number; readonly z: number } | null): void;

@@ -107,9 +107,19 @@ export function applyTorchCommand(
   switch (command.kind) {
     case 'TOGGLE': {
       if (runtime.state === 'PLACED') return unchanged;
-      if (runtime.state === 'OFF' && runtime.fuelSeconds <= 0) return unchanged;
-      const state: TorchState = runtime.state === 'OFF' ? 'HIGH' : 'OFF';
-      return { runtime: { ...runtime, state }, changed: true, effects: [] };
+      if (runtime.state === 'OFF') {
+        // Se il combustibile è a secco, la pietra focaia accende una fiamma pilota d'emergenza (15s)
+        if (runtime.fuelSeconds <= 0) {
+          const emergencyFuel = 15;
+          return {
+            runtime: { ...runtime, state: 'LOW', fuelSeconds: emergencyFuel },
+            changed: true,
+            effects: [{ kind: 'LIGHT_PULSE', intensity: 0.5 }],
+          };
+        }
+        return { runtime: { ...runtime, state: 'HIGH' }, changed: true, effects: [] };
+      }
+      return { runtime: { ...runtime, state: 'OFF' }, changed: true, effects: [] };
     }
 
     case 'SET': {

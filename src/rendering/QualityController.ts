@@ -24,6 +24,10 @@ export interface QualityProfile {
   readonly maxRealtimeLights: number;
   readonly maxEnemies: number;
   readonly usePostFx: boolean;
+  readonly ssaoEnabled: boolean;
+  readonly hdriResolution: 0 | 512 | 1024 | 2048;
+  readonly maxRoomHops: 2 | 3 | 4;
+  readonly bloomStrength: number;
 }
 
 const PROFILES: Record<QualityTier, QualityProfile> = {
@@ -36,6 +40,10 @@ const PROFILES: Record<QualityTier, QualityProfile> = {
     maxRealtimeLights: 4,
     maxEnemies: 20,
     usePostFx: false,
+    ssaoEnabled: false,
+    hdriResolution: 0,
+    maxRoomHops: 2,
+    bloomStrength: 0,
   },
   medium: {
     tier: 'medium',
@@ -46,6 +54,10 @@ const PROFILES: Record<QualityTier, QualityProfile> = {
     maxRealtimeLights: 8,
     maxEnemies: 40,
     usePostFx: true,
+    ssaoEnabled: false,
+    hdriResolution: 512,
+    maxRoomHops: 3,
+    bloomStrength: 0.4,
   },
   high: {
     tier: 'high',
@@ -56,6 +68,10 @@ const PROFILES: Record<QualityTier, QualityProfile> = {
     maxRealtimeLights: 16,
     maxEnemies: 60,
     usePostFx: true,
+    ssaoEnabled: true,
+    hdriResolution: 2048,
+    maxRoomHops: 4,
+    bloomStrength: 0.6,
   },
 };
 

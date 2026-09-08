@@ -147,11 +147,19 @@ export function createTorchViewmodel(): TorchViewmodel {
         return;
       }
 
-      // Ritorno elastico alla posa di riposo (assorbe anche il bob di corsa).
-      group.position.lerp(REST_POSITION, 0.18);
-      group.rotation.x += (REST_ROTATION.x - group.rotation.x) * 0.18;
+      // Ritorno elastico con idle sway naturale (fiamma e braccio)
+      const tSec = clockMs * 0.001;
+      const torchSwayY = Math.sin(tSec * 1.5 + 0.8) * 0.006;
+      const torchSwayX = Math.cos(tSec * 1.1 + 0.4) * 0.004;
+      const targetPos = new THREE.Vector3(
+        REST_POSITION.x + torchSwayX,
+        REST_POSITION.y + torchSwayY,
+        REST_POSITION.z,
+      );
+      group.position.lerp(targetPos, 0.18);
+      group.rotation.x += (REST_ROTATION.x + Math.sin(tSec * 1.5) * 0.015 - group.rotation.x) * 0.18;
       group.rotation.y += (REST_ROTATION.y - group.rotation.y) * 0.18;
-      group.rotation.z += (REST_ROTATION.z - group.rotation.z) * 0.18;
+      group.rotation.z += (REST_ROTATION.z + Math.cos(tSec * 1.1) * 0.012 - group.rotation.z) * 0.18;
     },
 
     dispose(): void {

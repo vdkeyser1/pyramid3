@@ -23,3 +23,5 @@ dist_verify
 *.njsproj
 *.sln
 *.sw?
+test-results/
+tsconfig.tsbuildinfo

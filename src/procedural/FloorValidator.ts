@@ -53,6 +53,15 @@ export interface FloorModel {
   /** G-10: true = l'uscita del piano è una SCALA verso il piano successivo
    *  (floorIndex < MAX_FLOORS), false = porta sigillata finale (piano 10). */
   readonly exitIsStair: boolean;
+  /**
+   * G-05 / GAME-ART-008: stanza speciale innestata (arsenale, tesoreria…).
+   * Assente o null = nessuna. Non altera i conteggi di ruolo del validator.
+   */
+  readonly specialRoom?: {
+    readonly roomId: RoomId;
+    readonly templateId: string;
+    readonly kind: string;
+  } | null;
 }
 
 export interface ValidationLimits {

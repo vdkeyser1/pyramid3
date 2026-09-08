@@ -168,8 +168,8 @@ pericoloso ha una firma sonora unica e direzionale (HRTF panner già in uso).
 
 | Area | Risorsa (vedi `RISORSE_PROFESSIONALI.md`) | Gap |
 |---|---|---|
-| Modelli ambiente | Quaternius Ruins CC0, ToxSam GLB registry | G-14 (infrastruttura pronta) |
-| Modelli nemici | Quaternius Creatures, Mixamo rig | G-13 |
+| Modelli ambiente | ToxSam landmarks (Anubi, obelisco, sarcofago), colonne/soglie procedurali | G-14 ✅ landmark GLB |
+| Modelli nemici | ToxSam/Poly Pizza GLB integrati; Mixamo rig opzionale | G-13 parziale |
 | Texture PBR | ambientCG (sand/stone), ancient-egypt-0 | G-16 (parziale) |
 | Font | Cinzel + geroglifici via fontsource | G-09 polish |
 | Post-FX | pmndrs/postprocessing (bloom/vignette) | G-15 V5 |

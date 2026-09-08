@@ -184,6 +184,8 @@ export class PlayerCharacterController {
   private readonly walkSpeed: number;
   private readonly sprintSpeed: number;
   private readonly capsuleRadius: number;
+  /** GAME-ART: moltiplicatore velocità da sinergie (1 = default). */
+  private speedMultiplier = 1;
 
   // G-18 V4: doorway snap assist — centri delle aperture del piano corrente.
   private doorways: readonly { readonly x: number; readonly z: number }[] = [];
@@ -298,6 +300,11 @@ export class PlayerCharacterController {
     this.doorways = doorways;
   }
 
+  /** Applica moltiplicatore velocità (sinergie / maledizioni). Clamp 0.25..2. */
+  setSpeedMultiplier(multiplier: number): void {
+    this.speedMultiplier = Math.max(0.25, Math.min(2, multiplier));
+  }
+
   /** Applica input e avanza il controller di un tick (60 Hz). */
   update(input: PlayerInput, _tick: number, _deltaMs: number): void {
     // Aggiorna orientamento camera
@@ -324,6 +331,7 @@ export class PlayerCharacterController {
     } else {
       targetSpeed = this.walkSpeed;
     }
+    targetSpeed *= this.speedMultiplier;
 
     // Accelerazione / decelerazione
     const accel = this.grounded

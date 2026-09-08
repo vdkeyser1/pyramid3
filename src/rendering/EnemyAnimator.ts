@@ -36,11 +36,11 @@ export interface EnemyAnimator {
  * (HitReact / HitRecieve, quest'ultimo con l'errore di battitura originale).
  */
 const CLIP_CANDIDATES: Record<EnemyAnimState, readonly string[]> = {
-  IDLE:   ['idle', 'jump_idle'],
-  MOVE:   ['walk', 'run', 'run_arms'],
-  ATTACK: ['attack', 'idle_attack', 'run_attack'],
-  HIT:    ['hitreact', 'hitrecieve', 'hitreceive', 'hit'],
-  DEATH:  ['death', 'die'],
+  IDLE:   ['idle', 'jump_idle', 'zombie idle', 'mutant idle', 'standing idle', 'idle standing'],
+  MOVE:   ['walk', 'run', 'run_arms', 'walking', 'running', 'zombie walk', 'walk forward', 'mummy walk'],
+  ATTACK: ['attack', 'idle_attack', 'run_attack', 'punch', 'slash', 'zombie attack', 'standing melee attack', 'mummy attack'],
+  HIT:    ['hitreact', 'hitrecieve', 'hitreceive', 'hit', 'hit react'],
+  DEATH:  ['death', 'die', 'dying', 'death standing'],
 };
 
 /** Ultimo segmento del nome della clip, normalizzato. */

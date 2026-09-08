@@ -36,7 +36,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,glb,jpg,png,woff2,ktx2}"],
+        globPatterns: ["**/*.{js,css,html,glb,jpg,png,woff2,ktx2,hdr}"],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         // daily-seed.json: NetworkFirst con 25h di stale-while-revalidate
         runtimeCaching: [
@@ -77,7 +77,8 @@ export default defineConfig({
             return "vendor-three";
           }
           // Rapier physics
-          if (id.includes("@dimforge/rapier3d-compat")) return "vendor-rapier";
+          if (id.includes("yuka")) return "vendor-yuka";
+          if (id.includes("@recast-navigation")) return "vendor-recast";
           // IDB (meta-progressione)
           if (id.includes("/idb/") || id.includes("\\idb\\")) {
             return "vendor-idb";
