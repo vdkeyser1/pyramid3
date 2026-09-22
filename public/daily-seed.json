@@ -1,11 +1,10 @@
 {
-  "date": "2026-09-21",
-  "seed": 3968333307,
+  "date": "2026-09-22",
+  "seed": 3789924206,
   "modifiers": [
-    "ONE_HIT_KILL",
-    "GOLDEN_RUN"
+    "SPEED_RUN"
   ],
-  "targetFloor": 4,
-  "description": "Doppia sfida: due modificatori combinati. I coraggiosi prevalgono.",
-  "generatedAt": "2026-09-21T02:25:14.253Z"
+  "targetFloor": 5,
+  "description": "Il modificatore del giorno mette alla prova una sola abilità.",
+  "generatedAt": "2026-09-22T02:28:32.532Z"
 }
