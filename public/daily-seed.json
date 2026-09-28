@@ -1,10 +1,10 @@
 {
-  "date": "2026-09-27",
-  "seed": 1470358118,
+  "date": "2026-09-28",
+  "seed": 2841494369,
   "modifiers": [
-    "FAST_ENEMIES"
+    "CURSED_FLOOR"
   ],
   "targetFloor": 3,
   "description": "Il modificatore del giorno mette alla prova una sola abilità.",
-  "generatedAt": "2026-09-27T02:35:08.130Z"
+  "generatedAt": "2026-09-28T02:38:21.178Z"
 }
