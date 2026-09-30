@@ -1,11 +1,8 @@
 {
-  "date": "2026-09-29",
-  "seed": 2597589459,
-  "modifiers": [
-    "FAST_ENEMIES",
-    "ONE_HIT_KILL"
-  ],
-  "targetFloor": 2,
-  "description": "Doppia sfida: due modificatori combinati. I coraggiosi prevalgono.",
-  "generatedAt": "2026-09-29T03:21:00.707Z"
+  "date": "2026-09-30",
+  "seed": 2710354435,
+  "modifiers": [],
+  "targetFloor": 5,
+  "description": "Discendi nelle profondità — nessun modificatore oggi.",
+  "generatedAt": "2026-09-30T03:03:24.062Z"
 }
