@@ -1,10 +1,10 @@
 {
-  "date": "2026-10-04",
-  "seed": 4140998510,
+  "date": "2026-10-05",
+  "seed": 3618175913,
   "modifiers": [
-    "FAST_ENEMIES"
+    "NO_TORCH"
   ],
-  "targetFloor": 7,
+  "targetFloor": 6,
   "description": "Il modificatore del giorno mette alla prova una sola abilità.",
-  "generatedAt": "2026-10-04T03:27:13.435Z"
+  "generatedAt": "2026-10-05T03:05:27.461Z"
 }
