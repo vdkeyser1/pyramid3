@@ -1,10 +1,10 @@
 {
-  "date": "2026-10-10",
-  "seed": 3438402485,
+  "date": "2026-10-11",
+  "seed": 2053727320,
   "modifiers": [
     "ONE_HIT_KILL"
   ],
-  "targetFloor": 6,
+  "targetFloor": 4,
   "description": "Il modificatore del giorno mette alla prova una sola abilità.",
-  "generatedAt": "2026-10-10T03:25:08.579Z"
+  "generatedAt": "2026-10-11T02:58:15.401Z"
 }
