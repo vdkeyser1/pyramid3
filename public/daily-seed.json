@@ -1,8 +1,10 @@
 {
-  "date": "2026-10-17",
-  "seed": 944118297,
-  "modifiers": [],
-  "targetFloor": 5,
-  "description": "Discendi nelle profondità — nessun modificatore oggi.",
-  "generatedAt": "2026-10-17T02:11:33.138Z"
+  "date": "2026-10-18",
+  "seed": 3064573360,
+  "modifiers": [
+    "NO_TORCH"
+  ],
+  "targetFloor": 6,
+  "description": "Il modificatore del giorno mette alla prova una sola abilità.",
+  "generatedAt": "2026-10-18T02:11:15.239Z"
 }
