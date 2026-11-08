@@ -1,11 +1,8 @@
 {
-  "date": "2026-11-07",
-  "seed": 1298794702,
-  "modifiers": [
-    "GOLDEN_RUN",
-    "SPEED_RUN"
-  ],
+  "date": "2026-11-08",
+  "seed": 1792317469,
+  "modifiers": [],
   "targetFloor": 5,
-  "description": "Doppia sfida: due modificatori combinati. I coraggiosi prevalgono.",
-  "generatedAt": "2026-11-07T03:46:58.905Z"
+  "description": "Discendi nelle profondità — nessun modificatore oggi.",
+  "generatedAt": "2026-11-08T03:27:37.628Z"
 }
